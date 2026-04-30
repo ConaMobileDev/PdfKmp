@@ -9,8 +9,6 @@
 
 PdfKmp lets you build PDF documents from a Compose-style DSL that runs identically on Android and iOS. Text becomes glyph paths, shapes become path operators — every page stays sharp at any zoom level. The library ships the **Inter** font for cross-platform Latin parity and exposes opt-in references to system CJK / Arabic / Persian fonts so non-Latin scripts render natively.
 
-> Built end-to-end with [Claude](https://claude.com/claude-code) — every file in this repository, including this README, was authored in collaboration with Anthropic's coding agent.
-
 ---
 
 ## Table of contents
