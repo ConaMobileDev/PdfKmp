@@ -57,6 +57,9 @@ private func loadSampleImage() -> KotlinByteArray {
 }
 
 private let samples: [SampleEntry] = [
+    SampleEntry(id: "brochure", title: "⭐ Brochure (README hero)") {
+        Samples.shared.brochure().toNSData() as Data
+    },
     SampleEntry(id: "hello-world", title: "Hello world") {
         Samples.shared.helloWorld().toNSData() as Data
     },

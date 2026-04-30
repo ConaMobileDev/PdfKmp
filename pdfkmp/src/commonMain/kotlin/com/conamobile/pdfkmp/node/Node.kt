@@ -122,6 +122,14 @@ public data class ContainerDecoration(
      * `(width, height)` is the bottom-right.
      */
     val backgroundPaint: com.conamobile.pdfkmp.style.PdfPaint? = null,
+    /**
+     * When `true`, the renderer clips drawing to the container's
+     * rectangle. Useful for fixed-size containers (e.g. `box(width =
+     * 200.dp, height = 80.dp)`) where overflowing children should not
+     * paint past the edges. Containers with a non-zero corner radius
+     * already clip to their rounded shape regardless of this flag.
+     */
+    val clipToBounds: Boolean = false,
 ) {
     public companion object {
         public val None: ContainerDecoration = ContainerDecoration()

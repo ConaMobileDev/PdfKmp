@@ -78,6 +78,7 @@ private data class SampleEntry(
 private class SampleAssets(val sampleImagePng: ByteArray)
 
 private val SAMPLES = listOf(
+    SampleEntry("⭐ Brochure (README hero)") { Samples.brochure() },
     SampleEntry("Hello world") { Samples.helloWorld() },
     SampleEntry("Typography — text + decorations + alignment + rich") { Samples.typography() },
     SampleEntry("Row & Column with weights") { Samples.rowAndColumn() },

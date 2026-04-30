@@ -548,7 +548,7 @@ internal object DocumentRenderer {
             )
         } else null
         val uniformRadius = decoration.cornerRadius.value
-        val needsClip = perCornerPath != null || uniformRadius > 0f
+        val needsClip = perCornerPath != null || uniformRadius > 0f || decoration.clipToBounds
 
         if (needsClip) canvas.saveState()
         try {
@@ -572,10 +572,12 @@ internal object DocumentRenderer {
                 }
             }
             if (needsClip) {
-                if (perCornerPath != null) {
-                    canvas.clipPath(perCornerPath)
-                } else {
-                    canvas.clipRoundedRect(originX, originY, width, height, uniformRadius)
+                when {
+                    perCornerPath != null -> canvas.clipPath(perCornerPath)
+                    uniformRadius > 0f ->
+                        canvas.clipRoundedRect(originX, originY, width, height, uniformRadius)
+                    // clipToBounds without rounded corners — sharp rectangle clip.
+                    else -> canvas.clipRect(originX, originY, width, height)
                 }
             }
             for (child in children) {
