@@ -1,5 +1,10 @@
 # PdfKmp
 
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.conamobiledev/pdfkmp.svg?label=Maven%20Central&color=blue)](https://central.sonatype.com/artifact/io.github.conamobiledev/pdfkmp)
+[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](https://www.apache.org/licenses/LICENSE-2.0)
+[![Kotlin](https://img.shields.io/badge/kotlin-2.3-blue.svg?logo=kotlin)](https://kotlinlang.org)
+[![Platforms](https://img.shields.io/badge/platform-Android%20%7C%20iOS-lightgrey.svg)](#installation)
+
 > Kotlin Multiplatform PDF generator for Android and iOS — vector-first, type-safe, DSL-driven.
 
 PdfKmp lets you build PDF documents from a Compose-style DSL that runs identically on Android and iOS. Text becomes glyph paths, shapes become path operators — every page stays sharp at any zoom level. The library ships the **Inter** font for cross-platform Latin parity and exposes opt-in references to system CJK / Arabic / Persian fonts so non-Latin scripts render natively.
@@ -28,17 +33,17 @@ PdfKmp lets you build PDF documents from a Compose-style DSL that runs identical
 - [Saving the document](#saving-the-document)
 - [Page break strategies](#page-break-strategies)
 - [Sample apps](#sample-apps)
-- [Publishing & versioning](#publishing--versioning)
+- [Contributing](#contributing)
 - [License](#license)
 
 ---
 
 ## Installation
 
-PdfKmp publishes a Kotlin Multiplatform library that exposes:
-- an Android `aar` (`com.conamobile:pdfkmp-android`),
+PdfKmp is published to **Maven Central**. The library exposes:
+- an Android `aar` (`io.github.conamobiledev:pdfkmp-android`),
 - an iOS framework named `PdfKmp` for arm64, x64, and simulator-arm64,
-- common Kotlin metadata (`com.conamobile:pdfkmp`).
+- common Kotlin metadata (`io.github.conamobiledev:pdfkmp`).
 
 ### Kotlin Multiplatform project
 
@@ -47,9 +52,6 @@ PdfKmp publishes a Kotlin Multiplatform library that exposes:
 dependencyResolutionManagement {
     repositories {
         mavenCentral()
-        // Until the first Maven Central release lands, use mavenLocal()
-        // after `./gradlew :pdfkmp:publishToMavenLocal`:
-        // mavenLocal()
     }
 }
 ```
@@ -59,7 +61,7 @@ dependencyResolutionManagement {
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("com.conamobile:pdfkmp:0.1.0")
+            implementation("io.github.conamobiledev:pdfkmp:0.1.0-alpha01")
         }
     }
 }
@@ -70,7 +72,7 @@ kotlin {
 ```kotlin
 // app/build.gradle.kts
 dependencies {
-    implementation("com.conamobile:pdfkmp-android:0.1.0")
+    implementation("io.github.conamobiledev:pdfkmp-android:0.1.0-alpha01")
 }
 ```
 
@@ -85,6 +87,10 @@ cd "$SRCROOT/.." && ./gradlew :pdfkmp:embedAndSignAppleFrameworkForXcode
 ```
 
 Then `import PdfKmp` from Swift.
+
+### Versioning policy
+
+The library follows [semver](https://semver.org). Pre-1.0 releases (`0.x.y`) may introduce small API changes between minor versions; alpha tags (`-alpha0N`) signal that the surface is still settling. Breaking changes are documented in the GitHub release notes.
 
 ### Requirements
 
@@ -655,39 +661,24 @@ Both apps surface every demo from `Samples` (in `:pdfkmp/src/commonMain/kotlin/.
 
 ---
 
-## Publishing & versioning
+## Contributing
 
-Library coordinates and metadata live in `gradle.properties`:
+Bug reports, feature requests and pull requests are all welcome — open an issue at <https://github.com/ConaMobileDev/PdfKmp/issues> or send a PR.
 
-```properties
-GROUP=com.conamobile
-VERSION_NAME=0.1.0-SNAPSHOT
-POM_ARTIFACT_ID=pdfkmp
-```
+When working on the library locally:
 
 ```bash
-# Local install (Maven Local)
-./gradlew :pdfkmp:publishToMavenLocal
+# Run the full test suite (canonical surface — exercises every backend on iOS Simulator)
+./gradlew :pdfkmp:iosSimulatorArm64Test
 
-# Build all platform artifacts
+# Build all platform artefacts
 ./gradlew :pdfkmp:assemble
+
+# Install the Android sample on a connected device
+./gradlew :sample:installDebug
 ```
 
-Maven Central publishing is wired through `maven-publish` in `:pdfkmp/build.gradle.kts`. To enable, uncomment the Sonatype repository block and supply credentials via `~/.gradle/gradle.properties` or environment variables:
-
-```properties
-sonatypeUsername=…
-sonatypePassword=…
-signing.keyId=…
-signing.password=…
-signing.secretKeyRingFile=…
-```
-
-Then:
-
-```bash
-./gradlew :pdfkmp:publish
-```
+For repo conventions and AI-agent guidance see [CLAUDE.md](CLAUDE.md) (working **on** this codebase) and [AGENTS.md](AGENTS.md) / `.claude/skills/pdfkmp/SKILL.md` (using the library).
 
 ---
 
