@@ -1,4 +1,3 @@
-import com.vanniktech.maven.publish.SonatypeHost
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Base64
 
@@ -144,7 +143,9 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask<*>>().con
 //   signingInMemoryKeyPassword=<GPG passphrase or empty>
 //   signingInMemoryKey=<armored private key, single line with \n separators>
 mavenPublishing {
-    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL, automaticRelease = true)
+    // Vanniktech 0.30+ defaults to Sonatype Central Portal — no `SonatypeHost`
+    // argument needed. `automaticRelease = true` skips the manual approval step.
+    publishToMavenCentral(automaticRelease = true)
     signAllPublications()
     // GROUP, POM_ARTIFACT_ID, VERSION_NAME are read straight from
     // gradle.properties by the Vanniktech plugin — no explicit
