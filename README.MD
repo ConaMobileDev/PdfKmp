@@ -29,6 +29,7 @@ PdfKmp lets you build PDF documents from a Compose-style DSL that runs identical
 - [Hyperlinks](#hyperlinks)
 - [i18n fonts (CJK / Arabic / Persian) and custom fonts](#i18n-fonts-cjk--arabic--persian-and-custom-fonts)
 - [Saving the document](#saving-the-document)
+- [What to do after save — view, share, open](#what-to-do-after-save--view-share-open)
 - [Page break strategies](#page-break-strategies)
 - [Sample apps](#sample-apps)
 - [Contributing](#contributing)
@@ -102,9 +103,12 @@ The library follows [semver](https://semver.org). Pre-1.0 releases (`0.x.y`) may
 
 ```kotlin
 import com.conamobile.pdfkmp.pdf
+import com.conamobile.pdfkmp.storage.StorageLocation
+import com.conamobile.pdfkmp.storage.save
 import com.conamobile.pdfkmp.style.PdfColor
 import com.conamobile.pdfkmp.unit.sp
 
+// 1. Build the document
 val document = pdf {
     metadata { title = "Hello, PdfKmp" }
     page {
@@ -116,10 +120,14 @@ val document = pdf {
     }
 }
 
-val bytes: ByteArray = document.toByteArray()
+// 2. Pick what to do with it:
+val bytes: ByteArray = document.toByteArray()              // raw bytes
+// or
+val saved = document.save(StorageLocation.Cache, "hello.pdf")  // suspend, returns SavedPdf
+println(saved.path)  // absolute filesystem path you can hand to a viewer / share intent
 ```
 
-`toByteArray()` returns the encoded PDF — write it to disk, attach it to an email, ship it over the wire, or feed it to a viewer.
+After `save(...)` you get a [`SavedPdf`](#saving-the-document) with a real filesystem path. The next sections walk through every feature; jump to **[What to do after save — view, share, open](#what-to-do-after-save--view-share-open)** for ready-made snippets that hand the file to a PDF viewer or share sheet.
 
 ---
 
@@ -599,7 +607,9 @@ Custom fonts referenced anywhere in the document are picked up automatically —
 
 ## Saving the document
 
-`PdfDocument.save(...)` is a multiplatform helper that writes the PDF to a typed location. Cross-platform:
+PdfKmp gives you three ways to handle the generated PDF, in order of convenience:
+
+### 1. `save(...)` — typed multiplatform locations (recommended)
 
 ```kotlin
 import com.conamobile.pdfkmp.storage.StorageLocation
@@ -608,22 +618,243 @@ import com.conamobile.pdfkmp.storage.save
 val doc = pdf { /* ... */ }
 
 val saved = doc.save(StorageLocation.Cache, filename = "report.pdf")
-println(saved.path) // platform-specific absolute path
+println(saved.path)     // absolute filesystem path
+println(saved.name)     // "report.pdf"
+println(saved.location) // StorageLocation.Cache
 ```
 
-Available locations:
+`save` is a `suspend fun` — call it from a coroutine on Android, an `async` on iOS, or wrap it in `runBlocking` for one-shot scripts. It returns a `SavedPdf` with three fields:
 
-| Location | Android | iOS |
+| Field | Type | Description |
 |---|---|---|
-| `Cache` | app-internal cache | `Caches/` |
-| `AppFiles` | app-internal files | `Library/` |
-| `AppExternalFiles` | scoped external (no permission) | not applicable; falls back to `Documents/` |
-| `Downloads` | shared `Downloads/` via MediaStore | shared Files app `Downloads/` |
-| `Documents` | shared `Documents/` | iCloud `Documents/` |
-| `Temp` | `cacheDir/tmp/` | `tmp/` |
-| `Custom("/abs/path/dir")` | any writable directory | any writable directory |
+| `path` | `String` | Absolute path to the file on disk. Use this for `File(path)` / `URL(fileURLWithPath:)`. |
+| `name` | `String` | The filename you supplied (e.g. `"report.pdf"`). |
+| `location` | `StorageLocation` | The location you saved to — useful when the same code branches by destination. |
 
-`save` returns a `SavedPdf` carrying `path`, `name`, and `location`. For low-level bytes, call `toByteArray()` or `toNSData()` (iOS) directly.
+### 2. `toByteArray()` — raw PDF bytes
+
+```kotlin
+val bytes: ByteArray = doc.toByteArray()
+// upload over the network, attach to an email, post to S3, …
+```
+
+### 3. iOS-only `toNSData()` — bridge to UIKit
+
+```kotlin
+// Inside iosMain:
+import com.conamobile.pdfkmp.toNSData
+
+val data: NSData = doc.toNSData()
+// hand off to UIDocumentInteractionController, PDFDocument(data:), etc.
+```
+
+### Available storage locations
+
+| Location | Android | iOS | Use case |
+|---|---|---|---|
+| `Cache` | app-internal cache | `Caches/` | temporary preview, can be cleaned by the OS |
+| `AppFiles` | app-internal files | `Library/` | persistent, app-private |
+| `AppExternalFiles` | scoped external (no permission) | falls back to `Documents/` | larger files, app-scoped |
+| `Downloads` | shared `Downloads/` via MediaStore | shared Files app `Downloads/` | user can find it from system file manager |
+| `Documents` | shared `Documents/` | iCloud `Documents/` | user-visible documents |
+| `Temp` | `cacheDir/tmp/` | `tmp/` | one-shot temp file you'll delete after sharing |
+| `Custom("/abs/path/dir")` | any writable directory | any writable directory | full control |
+
+> **Android storage permissions:** `Cache`, `AppFiles`, `AppExternalFiles`, and `Temp` need **no permission** on any Android version. `Downloads` / `Documents` use the system MediaStore on Android 10+ which also needs no permission. For `Custom` paths outside your app sandbox, you supply your own permissions / Storage Access Framework handling.
+
+> **iOS sandboxing:** Every `StorageLocation` resolves inside your app's sandbox; iCloud `Documents` requires the `iCloud Documents` capability in your Xcode project.
+
+---
+
+## What to do after save — view, share, open
+
+Most apps don't stop at "I have a file on disk" — you want to **show the PDF** to the user, **share it** to another app, or **let them email it**. Here's what each platform needs.
+
+### Android — display the PDF in your app
+
+Android's system `PdfRenderer` rasterises a page to a `Bitmap`:
+
+```kotlin
+import android.graphics.Bitmap
+import android.graphics.pdf.PdfRenderer
+import android.os.ParcelFileDescriptor
+import androidx.compose.foundation.Image
+import androidx.compose.runtime.*
+import androidx.compose.ui.graphics.asImageBitmap
+import java.io.File
+
+@Composable
+fun PdfPagePreview(saved: SavedPdf, pageIndex: Int = 0) {
+    val bitmap by produceState<Bitmap?>(null, saved.path, pageIndex) {
+        val pfd = ParcelFileDescriptor.open(File(saved.path), ParcelFileDescriptor.MODE_READ_ONLY)
+        PdfRenderer(pfd).use { renderer ->
+            renderer.openPage(pageIndex).use { page ->
+                val bmp = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888)
+                bmp.eraseColor(android.graphics.Color.WHITE)
+                page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                value = bmp
+            }
+        }
+    }
+    bitmap?.let { Image(bitmap = it.asImageBitmap(), contentDescription = null) }
+}
+```
+
+The `:sample` Android app does exactly this — see `SampleActivity.kt`.
+
+### Android — share or open in an external PDF viewer
+
+Public PDF viewers (Adobe Reader, Drive, etc.) need a `content://` URI, not a file path. Use a `FileProvider`:
+
+```xml
+<!-- AndroidManifest.xml -->
+<provider
+    android:name="androidx.core.content.FileProvider"
+    android:authorities="${applicationId}.pdfprovider"
+    android:exported="false"
+    android:grantUriPermissions="true">
+    <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/file_paths" />
+</provider>
+```
+
+```xml
+<!-- res/xml/file_paths.xml -->
+<paths>
+    <cache-path name="cache_pdfs" path="." />
+    <files-path name="internal_pdfs" path="." />
+    <external-files-path name="external_pdfs" path="." />
+</paths>
+```
+
+```kotlin
+import android.content.Intent
+import androidx.core.content.FileProvider
+import java.io.File
+
+fun sharePdf(context: Context, saved: SavedPdf) {
+    val file = File(saved.path)
+    val uri = FileProvider.getUriForFile(
+        context,
+        "${context.packageName}.pdfprovider",
+        file,
+    )
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "application/pdf"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(intent, "Share PDF"))
+}
+
+// "Open with" — let user pick any installed PDF viewer:
+fun openInPdfViewer(context: Context, saved: SavedPdf) {
+    val uri = FileProvider.getUriForFile(
+        context,
+        "${context.packageName}.pdfprovider",
+        File(saved.path),
+    )
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, "application/pdf")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(intent)
+}
+```
+
+### iOS — display the PDF in your app
+
+`PDFKit.PDFView` displays the document as **vector** — zoom is unlimited, glyphs stay sharp. From SwiftUI:
+
+```swift
+import PDFKit
+import SwiftUI
+import PdfKmp   // The Kotlin framework
+
+struct PdfPreviewView: View {
+    let savedPath: String
+    @State private var document: PDFDocument?
+
+    var body: some View {
+        Group {
+            if let document = document {
+                PdfPreview(document: document)
+            } else {
+                ProgressView("Rendering…")
+            }
+        }
+        .onAppear {
+            document = PDFDocument(url: URL(fileURLWithPath: savedPath))
+        }
+    }
+}
+
+struct PdfPreview: UIViewRepresentable {
+    let document: PDFDocument
+    func makeUIView(context: Context) -> PDFView {
+        let view = PDFView()
+        view.autoScales = true
+        view.displayMode = .singlePageContinuous
+        view.displayDirection = .vertical
+        return view
+    }
+    func updateUIView(_ uiView: PDFView, context: Context) {
+        uiView.document = document
+    }
+}
+```
+
+Pass the path you got from `save(...).path` (Kotlin) — Swift code reads it via interop and turns it into a `URL`.
+
+### iOS — share via UIActivityViewController
+
+```swift
+import UIKit
+
+func sharePdf(savedPath: String, presenter: UIViewController) {
+    let url = URL(fileURLWithPath: savedPath)
+    let activity = UIActivityViewController(
+        activityItems: [url],
+        applicationActivities: nil,
+    )
+    presenter.present(activity, animated: true)
+}
+```
+
+This brings up the standard share sheet — AirDrop, Messages, Mail, "Save to Files", any installed PDF viewer.
+
+### Cross-platform Compose Multiplatform helper (recipe)
+
+If you're on **Compose Multiplatform**, expose a single `@Composable` and `expect / actual` the platform interop:
+
+```kotlin
+// commonMain
+@Composable
+expect fun PdfViewer(saved: SavedPdf, modifier: Modifier = Modifier)
+
+// androidMain
+@Composable
+actual fun PdfViewer(saved: SavedPdf, modifier: Modifier) {
+    // Compose AndroidView around PdfRenderer, see Android snippet above
+}
+
+// iosMain
+@Composable
+actual fun PdfViewer(saved: SavedPdf, modifier: Modifier) {
+    UIKitView(
+        factory = {
+            val view = PDFView()
+            view.autoScales = true
+            view.document = PDFDocument(url = NSURL.fileURLWithPath(saved.path))
+            view
+        },
+        modifier = modifier,
+    )
+}
+```
+
+> A first-class `PdfViewer` Compose Multiplatform component is on the roadmap for `0.2.0`. Until then, the `:sample` and `iosApp/` projects in this repo show working implementations you can copy verbatim.
 
 ---
 
