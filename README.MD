@@ -75,7 +75,7 @@ dependencyResolutionManagement {
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("io.github.conamobiledev:pdfkmp:0.1.0-alpha01")
+            implementation("io.github.conamobiledev:pdfkmp:0.1.0-alpha02")
         }
     }
 }
@@ -86,7 +86,7 @@ kotlin {
 ```kotlin
 // app/build.gradle.kts
 dependencies {
-    implementation("io.github.conamobiledev:pdfkmp-android:0.1.0-alpha01")
+    implementation("io.github.conamobiledev:pdfkmp-android:0.1.0-alpha02")
 }
 ```
 
@@ -199,7 +199,15 @@ text("Heading") {
 }
 ```
 
-Color helpers: `PdfColor.Red / Green / Blue / Black / White / Gray / LightGray / DarkGray`, `PdfColor(r, g, b, a)` for floats in 0..1, and `PdfColor.fromRgb(0xFF5722)` for hex.
+Color helpers (more in [`PdfColor.kt`](pdfkmp/src/commonMain/kotlin/com/conamobile/pdfkmp/style/PdfColor.kt)):
+
+```kotlin
+PdfColor.Red / Green / Blue / Black / White / Gray / LightGray / DarkGray
+PdfColor(r, g, b, a)                       // floats in 0..1
+PdfColor.fromRgb(0xFF5722)                 // hex literal as Long
+PdfColor.fromHex("#FF5722")                // hex string — RGB / RRGGBB / AARRGGBB
+PdfColor.Blue.withAlpha(0.2f)              // copy with new opacity
+```
 
 ---
 
@@ -375,6 +383,23 @@ backgroundPaint = PdfPaint.LinearGradient(
     ),
 )
 ```
+
+### Clip overflowing children
+
+Containers with a non-zero `cornerRadius` already clip children to the rounded shape. For square-cornered fixed-size containers (e.g. `box(width = 200.dp, height = 80.dp)`), pass `clipToBounds = true` to make sure overflowing children don't paint past the rectangle:
+
+```kotlin
+box(
+    width = 200.dp,
+    height = 80.dp,
+    background = PdfColor.LightGray,
+    clipToBounds = true,    // sharp-rect clip; default is false
+) {
+    text(longText)          // anything past 80dp tall gets clipped
+}
+```
+
+Available on `column`, `row`, `box`, and `card`.
 
 ---
 
