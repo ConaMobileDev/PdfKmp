@@ -1,4 +1,3 @@
-
 *.iml
 .gradle
 .idea
@@ -11,17 +10,13 @@ captures
 .cxx
 local.properties
 xcuserdata/
-Pods/
 *.jks
-*yarn.lock
-iosApp/iosApp.xcodeproj
-/iosApp/iosApp.xcworkspace/xcshareddata/swiftpm/Package.resolved
-/iosApp/iosApp.xcodeproj/project.pbxproj
-.claude
-/nul
-iosApp/Podfile.lock
-iosApp/iosApp.xcodeproj/project.pbxproj
-iosApp/SourcePackages/
 *.aab
-hs_err_pid*.log
 *.hprof
+hs_err_pid*.log
+# Claude Code — keep .claude/skills/ committed (shared with the team), ignore local state.
+.claude/*
+!.claude/skills/
+/nul
+iosApp/iosApp.xcworkspace/xcshareddata/swiftpm/Package.resolved
+iosApp/SourcePackages/
