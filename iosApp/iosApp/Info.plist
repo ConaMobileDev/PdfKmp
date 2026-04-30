@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>AppEventsAutomaticLoggingEnabled</key>
+	<true/>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.144673484603-cufl4rifjhar5g918kskbe8td42jt6tb</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>fb838239105508062</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.blink.romchi</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>romchi</string>
+			</array>
+		</dict>
+	</array>
+	<key>DEBUG_INFORMATION_FORMAT</key>
+	<string>dwarf-with-dsym</string>
+	<key>FacebookAdvertiserIDCollectionEnabled</key>
+	<true/>
+	<key>FacebookAppID</key>
+	<string>838239105508062</string>
+	<key>FacebookAutoLogAppEventsEnabled</key>
+	<true/>
+	<key>FacebookClientToken</key>
+	<string>32ffecdf3a259bd87232fdf63d9cd763</string>
+	<key>FacebookDisplayName</key>
+	<string>Romchi App</string>
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
+	<key>FirebaseCrashlyticsCollectionEnabled</key>
+	<true/>
+	<key>GIDClientID</key>
+	<string>144673484603-cufl4rifjhar5g918kskbe8td42jt6tb.apps.googleusercontent.com</string>
+	<key>GIDServerClientID</key>
+	<string>144673484603-ooi17hjh9ljcpbk7gn646uatm9b207hc.apps.googleusercontent.com</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>googlechromes</string>
+		<string>comgooglemaps</string>
+		<string>yandexnavi</string>
+		<string>fbapi</string>
+		<string>fb-messenger-share-api</string>
+		<string>fbauth2</string>
+		<string>fbshareextension</string>
+	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+	<key>NSUserNotificationUsageDescription</key>
+	<string>We'll send you updates on your account activity and important events.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Kamera AR rejimida oynani real muhitda koʻrish uchun ishlatiladi</string>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>Default Configuration</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:romchi.uz</string>
+	</array>
+</dict>
+</plist>

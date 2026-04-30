@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Romchi 2.0</string>
+    <string name="fb_login_protocol_scheme">fb1028573399000110</string>
+    <string name="facebook_app_id">1028573399000110</string>
+    <string name="facebook_client_token">36d4e1d554807cde79090f4707a613a3</string>
+</resources>

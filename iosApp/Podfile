@@ -1,0 +1,15 @@
+# Uncomment the next line to define a global platform for your project
+platform :ios, '15.0'
+
+target 'iosApp' do
+    pod 'Firebase/Core'
+    pod 'FirebaseCrashlytics'
+    pod 'Firebase/Messaging'
+    pod 'Firebase/Analytics'
+    pod 'Firebase/Auth'
+    pod 'GoogleSignIn'
+    pod 'FBSDKCoreKit'
+    pod 'AppsFlyerFramework'
+  use_frameworks!
+
+end
