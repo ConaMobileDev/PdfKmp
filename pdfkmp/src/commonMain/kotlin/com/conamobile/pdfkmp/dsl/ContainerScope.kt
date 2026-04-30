@@ -127,6 +127,7 @@ public abstract class ContainerScope internal constructor(
         cornerRadiusEach: CornerRadius? = null,
         borderEach: BorderSides? = null,
         backgroundPaint: PdfPaint? = null,
+        clipToBounds: Boolean = false,
         block: ColumnScope.() -> Unit,
     ) {
         val scope = ColumnScope(textStyle).apply(block)
@@ -143,6 +144,7 @@ public abstract class ContainerScope internal constructor(
                 cornerRadiusEach = cornerRadiusEach,
                 borderEach = borderEach,
                 backgroundPaint = backgroundPaint,
+                clipToBounds = clipToBounds,
             ),
         )
     }
@@ -175,6 +177,7 @@ public abstract class ContainerScope internal constructor(
         cornerRadiusEach: CornerRadius? = null,
         borderEach: BorderSides? = null,
         backgroundPaint: PdfPaint? = null,
+        clipToBounds: Boolean = false,
         block: RowScope.() -> Unit,
     ) {
         val scope = RowScope(textStyle).apply(block)
@@ -191,6 +194,7 @@ public abstract class ContainerScope internal constructor(
                 cornerRadiusEach = cornerRadiusEach,
                 borderEach = borderEach,
                 backgroundPaint = backgroundPaint,
+                clipToBounds = clipToBounds,
             ),
         )
     }
@@ -233,6 +237,7 @@ public abstract class ContainerScope internal constructor(
         cornerRadiusEach: CornerRadius? = null,
         borderEach: BorderSides? = null,
         backgroundPaint: PdfPaint? = null,
+        clipToBounds: Boolean = false,
         block: BoxScope.() -> Unit,
     ) {
         val scope = BoxScope(textStyle).apply(block)
@@ -248,6 +253,7 @@ public abstract class ContainerScope internal constructor(
                 cornerRadiusEach = cornerRadiusEach,
                 borderEach = borderEach,
                 backgroundPaint = backgroundPaint,
+                clipToBounds = clipToBounds,
             ),
         )
     }
@@ -278,6 +284,7 @@ public abstract class ContainerScope internal constructor(
         cornerRadiusEach: CornerRadius? = null,
         borderEach: BorderSides? = null,
         backgroundPaint: PdfPaint? = null,
+        clipToBounds: Boolean = false,
         block: ColumnScope.() -> Unit,
     ) {
         column(
@@ -288,6 +295,7 @@ public abstract class ContainerScope internal constructor(
             cornerRadiusEach = cornerRadiusEach,
             borderEach = borderEach,
             backgroundPaint = backgroundPaint,
+            clipToBounds = clipToBounds,
             block = block,
         )
     }

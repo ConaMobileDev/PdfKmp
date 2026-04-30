@@ -828,6 +828,302 @@ public object Samples {
     }
 
     /**
+     * A polished, brochure-style PDF designed for the README hero image.
+     * Mixes large display type, gradient banners, stat cards, a styled
+     * table, decorative shapes, dividers, and rich text — exercising the
+     * library's visual range in a single 2-page document.
+     *
+     * No raster images: every visual element is generated from PdfKmp
+     * primitives (text, shapes, gradients, vectors), so this sample
+     * runs identically on every platform without bundled assets.
+     */
+    public fun brochure(): PdfDocument = pdf {
+        metadata {
+            title = "PdfKmp — Brochure"
+            author = "PdfKmp"
+            subject = "Library showcase"
+        }
+        defaultTextStyle = TextStyle(fontSize = 11.sp, color = PdfColor(0.20f, 0.22f, 0.27f))
+
+        // ─── PAGE 1 ─── Hero + stats + feature cards
+        page {
+            padding = Padding.symmetric(horizontal = 36.dp, vertical = 40.dp)
+            spacing = 24.dp
+
+            // Hero gradient banner with title + tagline
+            box(
+                width = 523.dp,
+                height = 200.dp,
+                cornerRadius = 20.dp,
+                backgroundPaint = PdfPaint.linearGradient(
+                    from = PdfColor(0.05f, 0.10f, 0.40f),
+                    to = PdfColor(0.45f, 0.15f, 0.60f),
+                    endX = 523f, endY = 200f,
+                ),
+            ) {
+                aligned(BoxAlignment.TopEnd) {
+                    column(padding = Padding.all(28.dp)) {
+                        circle(diameter = 50.dp, fill = PdfColor(1f, 1f, 1f, 0.15f))
+                    }
+                }
+                aligned(BoxAlignment.BottomStart) {
+                    column(padding = Padding.all(36.dp), spacing = 6.dp) {
+                        text("PDFKMP") {
+                            fontSize = 11.sp
+                            letterSpacing = 4.sp
+                            color = PdfColor(1f, 1f, 1f, 0.7f)
+                            bold = true
+                        }
+                        text("Beautiful PDFs,") {
+                            fontSize = 38.sp; bold = true; color = PdfColor.White
+                        }
+                        text("from Kotlin Multiplatform.") {
+                            fontSize = 38.sp; bold = true; color = PdfColor(1f, 1f, 1f, 0.85f)
+                        }
+                        spacer(height = 10.dp)
+                        text("Compose-style DSL · Vector text & shapes · Android + iOS") {
+                            fontSize = 12.sp; color = PdfColor(1f, 1f, 1f, 0.75f)
+                        }
+                    }
+                }
+            }
+
+            // Three stat cards
+            row(spacing = 14.dp) {
+                weighted(1f) {
+                    card(
+                        background = PdfColor(0.96f, 0.97f, 1f),
+                        cornerRadius = 14.dp,
+                        padding = Padding.all(18.dp),
+                        borderEach = BorderSides(left = BorderStroke(3.dp, PdfColor(0.20f, 0.40f, 0.95f))),
+                    ) {
+                        text("VECTOR OUTPUT") {
+                            fontSize = 9.sp; bold = true; letterSpacing = 1.2.sp
+                            color = PdfColor(0.20f, 0.40f, 0.95f)
+                        }
+                        spacer(height = 6.dp)
+                        text("Crisp at any zoom") { fontSize = 18.sp; bold = true; color = PdfColor.Black }
+                        spacer(height = 4.dp)
+                        text("Glyphs and shapes are paths, never bitmaps.") {
+                            fontSize = 10.sp; color = PdfColor(0.40f, 0.45f, 0.55f)
+                        }
+                    }
+                }
+                weighted(1f) {
+                    card(
+                        background = PdfColor(1f, 0.97f, 0.95f),
+                        cornerRadius = 14.dp,
+                        padding = Padding.all(18.dp),
+                        borderEach = BorderSides(left = BorderStroke(3.dp, PdfColor(0.95f, 0.45f, 0.20f))),
+                    ) {
+                        text("CROSS-PLATFORM") {
+                            fontSize = 9.sp; bold = true; letterSpacing = 1.2.sp
+                            color = PdfColor(0.95f, 0.45f, 0.20f)
+                        }
+                        spacer(height = 6.dp)
+                        text("One DSL · two OSes") { fontSize = 18.sp; bold = true; color = PdfColor.Black }
+                        spacer(height = 4.dp)
+                        text("Identical output on Android and iOS.") {
+                            fontSize = 10.sp; color = PdfColor(0.40f, 0.45f, 0.55f)
+                        }
+                    }
+                }
+                weighted(1f) {
+                    card(
+                        background = PdfColor(0.95f, 1f, 0.96f),
+                        cornerRadius = 14.dp,
+                        padding = Padding.all(18.dp),
+                        borderEach = BorderSides(left = BorderStroke(3.dp, PdfColor(0.10f, 0.65f, 0.40f))),
+                    ) {
+                        text("BUILT-IN INTER") {
+                            fontSize = 9.sp; bold = true; letterSpacing = 1.2.sp
+                            color = PdfColor(0.10f, 0.65f, 0.40f)
+                        }
+                        spacer(height = 6.dp)
+                        text("No font drama") { fontSize = 18.sp; bold = true; color = PdfColor.Black }
+                        spacer(height = 4.dp)
+                        text("CJK / Arabic / Persian via system fallbacks.") {
+                            fontSize = 10.sp; color = PdfColor(0.40f, 0.45f, 0.55f)
+                        }
+                    }
+                }
+            }
+
+            // Section heading + intro paragraph
+            text("Why PdfKmp?") { fontSize = 22.sp; bold = true; color = PdfColor.Black }
+            divider(thickness = 0.8.dp, color = PdfColor(0.85f, 0.87f, 0.90f))
+            richText {
+                span("PdfKmp is a ")
+                span("Compose-style") { bold = true }
+                span(" PDF generator for ")
+                span("Android and iOS") { bold = true; color = PdfColor(0.20f, 0.40f, 0.95f) }
+                span(". Build documents from a tree of typed nodes, with full control over ")
+                span("typography") { italic = true }
+                span(", layout, decorations, and pagination — and ship the bytes the same way you would any other dependency.")
+            }
+
+            // Feature pills row
+            row(spacing = 8.dp) {
+                listOf(
+                    "DSL"        to (PdfColor(0.93f, 0.95f, 1f)   to PdfColor(0.20f, 0.40f, 0.95f)),
+                    "Tables"     to (PdfColor(1f, 0.96f, 0.93f)   to PdfColor(0.95f, 0.45f, 0.20f)),
+                    "Vector"     to (PdfColor(0.93f, 1f, 0.95f)   to PdfColor(0.10f, 0.65f, 0.40f)),
+                    "Gradients"  to (PdfColor(0.97f, 0.93f, 1f)   to PdfColor(0.55f, 0.20f, 0.85f)),
+                    "Hyperlinks" to (PdfColor(1f, 0.94f, 0.96f)   to PdfColor(0.85f, 0.20f, 0.45f)),
+                    "i18n fonts" to (PdfColor(0.95f, 0.95f, 1f)   to PdfColor(0.25f, 0.25f, 0.55f)),
+                    "Watermarks" to (PdfColor(0.96f, 0.98f, 0.92f) to PdfColor(0.45f, 0.55f, 0.20f)),
+                ).forEach { (label, colors) ->
+                    box(
+                        cornerRadius = 100.dp,
+                        background = colors.first,
+                        padding = Padding.symmetric(horizontal = 11.dp, vertical = 5.dp),
+                    ) {
+                        text(label) {
+                            fontSize = 10.sp; bold = true; color = colors.second
+                        }
+                    }
+                }
+            }
+        }
+
+        // ─── PAGE 2 ─── Table + lists + decorative footer
+        page {
+            padding = Padding.symmetric(horizontal = 36.dp, vertical = 40.dp)
+            spacing = 22.dp
+
+            // Section: Table
+            row(horizontalArrangement = HorizontalArrangement.SpaceBetween, verticalAlignment = VerticalAlignment.Center) {
+                column {
+                    text("Q1 2026 Sales") { fontSize = 22.sp; bold = true; color = PdfColor.Black }
+                    text("Quarterly performance, top regions") {
+                        fontSize = 11.sp; color = PdfColor(0.45f, 0.50f, 0.60f)
+                    }
+                }
+                box(
+                    cornerRadius = 100.dp,
+                    background = PdfColor(0.10f, 0.65f, 0.40f),
+                    padding = Padding.symmetric(horizontal = 12.dp, vertical = 6.dp),
+                ) {
+                    text("+18% YoY") { fontSize = 11.sp; bold = true; color = PdfColor.White }
+                }
+            }
+
+            table(
+                columns = listOf(
+                    TableColumn.Weight(2f),
+                    TableColumn.Fixed(85.dp),
+                    TableColumn.Fixed(95.dp),
+                    TableColumn.Fixed(70.dp),
+                ),
+                border = TableBorder(color = PdfColor(0.85f, 0.87f, 0.90f), width = 1.dp),
+                cornerRadius = 12.dp,
+                cellPadding = Padding.symmetric(horizontal = 14.dp, vertical = 11.dp),
+            ) {
+                header(background = PdfColor(0.97f, 0.98f, 1f)) {
+                    cell("Region") {
+                        bold = true; color = PdfColor(0.35f, 0.40f, 0.50f); fontSize = 10.sp; letterSpacing = 0.6.sp
+                    }
+                    cell("Customers", horizontalAlignment = HorizontalAlignment.End) {
+                        bold = true; color = PdfColor(0.35f, 0.40f, 0.50f); fontSize = 10.sp; letterSpacing = 0.6.sp
+                    }
+                    cell("Revenue", horizontalAlignment = HorizontalAlignment.End) {
+                        bold = true; color = PdfColor(0.35f, 0.40f, 0.50f); fontSize = 10.sp; letterSpacing = 0.6.sp
+                    }
+                    cell("YoY", horizontalAlignment = HorizontalAlignment.End) {
+                        bold = true; color = PdfColor(0.35f, 0.40f, 0.50f); fontSize = 10.sp; letterSpacing = 0.6.sp
+                    }
+                }
+                listOf(
+                    Region("North America", "1,840", "$1.42M", "+12%", true),
+                    Region("Europe",         "1,210", "$0.96M", "+8%",  true),
+                    Region("Asia Pacific",   "  890", "$0.74M", "+24%", true),
+                    Region("Latin America",  "  410", "$0.31M", "+5%",  true),
+                    Region("Africa",         "  165", "$0.09M", "−2%",  false),
+                ).forEachIndexed { i, r ->
+                    val zebra = if (i % 2 == 0) PdfColor.White else PdfColor(0.98f, 0.98f, 0.99f)
+                    row(background = zebra) {
+                        cell {
+                            text(r.name) { bold = true; color = PdfColor.Black }
+                            text("HQ activity, projects, partnerships") {
+                                fontSize = 9.sp; color = PdfColor(0.55f, 0.60f, 0.70f)
+                            }
+                        }
+                        cell(r.customers, horizontalAlignment = HorizontalAlignment.End) { fontSize = 12.sp }
+                        cell(r.revenue, horizontalAlignment = HorizontalAlignment.End) { bold = true; fontSize = 13.sp }
+                        cell(r.yoy, horizontalAlignment = HorizontalAlignment.End) {
+                            bold = true
+                            color = if (r.up) PdfColor(0.10f, 0.65f, 0.40f) else PdfColor(0.85f, 0.20f, 0.20f)
+                        }
+                    }
+                }
+            }
+
+            // Two-column section: Highlights + Roadmap
+            row(spacing = 18.dp, verticalAlignment = VerticalAlignment.Top) {
+                weighted(1f) {
+                    text("Q1 highlights") { fontSize = 14.sp; bold = true; color = PdfColor.Black }
+                    spacer(height = 6.dp)
+                    bulletList(
+                        items = listOf(
+                            "Closed three enterprise contracts.",
+                            "APAC team grew by 40%.",
+                            "New CRM rolled out across regions.",
+                        ),
+                    )
+                }
+                weighted(1f) {
+                    text("Roadmap") { fontSize = 14.sp; bold = true; color = PdfColor.Black }
+                    spacer(height = 6.dp)
+                    numberedList(
+                        items = listOf(
+                            "Launch self-serve onboarding (Q2).",
+                            "Add observability dashboard (Q2).",
+                            "Open second hub in Mumbai (Q3).",
+                        ),
+                    )
+                }
+            }
+
+            // Decorative quote block with accent border
+            card(
+                background = PdfColor(0.97f, 0.95f, 1f),
+                cornerRadius = 0.dp,
+                padding = Padding.all(18.dp),
+                borderEach = BorderSides(left = BorderStroke(4.dp, PdfColor(0.55f, 0.20f, 0.85f))),
+            ) {
+                text("“We shipped a 32-page customer-facing report in three days, with the same Kotlin code on Android and iOS.”") {
+                    fontSize = 13.sp; italic = true; color = PdfColor(0.30f, 0.20f, 0.50f); lineHeight = 18.sp
+                }
+                spacer(height = 8.dp)
+                text("— Engineering team, ConaMobile") {
+                    fontSize = 10.sp; color = PdfColor(0.45f, 0.40f, 0.60f)
+                }
+            }
+
+            // Footer ribbon — centred, single row
+            divider(thickness = 0.5.dp, color = PdfColor(0.85f, 0.87f, 0.90f))
+            row(
+                verticalAlignment = VerticalAlignment.Center,
+                horizontalArrangement = HorizontalArrangement.Center,
+                spacing = 8.dp,
+            ) {
+                circle(diameter = 12.dp, fill = PdfColor(0.20f, 0.40f, 0.95f))
+                text("PdfKmp · ConaMobileDev / PdfKmp") {
+                    fontSize = 10.sp; color = PdfColor(0.45f, 0.50f, 0.60f)
+                }
+            }
+        }
+    }
+
+    private data class Region(
+        val name: String,
+        val customers: String,
+        val revenue: String,
+        val yoy: String,
+        val up: Boolean,
+    )
+
+    /**
      * Document-level "chrome" features grouped onto one document so they
      * can be tested together — every page carries a header, footer with
      * `Page X of Y`, and a watermark; one page demos clickable

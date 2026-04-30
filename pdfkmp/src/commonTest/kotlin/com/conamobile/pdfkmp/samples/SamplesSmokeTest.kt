@@ -59,6 +59,9 @@ class SamplesSmokeTest {
     fun pageChrome_producesValidPdf() = assertSamplePdf(Samples.pageChrome().toByteArray())
 
     @Test
+    fun brochure_producesValidPdf() = assertSamplePdf(Samples.brochure().toByteArray())
+
+    @Test
     fun showcase_producesValidPdf() = assertSamplePdf(Samples.showcase().toByteArray())
 
     private fun assertSamplePdf(bytes: ByteArray) {

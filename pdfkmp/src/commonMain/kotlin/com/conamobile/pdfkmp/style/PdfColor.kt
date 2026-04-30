@@ -31,5 +31,40 @@ public data class PdfColor(
 
         /** Creates a color from a `0xRRGGBB` integer with full opacity. */
         public fun fromRgb(rgb: Long): PdfColor = fromArgb(0xFF_00_00_00L or (rgb and 0xFFFFFFL))
+
+        /**
+         * Parses a hex color string. Accepts `#RGB`, `#RRGGBB`, `#AARRGGBB`,
+         * or the same forms without the leading `#`. Useful when the color
+         * comes from a design tool ("paste this hex into the code").
+         *
+         * @throws IllegalArgumentException when [hex] is not 3, 6, or 8 hex digits.
+         */
+        public fun fromHex(hex: String): PdfColor {
+            val cleaned = hex.removePrefix("#")
+            return when (cleaned.length) {
+                3 -> {
+                    // #RGB → expand each digit (e.g. "F0A" → "FF00AA")
+                    val r = cleaned[0].toString().repeat(2).toInt(16)
+                    val g = cleaned[1].toString().repeat(2).toInt(16)
+                    val b = cleaned[2].toString().repeat(2).toInt(16)
+                    PdfColor(r / 255f, g / 255f, b / 255f)
+                }
+                6 -> fromRgb(cleaned.toLong(16))
+                8 -> fromArgb(cleaned.toLong(16))
+                else -> throw IllegalArgumentException(
+                    "Hex color must be 3, 6, or 8 digits (got '$hex')",
+                )
+            }
+        }
     }
+
+    /**
+     * Returns a copy of this color with the given [alpha] (0f opaque-less,
+     * 1f fully opaque). Convenient for fading existing palette colors:
+     *
+     * ```
+     * val ghostBlue = PdfColor.Blue.withAlpha(0.2f)
+     * ```
+     */
+    public fun withAlpha(alpha: Float): PdfColor = copy(alpha = alpha)
 }
