@@ -1,0 +1,11 @@
+<paths>
+    <external-path
+        name="external_files"
+        path="." />
+    <cache-path
+        name="shared_pdfs"
+        path="." />
+    <files-path
+        name="files"
+        path="." />
+</paths>

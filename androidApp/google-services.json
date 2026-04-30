@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "144673484603",
+    "project_id": "romchi-multiplatform",
+    "storage_bucket": "romchi-multiplatform.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:144673484603:android:4b5d5204929371ef5dd11e",
+        "android_client_info": {
+          "package_name": "com.conamobile.romchi2"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "144673484603-pe9k2pi4a8fe1rt0cnbik2bohu5iumn9.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.conamobile.romchi2",
+            "certificate_hash": "838859d42215c1ac4c76412765fb5769fe391e09"
+          }
+        },
+        {
+          "client_id": "144673484603-ooi17hjh9ljcpbk7gn646uatm9b207hc.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCeuJe1BIISGsp-j5opXRObjxgIkWmBcAk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "144673484603-ooi17hjh9ljcpbk7gn646uatm9b207hc.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "144673484603-cufl4rifjhar5g918kskbe8td42jt6tb.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.blink.romchi",
+                "app_store_id": "6742743588"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
