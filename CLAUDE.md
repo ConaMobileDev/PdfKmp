@@ -46,7 +46,8 @@ JDK 21 recommended (`export JAVA_HOME=$(/usr/libexec/java_home -v 21)` on macOS)
 
 ## Module layout
 
-- `:pdfkmp` — KMP library, Android (`aar`) + iOS framework `PdfKmp` (static, baseName `PdfKmp`). Publishable.
+- `:pdfkmp` — KMP library, Android (`aar`) + iOS framework `PdfKmp` (static, baseName `PdfKmp`). Publishable. Compose-free.
+- `:pdfkmp-compose-resources` — opt-in KMP integration that maps Compose Multiplatform `DrawableResource` references onto the core PdfKmp DSL (`toVectorImage()`, `toBytes()`). Depends on `:pdfkmp` + `org.jetbrains.compose.components:components-resources`. Publishable as a separate artifact (`io.github.conamobiledev:pdfkmp-compose-resources`).
 - `:sample` — Compose Android sample app, depends on `:pdfkmp`.
 - `iosApp/` — SwiftUI / PDFKit sample app. Build phase calls `:pdfkmp:embedAndSignAppleFrameworkForXcode`.
 
