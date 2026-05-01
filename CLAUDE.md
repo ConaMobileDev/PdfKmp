@@ -37,9 +37,9 @@ Every text glyph and shape is emitted as a vector path — no rasterisation. Out
 ./gradlew :sample:installDebug                     # Android, on connected device
 # iOS sample: open iosApp/iosApp.xcodeproj in Xcode and Run
 
-# Publishing
-./gradlew :pdfkmp:publishToMavenLocal              # local install
-./gradlew :pdfkmp:publishAndReleaseToMavenCentral  # Maven Central (requires signing creds)
+# Publishing — both publishable modules ship together; release them in lock-step
+./gradlew :pdfkmp:publishToMavenLocal :pdfkmp-compose-resources:publishToMavenLocal              # local install
+./gradlew :pdfkmp:publishAndReleaseToMavenCentral :pdfkmp-compose-resources:publishAndReleaseToMavenCentral  # Maven Central (requires signing creds)
 ```
 
 JDK 21 recommended (`export JAVA_HOME=$(/usr/libexec/java_home -v 21)` on macOS).
@@ -99,12 +99,15 @@ The pure-common surface uses `FakePdfDriver` so layout and rendering decisions c
 
 ## Publishing checklist
 
+Both `:pdfkmp` and `:pdfkmp-compose-resources` share the same `VERSION_NAME` in root `gradle.properties` and are released together — never ship one without the other, otherwise consumers pulling the companion artifact will get a version mismatch against the core.
+
 When cutting a release:
 
 1. Update `VERSION_NAME` in `gradle.properties` (drop `-SNAPSHOT`, e.g. `0.2.0` or `0.2.0-alpha01`).
-2. Run `./gradlew :pdfkmp:iosSimulatorArm64Test` and `./gradlew :pdfkmp:assemble` locally.
+2. Run `./gradlew :pdfkmp:iosSimulatorArm64Test` and `./gradlew :pdfkmp:assemble :pdfkmp-compose-resources:assemble` locally.
 3. `git tag v0.2.0 && git push --tags` (or use GitHub Releases UI).
-4. Maven Central publish: `./gradlew :pdfkmp:publishAndReleaseToMavenCentral --no-configuration-cache` (or trigger the GitHub Actions `publish.yml` workflow by publishing a Release).
-5. Bump `VERSION_NAME` to the next `-SNAPSHOT` (e.g. `0.3.0-SNAPSHOT`) and commit.
+4. Maven Central publish: `./gradlew :pdfkmp:publishAndReleaseToMavenCentral :pdfkmp-compose-resources:publishAndReleaseToMavenCentral --no-configuration-cache` (or trigger the GitHub Actions `publish.yml` workflow by publishing a Release — it ships both modules in one run).
+5. Verify both artifacts landed: `https://repo1.maven.org/maven2/io/github/conamobiledev/pdfkmp/<version>/` and `.../pdfkmp-compose-resources/<version>/` should both return 200.
+6. Bump `VERSION_NAME` to the next `-SNAPSHOT` (e.g. `0.3.0-SNAPSHOT`) and commit.
 
 Versions follow [semver](https://semver.org). Pre-1.0 minor versions may break API; alpha tags (`-alpha0N`) signal an actively settling surface.
