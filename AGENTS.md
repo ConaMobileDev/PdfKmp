@@ -256,6 +256,7 @@ For vector-only or raster-only call sites, use the typed `vector(resource = …)
 - **`TextAlign.Justify` falls back to `Start` in v1** — per-word spacing isn't implemented. Use `Center` / `End` for now.
 - **Hyperlinks click only on iOS.** Android's `PdfDocument` lacks annotation APIs; the rectangle is recorded but readers can't dispatch clicks. Visual styling (`color = Blue; underline = true`) conveys the link affordance.
 - **Layout sizing is intrinsic.** A `text("foo")` measures to its glyph advance, NOT to the parent's full width. Use `weighted(1f)` to claim leftover space, or wrap in a `box(width = …)`.
+- **`image(..., allowDownScale = true)` is the default.** The platform decoder subsamples raster bytes so they roughly match the rendered size at 200 DPI before drawing — keeps heap and PDF size sane when consumers paste 4000-px smartphone photos into 200-pt thumbnails. Pass `allowDownScale = false` for archival/print workflows where every original pixel must survive into the output.
 - **Container size grows from children** unless you set explicit width/height. `card { … }` wraps tight to its content.
 - **Page break strategy** — `MoveToNextPage` (default) leaves whole elements intact; `Slice` cuts text at line boundaries and images at the page edge. Set on `PageScope.pageBreakStrategy` or document-wide via `defaultPageBreakStrategy`.
 - **Headers and footers fire once per physical page** — they get a `PageContext(pageNumber, totalPages)`. The renderer does a counting dry-run beforehand so `totalPages` is exact.

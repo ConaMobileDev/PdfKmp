@@ -183,6 +183,60 @@ class RenderTest {
         assertEquals(180f, image.height) // 360 / (500/250)
     }
 
+    @Test
+    fun image_allowDownScale_defaultsToTrue_andFlowsThroughToDrawCall() {
+        val factory = FakePdfDriverFactory()
+        val pngBytes = pngHeader(width = 200, height = 100)
+        pdf(factory = factory) {
+            page {
+                padding = Padding.Zero
+                image(bytes = pngBytes, width = 100.dp, height = 50.dp)
+            }
+        }
+        val image = factory.drivers.single().pages.single()
+            .canvas.calls.filterIsInstance<DrawCall.Image>().single()
+        assertEquals(true, image.allowDownScale)
+    }
+
+    @Test
+    fun image_allowDownScale_false_isCarriedAllTheWayToDrawCall() {
+        val factory = FakePdfDriverFactory()
+        val pngBytes = pngHeader(width = 200, height = 100)
+        pdf(factory = factory) {
+            page {
+                padding = Padding.Zero
+                image(bytes = pngBytes, width = 100.dp, height = 50.dp, allowDownScale = false)
+            }
+        }
+        val image = factory.drivers.single().pages.single()
+            .canvas.calls.filterIsInstance<DrawCall.Image>().single()
+        assertEquals(false, image.allowDownScale)
+    }
+
+    @Test
+    fun image_allowDownScale_isInheritedAcrossSlicedPages() {
+        val factory = FakePdfDriverFactory()
+        val pngBytes = pngHeader(width = 100, height = 100)
+        pdf(factory = factory) {
+            defaultPageBreakStrategy = PageBreakStrategy.Slice
+            page(PageSize.custom(width = 200.dp, height = 100.dp)) {
+                padding = Padding.Zero
+                image(
+                    bytes = pngBytes,
+                    width = 200.dp,
+                    height = 250.dp,
+                    contentScale = ContentScale.FillBounds,
+                    allowDownScale = false,
+                )
+            }
+        }
+        val images = factory.drivers.single().pages.flatMap {
+            it.canvas.calls.filterIsInstance<DrawCall.Image>()
+        }
+        assertTrue(images.size >= 3, "expected at least 3 sliced draw calls")
+        assertTrue(images.all { !it.allowDownScale }, "every slice must keep the original opt-out")
+    }
+
     /** Hand-built PNG header used by the image tests above. */
     private fun pngHeader(width: Int, height: Int): ByteArray = byteArrayOf(
         0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,

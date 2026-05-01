@@ -40,6 +40,7 @@ sealed interface DrawCall {
         val contentScale: ContentScale,
         val sourceTop: Float,
         val sourceBottom: Float,
+        val allowDownScale: Boolean,
     ) : DrawCall
     data class Path(
         val commands: List<PathCommand>,
@@ -104,8 +105,19 @@ class FakePdfCanvas : PdfCanvas {
         contentScale: ContentScale,
         sourceTop: Float,
         sourceBottom: Float,
+        allowDownScale: Boolean,
     ) {
-        calls += DrawCall.Image(x, y, width, height, bytes.size, contentScale, sourceTop, sourceBottom)
+        calls += DrawCall.Image(
+            x = x,
+            y = y,
+            width = width,
+            height = height,
+            byteSize = bytes.size,
+            contentScale = contentScale,
+            sourceTop = sourceTop,
+            sourceBottom = sourceBottom,
+            allowDownScale = allowDownScale,
+        )
     }
 
     override fun drawPath(

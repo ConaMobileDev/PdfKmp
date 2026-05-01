@@ -227,6 +227,47 @@ public object Samples {
     }
 
     /**
+     * Demonstrates the [allowDownScale] knob on `image(...)` — handy for
+     * documents that embed dozens or hundreds of high-resolution photos
+     * where the source pixels would otherwise dwarf the rendered size.
+     *
+     * The first row keeps the default `allowDownScale = true`: the
+     * platform decoder subsamples the source so its pixels roughly match
+     * the rendered size at 200 DPI, keeping heap and PDF size in check.
+     * The second row opts out for archival fidelity — every original
+     * pixel survives into the produced PDF.
+     */
+    public fun imageDownscale(imageBytes: ByteArray): PdfDocument = pdf {
+        metadata { title = "PdfKmp – Image downscale" }
+        page {
+            spacing = 12.dp
+            text("Default — allowDownScale = true") {
+                fontSize = 16.sp
+                bold = true
+            }
+            image(
+                bytes = imageBytes,
+                width = 240.dp,
+                height = 160.dp,
+                contentScale = ContentScale.Fit,
+            )
+
+            spacer(height = 16.dp)
+            text("Opt-out — allowDownScale = false (full-resolution)") {
+                fontSize = 16.sp
+                bold = true
+            }
+            image(
+                bytes = imageBytes,
+                width = 240.dp,
+                height = 160.dp,
+                contentScale = ContentScale.Fit,
+                allowDownScale = false,
+            )
+        }
+    }
+
+    /**
      * Demonstrates vector / SVG icons — both [Android-style](#) `<vector>`
      * XML and standard `<svg>` are accepted, scaled to a requested size,
      * and optionally tinted at draw time.

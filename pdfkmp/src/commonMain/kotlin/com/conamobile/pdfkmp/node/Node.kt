@@ -348,18 +348,26 @@ public data class DividerNode(
  * Supported formats are whatever the platform decoder accepts: PNG and JPEG
  * everywhere, plus WebP / HEIF on platforms that have native support
  * (Android 10+ for HEIF, iOS 11+ for HEIF and WebP).
+ *
+ * @property allowDownScale when `true` (default), the platform backend
+ *   subsamples the source bitmap so its pixel dimensions roughly match the
+ *   rendered size at 200 DPI before drawing. Pass `false` to keep every
+ *   source pixel — useful for one-off high-fidelity assets where the raw
+ *   resolution needs to survive into the produced PDF.
  */
 public data class ImageNode(
     val bytes: ByteArray,
     val width: Dp?,
     val height: Dp?,
     val contentScale: ContentScale,
+    val allowDownScale: Boolean = true,
 ) : PdfNode {
     override fun equals(other: Any?): Boolean =
         other is ImageNode &&
             other.width == width &&
             other.height == height &&
             other.contentScale == contentScale &&
+            other.allowDownScale == allowDownScale &&
             other.bytes.contentEquals(bytes)
 
     override fun hashCode(): Int {
@@ -367,6 +375,7 @@ public data class ImageNode(
         result = 31 * result + (width?.hashCode() ?: 0)
         result = 31 * result + (height?.hashCode() ?: 0)
         result = 31 * result + contentScale.hashCode()
+        result = 31 * result + allowDownScale.hashCode()
         return result
     }
 }

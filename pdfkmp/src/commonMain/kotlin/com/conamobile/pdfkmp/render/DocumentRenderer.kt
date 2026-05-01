@@ -359,6 +359,7 @@ internal object DocumentRenderer {
                 contentScale = node.contentScale,
                 sourceTop = srcTop,
                 sourceBottom = srcBottom,
+                allowDownScale = node.allowDownScale,
             )
             consumed += chunkHeight
             currentTop += chunkHeight
@@ -422,6 +423,7 @@ internal object DocumentRenderer {
                 width = node.size.width,
                 height = node.size.height,
                 contentScale = node.contentScale,
+                allowDownScale = node.allowDownScale,
             )
             is MeasuredBlock -> Unit // Spacers contribute size only.
             is MeasuredDivider -> {

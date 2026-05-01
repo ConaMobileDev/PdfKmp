@@ -80,17 +80,20 @@ public data class MeasuredImage(
     val bytes: ByteArray,
     val contentScale: ContentScale,
     override val size: Size,
+    val allowDownScale: Boolean = true,
 ) : MeasuredNode {
     override fun equals(other: Any?): Boolean =
         other is MeasuredImage &&
             other.contentScale == contentScale &&
             other.size == size &&
+            other.allowDownScale == allowDownScale &&
             other.bytes.contentEquals(bytes)
 
     override fun hashCode(): Int {
         var result = bytes.contentHashCode()
         result = 31 * result + contentScale.hashCode()
         result = 31 * result + size.hashCode()
+        result = 31 * result + allowDownScale.hashCode()
         return result
     }
 }

@@ -64,5 +64,6 @@ private object NoOpPdfCanvas : PdfCanvas {
     override fun drawImage(
         bytes: ByteArray, x: Float, y: Float, width: Float, height: Float,
         contentScale: ContentScale, sourceTop: Float, sourceBottom: Float,
+        allowDownScale: Boolean,
     ) = Unit
 }
