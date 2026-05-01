@@ -24,6 +24,7 @@ kotlin {
         commonMain.dependencies {
             implementation(project(":pdfkmp"))
             implementation(project(":pdfkmp-compose-resources"))
+            implementation(project(":pdfkmp-viewer"))
 
             implementation(libs.coroutines.core)
         }
