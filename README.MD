@@ -114,27 +114,11 @@ implementation("io.github.conamobiledev:pdfkmp-compose-resources:0.1.0-alpha02")
 
 Full usage in the [Compose Multiplatform Resources](#compose-multiplatform-resources) section below.
 
-### iOS / Swift consumer
-
-The Xcode project consumes the framework via a Gradle build phase that calls
-`./gradlew :pdfkmp:embedAndSignAppleFrameworkForXcode`. Add a build phase to
-your iOS target:
-
-```bash
-cd "$SRCROOT/.." && ./gradlew :pdfkmp:embedAndSignAppleFrameworkForXcode
-```
-
-Then `import PdfKmp` from Swift.
-
-### Versioning policy
-
-The library follows [semver](https://semver.org). Pre-1.0 releases (`0.x.y`) may introduce small API changes between minor versions; alpha tags (`-alpha0N`) signal that the surface is still settling. Breaking changes are documented in the GitHub release notes.
-
 ### Requirements
 
 - JDK 17+
 - Android Gradle Plugin 8.x, `compileSdk` 34+
-- Xcode 16+ for iOS framework consumers
+- Xcode 16+ when targeting iOS via Kotlin Multiplatform
 
 ### R8 / ProGuard
 
