@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!--
+      Maps the share-cache subdirectory used by `ShareLauncher.android.kt`
+      so `FileProvider.getUriForFile(...)` can produce a `content://` URI
+      consumable by `Intent.ACTION_SEND`. Other apps need read access for
+      the duration of the share; the cache directory is the right place
+      because the OS controls eviction.
+    -->
+    <cache-path name="pdfkmp_viewer_share" path="pdfkmp-viewer-share/" />
+</paths>
