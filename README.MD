@@ -126,25 +126,7 @@ The library follows [semver](https://semver.org). Pre-1.0 releases (`0.x.y`) may
 
 ### R8 / ProGuard
 
-**No keep rules needed.** PdfKmp uses zero reflection, no `ServiceLoader`, no JNI, and no annotation-driven code generation, so R8 is free to fully shrink, optimise, and obfuscate the library. Verified on the bundled Android sample with `isMinifyEnabled = true` and the default `proguard-android-optimize.txt`:
-
-```kotlin
-// app/build.gradle.kts
-android {
-    buildTypes {
-        release {
-            isMinifyEnabled = true
-            isShrinkResources = true     // optional
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",    // can stay empty for PdfKmp
-            )
-        }
-    }
-}
-```
-
-The library does **not** ship `consumerProguardFiles` because it doesn't need any. If you hit a missing-class warning in your own release build, it's coming from one of your other dependencies — not from PdfKmp.
+Use R8 if you want — PdfKmp doesn't care. The library uses zero reflection, no `ServiceLoader`, no JNI, and no annotation-driven code generation, so it ships no `consumerProguardFiles` and needs no keep rules in your `proguard-rules.pro`. Toggle `isMinifyEnabled` in your app's release buildType to whatever you prefer; R8 fully shrinks and obfuscates everything PdfKmp imports without breaking anything. Any missing-class warning in your release build is coming from another dependency, not from PdfKmp.
 
 ---
 
