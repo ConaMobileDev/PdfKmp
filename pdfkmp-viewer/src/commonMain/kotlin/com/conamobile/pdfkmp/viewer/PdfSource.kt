@@ -38,3 +38,19 @@ public sealed interface PdfSource {
 internal fun PdfSource.bytes(): ByteArray = when (this) {
     is PdfSource.Bytes -> bytes
 }
+String> = emptyMap(),
+    ) : PdfSource
+
+    public companion object {
+
+        /** Convenience factory for an in-memory [PdfDocument]. */
+        public fun of(document: PdfDocument): PdfSource = Bytes(document.toByteArray())
+
+        /** Convenience factory for raw bytes — same as `Bytes(bytes)`. */
+        public fun of(bytes: ByteArray): PdfSource = Bytes(bytes)
+
+        /** Convenience factory for a remote URL. */
+        public fun of(url: String, headers: Map<String, String> = emptyMap()): PdfSource =
+            Url(url, headers)
+    }
+}
