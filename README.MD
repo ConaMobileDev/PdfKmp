@@ -535,6 +535,8 @@ image(bytes = imageBytes)
 
 `ContentScale.FillBounds` stretches to the destination box.
 
+> **Compose Multiplatform Resources users** — pass a typed `Res.drawable.*` reference straight in via `image(Res.drawable.cover_photo, width = 480.dp)` from the [`pdfkmp-compose-resources`](#compose-multiplatform-resources) module. The DSL stays sync; bytes are read during `pdfAsync`'s preflight pass.
+
 ---
 
 ## Vector / SVG
@@ -553,6 +555,8 @@ vector(xml = """<svg ...>...</svg>""", width = 48.dp)
 ```
 
 Supported features include solid fills, linear and radial gradients, elliptical arcs (`A`/`a` SVG path commands), and `<g transform="translate/rotate/scale">` group transforms.
+
+> **Compose Multiplatform Resources users** — skip the manual `VectorImage.parse(...)` and pass a typed `Res.drawable.*` reference directly: `vector(Res.drawable.logo, width = 64.dp, tint = PdfColor.Blue)`. See the [Compose Multiplatform Resources](#compose-multiplatform-resources) section for the full integration.
 
 ---
 
@@ -723,25 +727,9 @@ suspend fun buildReport(): PdfDocument = pdfAsync {
 
 `pdf { }` is preserved verbatim — existing code keeps working with zero changes. Reach for `pdfAsync` only when you actually want the typed-resource overloads.
 
-> **Limitation.** Headers, footers, and watermarks are invoked per physical page during the render pass, after the preflight is over. They cannot hold deferred resource references — load anything async-loaded in the page body, or pre-resolve via `toVectorImage()` / `toBytes()` and pass the parsed result into the header / footer factory.
+> **Limitation.** Headers, footers, and watermarks are invoked per physical page during the render pass, after the preflight is over. They cannot hold deferred resource references — load anything async-loaded in the page body, or pre-resolve outside the DSL and pass the parsed result into the header / footer factory.
 
-### Lower-level helpers
-
-When you want the parsed bytes outside the DSL — preloading icons at app startup, sharing one `VectorImage` across many call sites, or caching by your own key — three suspend extensions hand you the raw payload:
-
-```kotlin
-import com.conamobile.pdfkmp.composeresources.toBytes
-import com.conamobile.pdfkmp.composeresources.toPdfDrawable
-import com.conamobile.pdfkmp.composeresources.toVectorImage
-
-suspend fun preload() {
-    val icon: VectorImage = Res.drawable.logo.toVectorImage()       // <vector> XML or <svg>
-    val png: ByteArray = Res.drawable.cover_photo.toBytes()         // PNG / JPEG / WEBP / HEIF
-    val auto: PdfDrawable = Res.drawable.something.toPdfDrawable()  // auto-detect (Vector | Raster)
-}
-```
-
-Hand `icon` to the eager `vector(image = icon, …)` overload from inside a synchronous `pdf { }` so each repeated call site reuses the same parsed paths instead of re-parsing the XML.
+For preloading or custom caching outside the DSL, every `DrawableResource` exposes three suspend extensions — `toVectorImage()`, `toBytes()`, `toPdfDrawable()` — IDE auto-complete will surface them with full KDoc.
 
 ---
 
@@ -1048,14 +1036,14 @@ For repo conventions and AI-agent guidance see [CLAUDE.md](CLAUDE.md) (working *
 
 ---
 
+## Powered by Claude
+
+This library — the public API, the layout engine, the Android and iOS rendering backends, every test, the sample apps, and this README — was authored end-to-end with [Claude Code](https://claude.com/claude-code), Anthropic's coding agent. Bug reports, suggestions, and PRs welcome.
+
+---
+
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE).
 
 The bundled Inter font is licensed separately under the SIL Open Font License 1.1 — see `pdfkmp/fonts/Inter-LICENSE.txt`.
-
----
-
-## Powered by Claude
-
-This library — the public API, the layout engine, the Android and iOS rendering backends, every test, the sample apps, and this README — was authored end-to-end with [Claude Code](https://claude.com/claude-code), Anthropic's coding agent. Bug reports, suggestions, and PRs welcome.
