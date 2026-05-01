@@ -80,6 +80,29 @@ public data class PageContext(
  */
 public sealed interface PdfNode
 
+/**
+ * Placeholder node that defers production of a real [PdfNode] until a
+ * suspend resolution pass runs.
+ *
+ * Used by integrations that need to fetch data through a `suspend` API
+ * (the Compose Multiplatform Resources backend, for example) but want to
+ * keep the public DSL synchronous. The resolver is invoked once during
+ * the preflight pass triggered by [com.conamobile.pdfkmp.pdfAsync]; the
+ * resolved node replaces this placeholder in the parent's child list.
+ *
+ * The synchronous [com.conamobile.pdfkmp.pdf] entry point throws when it
+ * sees a `LazyNode` — it's a hard signal that the document needs to be
+ * built through `pdfAsync { }` instead.
+ *
+ * @property resolver suspend producer of the real node. Called once
+ *   during preflight; if the produced node is itself a `LazyNode` (or a
+ *   container holding lazy descendants), the preflight pass keeps
+ *   recursing until every node is fully resolved.
+ */
+public class LazyNode(
+    public val resolver: suspend () -> PdfNode,
+) : PdfNode
+
 public data class TextNode(
     val text: String,
     val style: TextStyle,

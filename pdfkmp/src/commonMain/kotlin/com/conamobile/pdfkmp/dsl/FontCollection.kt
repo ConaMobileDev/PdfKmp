@@ -4,6 +4,7 @@ import com.conamobile.pdfkmp.node.BoxNode
 import com.conamobile.pdfkmp.node.ColumnNode
 import com.conamobile.pdfkmp.node.DividerNode
 import com.conamobile.pdfkmp.node.ImageNode
+import com.conamobile.pdfkmp.node.LazyNode
 import com.conamobile.pdfkmp.node.LinkNode
 import com.conamobile.pdfkmp.node.PdfNode
 import com.conamobile.pdfkmp.node.RichTextNode
@@ -47,5 +48,9 @@ internal fun collectCustomFonts(node: PdfNode, sink: MutableSet<PdfFont.Custom>)
         is BoxNode -> node.children.forEach { collectCustomFonts(it.node, sink) }
         is LinkNode -> collectCustomFonts(node.child, sink)
         is SpacerNode, is ImageNode, is VectorNode, is DividerNode, is ShapeNode -> Unit
+        // LazyNodes are unresolved at this point; pdfAsync re-runs this
+        // walk after preflight so any custom font referenced by the
+        // resolved descendant gets picked up before rendering starts.
+        is LazyNode -> Unit
     }
 }

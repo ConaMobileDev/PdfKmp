@@ -58,6 +58,20 @@ public abstract class ContainerScope internal constructor(
     internal val children: MutableList<PdfNode> = mutableListOf()
 
     /**
+     * Appends a custom [PdfNode] to this container's child list.
+     *
+     * Reserved for integration modules that define their own node
+     * shapes — for example `:pdfkmp-compose-resources` enqueues a
+     * [com.conamobile.pdfkmp.node.LazyNode] through this hook so the
+     * core DSL doesn't have to know about Compose Multiplatform
+     * Resources. End-user code never needs to call this directly; use
+     * [text], [column], [row], [image], [vector], etc.
+     */
+    public fun addNode(node: PdfNode) {
+        children += node
+    }
+
+    /**
      * Appends a text node.
      *
      * @param value the string to render; line breaks (`\n`) split into hard lines.

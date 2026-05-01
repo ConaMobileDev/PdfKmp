@@ -8,6 +8,7 @@ import com.conamobile.pdfkmp.node.ColumnNode
 import com.conamobile.pdfkmp.node.ContainerDecoration
 import com.conamobile.pdfkmp.node.DividerNode
 import com.conamobile.pdfkmp.node.ImageNode
+import com.conamobile.pdfkmp.node.LazyNode
 import com.conamobile.pdfkmp.node.LinkNode
 import com.conamobile.pdfkmp.node.PdfNode
 import com.conamobile.pdfkmp.node.RichTextNode
@@ -93,6 +94,16 @@ public fun measure(
         val measuredChild = measure(node.child, constraints, metrics)
         MeasuredLink(url = node.url, child = measuredChild, size = measuredChild.size)
     }
+
+    is LazyNode -> error(
+        "LazyNode reached the layout engine without being resolved. " +
+            "Build the document with pdfAsync { } instead of pdf { } when " +
+            "the DSL contains async-loaded resources " +
+            "(e.g. drawable(Res.drawable.X) from :pdfkmp-compose-resources). " +
+            "Headers, footers, and watermarks are invoked per page during " +
+            "render and cannot hold lazy resources — load them in the page " +
+            "body or pre-resolve before passing to the header/footer factory.",
+    )
 }
 
 /**
