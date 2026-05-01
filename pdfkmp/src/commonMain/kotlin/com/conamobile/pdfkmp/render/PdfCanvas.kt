@@ -170,7 +170,15 @@ public interface PdfCanvas {
         url: String,
     ): Unit = Unit
 
-    /** Vertically-sliced bitmap embed. See the deferred TODO inside the platform impls. */
+    /**
+     * Vertically-sliced bitmap embed. See the deferred TODO inside the
+     * platform impls.
+     *
+     * @param allowDownScale when `true` (default), the backend subsamples
+     *   the source bitmap so its pixel dimensions roughly match the
+     *   destination at 200 DPI before drawing. Pass `false` to feed every
+     *   source pixel through the platform decoder.
+     */
     public fun drawImage(
         bytes: ByteArray,
         x: Float,
@@ -180,5 +188,6 @@ public interface PdfCanvas {
         contentScale: ContentScale,
         sourceTop: Float = 0f,
         sourceBottom: Float = 1f,
+        allowDownScale: Boolean = true,
     )
 }

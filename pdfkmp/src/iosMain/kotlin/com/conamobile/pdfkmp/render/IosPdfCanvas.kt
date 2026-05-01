@@ -50,7 +50,14 @@ import platform.CoreGraphics.CGContextDrawRadialGradient
 import platform.CoreGraphics.CGGradientCreateWithColorComponents
 import platform.CoreGraphics.CGGradientRelease
 import platform.CoreGraphics.CGPathRelease
+import platform.CoreGraphics.CGBitmapContextCreate
+import platform.CoreGraphics.CGBitmapContextCreateImage
+import platform.CoreGraphics.CGContextSetInterpolationQuality
+import platform.CoreGraphics.CGColorSpaceRelease
+import platform.CoreGraphics.CGImageAlphaInfo
 import platform.CoreGraphics.CGImageCreateWithImageInRect
+import platform.CoreGraphics.kCGInterpolationHigh
+import kotlin.math.max
 import platform.CoreGraphics.kCGGradientDrawsAfterEndLocation
 import platform.CoreGraphics.kCGGradientDrawsBeforeStartLocation
 import platform.CoreGraphics.CGImageGetHeight
@@ -518,9 +525,17 @@ internal class IosPdfCanvas(
         contentScale: ContentScale,
         sourceTop: Float,
         sourceBottom: Float,
+        allowDownScale: Boolean,
     ) {
         if (bytes.isEmpty() || width <= 0f || height <= 0f) return
-        val cgImage = decodeCGImage(bytes) ?: return
+        val decoded = decodeCGImage(bytes) ?: return
+        val cgImage = if (allowDownScale) {
+            val target = targetPixelDimensions(width, height)
+            downscaleIfLarger(decoded, maxOf(target.first, target.second))
+        } else {
+            decoded
+        }
+        if (cgImage != decoded) CGImageRelease(decoded)
         try {
             val srcWidth = CGImageGetWidth(cgImage).toDouble()
             val srcHeight = CGImageGetHeight(cgImage).toDouble()
@@ -621,6 +636,55 @@ internal class IosPdfCanvas(
             } finally {
                 platform.CoreGraphics.CGDataProviderRelease(provider)
             }
+        }
+    }
+
+    /**
+     * If [image]'s longest edge exceeds [maxPixelSize], redraws it into a
+     * proportionally smaller [CGBitmapContextCreate]-backed buffer and
+     * returns the result. Otherwise returns [image] unchanged.
+     *
+     * The ImageIO `CGImageSourceCreateThumbnailAtIndex` path would skip the
+     * full-size decode entirely, but constructing its `CFDictionary` of
+     * options through Kotlin/Native's interop layer is gnarly. The
+     * post-decode redraw still trims the embedded PDF stream and the
+     * draw-time CGImage; only the brief decode-time peak survives.
+     */
+    private fun downscaleIfLarger(
+        image: platform.CoreGraphics.CGImageRef,
+        maxPixelSize: Int,
+    ): platform.CoreGraphics.CGImageRef {
+        val srcW = CGImageGetWidth(image).toInt()
+        val srcH = CGImageGetHeight(image).toInt()
+        if (srcW <= maxPixelSize && srcH <= maxPixelSize) return image
+        if (srcW <= 0 || srcH <= 0) return image
+        val scale = maxPixelSize.toDouble() / max(srcW, srcH).toDouble()
+        val dstW = (srcW * scale).toInt().coerceAtLeast(1)
+        val dstH = (srcH * scale).toInt().coerceAtLeast(1)
+        val colorSpace = CGColorSpaceCreateDeviceRGB() ?: return image
+        try {
+            val bitmapCtx = CGBitmapContextCreate(
+                data = null,
+                width = dstW.toULong(),
+                height = dstH.toULong(),
+                bitsPerComponent = 8u,
+                bytesPerRow = 0u,
+                space = colorSpace,
+                bitmapInfo = CGImageAlphaInfo.kCGImageAlphaPremultipliedLast.value,
+            ) ?: return image
+            try {
+                CGContextSetInterpolationQuality(bitmapCtx, kCGInterpolationHigh)
+                CGContextDrawImage(
+                    bitmapCtx,
+                    CGRectMake(0.0, 0.0, dstW.toDouble(), dstH.toDouble()),
+                    image,
+                )
+                return CGBitmapContextCreateImage(bitmapCtx) ?: image
+            } finally {
+                CFRelease(bitmapCtx)
+            }
+        } finally {
+            CGColorSpaceRelease(colorSpace)
         }
     }
 }

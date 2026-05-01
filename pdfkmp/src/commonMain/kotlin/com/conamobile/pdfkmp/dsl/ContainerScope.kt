@@ -518,14 +518,20 @@ public abstract class ContainerScope internal constructor(
      * @param contentScale how to fit the intrinsic pixels into the
      *   destination rectangle. Defaults to [ContentScale.Fit] which
      *   preserves aspect ratio with letterboxing.
+     * @param allowDownScale when `true` (default), the platform backend
+     *   subsamples the source bitmap to roughly match the rendered size
+     *   at 200 DPI before drawing — keeping heap and PDF size in check for
+     *   image-heavy documents. Pass `false` for one-off assets that must
+     *   keep every source pixel.
      */
     public fun image(
         bytes: ByteArray,
         width: Dp,
         height: Dp,
         contentScale: ContentScale = ContentScale.Fit,
+        allowDownScale: Boolean = true,
     ) {
-        children += ImageNode(bytes, width, height, contentScale)
+        children += ImageNode(bytes, width, height, contentScale, allowDownScale)
     }
 
     /**
@@ -534,24 +540,42 @@ public abstract class ContainerScope internal constructor(
      *
      * Falls back to the supplied width as the height if the format header
      * is not recognized — pass an explicit [height] in that case.
+     *
+     * @param allowDownScale see the explicit-dimensions overload above.
      */
     public fun image(
         bytes: ByteArray,
         width: Dp,
         contentScale: ContentScale = ContentScale.Fit,
+        allowDownScale: Boolean = true,
     ) {
-        children += ImageNode(bytes, width = width, height = null, contentScale = contentScale)
+        children += ImageNode(
+            bytes = bytes,
+            width = width,
+            height = null,
+            contentScale = contentScale,
+            allowDownScale = allowDownScale,
+        )
     }
 
     /**
      * Appends an image rendered at its intrinsic pixel dimensions, mapped
      * 1px → 1pt. Useful when the source asset is already sized for print.
+     *
+     * @param allowDownScale see the explicit-dimensions overload above.
      */
     public fun image(
         bytes: ByteArray,
         contentScale: ContentScale = ContentScale.Fit,
+        allowDownScale: Boolean = true,
     ) {
-        children += ImageNode(bytes, width = null, height = null, contentScale = contentScale)
+        children += ImageNode(
+            bytes = bytes,
+            width = null,
+            height = null,
+            contentScale = contentScale,
+            allowDownScale = allowDownScale,
+        )
     }
 
     /**

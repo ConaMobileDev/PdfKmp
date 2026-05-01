@@ -497,6 +497,7 @@ private fun measureImage(node: ImageNode, constraints: Constraints): MeasuredIma
         bytes = node.bytes,
         contentScale = node.contentScale,
         size = Size(width = finalWidth, height = finalHeight),
+        allowDownScale = node.allowDownScale,
     )
 }
 

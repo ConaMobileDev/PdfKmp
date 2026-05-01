@@ -38,6 +38,7 @@ public fun ContainerScope.drawable(
     tint: PdfColor? = null,
     contentScale: ContentScale = ContentScale.Fit,
     strokeMode: VectorStrokeMode = VectorStrokeMode.Inherit,
+    allowDownScale: Boolean = true,
 ) {
     when (drawable) {
         is PdfDrawable.Vector -> vector(
@@ -54,17 +55,20 @@ public fun ContainerScope.drawable(
                 width = width,
                 height = height,
                 contentScale = contentScale,
+                allowDownScale = allowDownScale,
             )
 
             width != null -> image(
                 bytes = drawable.bytes,
                 width = width,
                 contentScale = contentScale,
+                allowDownScale = allowDownScale,
             )
 
             else -> image(
                 bytes = drawable.bytes,
                 contentScale = contentScale,
+                allowDownScale = allowDownScale,
             )
         }
     }
@@ -97,6 +101,7 @@ public fun ContainerScope.drawable(
     tint: PdfColor? = null,
     contentScale: ContentScale = ContentScale.Fit,
     strokeMode: VectorStrokeMode = VectorStrokeMode.Inherit,
+    allowDownScale: Boolean = true,
 ) {
     addNode(LazyNode {
         when (val pd = resource.toPdfDrawable()) {
@@ -113,6 +118,7 @@ public fun ContainerScope.drawable(
                 width = width,
                 height = height,
                 contentScale = contentScale,
+                allowDownScale = allowDownScale,
             )
         }
     })
@@ -155,6 +161,7 @@ public fun ContainerScope.image(
     width: Dp? = null,
     height: Dp? = null,
     contentScale: ContentScale = ContentScale.Fit,
+    allowDownScale: Boolean = true,
 ) {
     addNode(LazyNode {
         ImageNode(
@@ -162,6 +169,7 @@ public fun ContainerScope.image(
             width = width,
             height = height,
             contentScale = contentScale,
+            allowDownScale = allowDownScale,
         )
     })
 }

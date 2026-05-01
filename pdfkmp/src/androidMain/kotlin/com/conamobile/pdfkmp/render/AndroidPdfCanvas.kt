@@ -240,8 +240,14 @@ internal class AndroidPdfCanvas(
         contentScale: ContentScale,
         sourceTop: Float,
         sourceBottom: Float,
+        allowDownScale: Boolean,
     ) {
-        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return
+        val bitmap = decodeBitmap(
+            bytes = bytes,
+            dstWidthPoints = width,
+            dstHeightPoints = height,
+            allowDownScale = allowDownScale,
+        ) ?: return
         val srcTopPx = (bitmap.height * sourceTop.coerceIn(0f, 1f)).toInt()
         val srcBottomPx = (bitmap.height * sourceBottom.coerceIn(0f, 1f)).toInt()
             .coerceAtLeast(srcTopPx + 1)
@@ -266,6 +272,43 @@ internal class AndroidPdfCanvas(
             canvas.drawBitmap(bitmap, srcRect, dstRect, imagePaint)
         }
     }
+}
+
+/**
+ * Decodes [bytes] into a [android.graphics.Bitmap], optionally subsampling
+ * the source so its pixel dimensions stay in line with the rendered size at
+ * 200 DPI.
+ *
+ * The two-pass `inJustDecodeBounds` + `inSampleSize` flow lets the platform
+ * decoder skip every other 2/4/8 row at decode time — so a 4000×3000
+ * smartphone photo destined for a 2-inch thumbnail decodes straight into a
+ * ~250×190 buffer instead of allocating ~48 MB up front.
+ */
+private fun decodeBitmap(
+    bytes: ByteArray,
+    dstWidthPoints: Float,
+    dstHeightPoints: Float,
+    allowDownScale: Boolean,
+): android.graphics.Bitmap? {
+    if (bytes.isEmpty()) return null
+    if (!allowDownScale || dstWidthPoints <= 0f || dstHeightPoints <= 0f) {
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    }
+    val target = targetPixelDimensions(dstWidthPoints, dstHeightPoints)
+    val sizeOnly = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, sizeOnly)
+    val srcW = sizeOnly.outWidth
+    val srcH = sizeOnly.outHeight
+    if (srcW <= 0 || srcH <= 0 || (srcW <= target.first && srcH <= target.second)) {
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    }
+    var sample = 1
+    while (srcW / (sample * 2) >= target.first && srcH / (sample * 2) >= target.second) {
+        sample *= 2
+    }
+    val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+        ?: BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
 }
 
 private val imagePaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
