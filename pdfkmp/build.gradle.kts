@@ -71,6 +71,38 @@ val generateBundledFonts = tasks.register("generateBundledFonts") {
     }
 }
 
+/**
+ * Single-source-of-truth for [com.conamobile.pdfkmp.PdfKmp.VERSION] — the
+ * runtime constant is generated from the `VERSION_NAME` Gradle property so a
+ * release bump in `gradle.properties` cannot drift from what consumers see
+ * at runtime.
+ */
+val generatePdfKmpVersion = tasks.register("generatePdfKmpVersion") {
+    group = "build"
+    description = "Generates a Kotlin file with the PdfKmp.VERSION constant from gradle.properties."
+
+    val versionName = providers.gradleProperty("VERSION_NAME").get()
+    val outputDir = layout.buildDirectory.dir("generated/sources/version/commonMain/kotlin")
+
+    inputs.property("versionName", versionName)
+    outputs.dir(outputDir).withPropertyName("outputDir")
+
+    doLast {
+        val pkgDir = outputDir.get().asFile.resolve("com/conamobile/pdfkmp")
+        pkgDir.deleteRecursively()
+        pkgDir.mkdirs()
+        pkgDir.resolve("PdfKmpVersion.kt").writeText(
+            """
+            package com.conamobile.pdfkmp
+
+            // GENERATED — do not edit by hand. Source: gradle.properties / VERSION_NAME
+
+            internal const val PDFKMP_VERSION_NAME: String = "$versionName"
+            """.trimIndent() + "\n"
+        )
+    }
+}
+
 kotlin {
     jvmToolchain(17)
 
@@ -104,6 +136,7 @@ kotlin {
     sourceSets {
         commonMain {
             kotlin.srcDir(generateBundledFonts)
+            kotlin.srcDir(generatePdfKmpVersion)
             dependencies {
                 implementation(libs.coroutines.core)
                 implementation(libs.kotlinx.io.core)
@@ -129,6 +162,7 @@ kotlin {
 // sources are present before compilation begins.
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask<*>>().configureEach {
     dependsOn(generateBundledFonts)
+    dependsOn(generatePdfKmpVersion)
 }
 
 // Maven Central publishing via Vanniktech's plugin — handles sources and

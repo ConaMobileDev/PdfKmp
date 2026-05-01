@@ -99,7 +99,9 @@ The pure-common surface uses `FakePdfDriver` so layout and rendering decisions c
 
 ## Publishing checklist
 
-Both `:pdfkmp` and `:pdfkmp-compose-resources` share the same `VERSION_NAME` in root `gradle.properties` and are released together — never ship one without the other, otherwise consumers pulling the companion artifact will get a version mismatch against the core.
+Both `:pdfkmp` and `:pdfkmp-compose-resources` share the same `VERSION_NAME` in root `gradle.properties` and are released together — never ship one without the other, otherwise consumers pulling the companion artifact will get a version mismatch against the core. The runtime [`PdfKmp.VERSION`][version] constant is generated from `VERSION_NAME` by the `generatePdfKmpVersion` Gradle task, so a release bump only requires editing `gradle.properties` once.
+
+[version]: pdfkmp/src/commonMain/kotlin/com/conamobile/pdfkmp/Pdf.kt
 
 When cutting a release:
 
