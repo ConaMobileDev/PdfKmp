@@ -70,9 +70,10 @@ Every DSL node funnels into these system PDF APIs, so the resulting bytes are re
 PdfKmp is published to **Maven Central**. The library exposes:
 - an Android `aar` (`io.github.conamobiledev:pdfkmp-android`),
 - an iOS framework named `PdfKmp` for arm64, x64, and simulator-arm64,
-- common Kotlin metadata (`io.github.conamobiledev:pdfkmp`).
+- common Kotlin metadata (`io.github.conamobiledev:pdfkmp`),
+- an optional Compose Multiplatform Resources companion (`io.github.conamobiledev:pdfkmp-compose-resources`).
 
-### Kotlin Multiplatform project
+Make sure Maven Central is in your repository list:
 
 ```kotlin
 // settings.gradle.kts
@@ -82,6 +83,37 @@ dependencyResolutionManagement {
     }
 }
 ```
+
+Pick whichever dependency style your project already uses. The `libs.versions.toml` form is recommended for new projects — it keeps the version in one place across modules.
+
+### Version catalog (`gradle/libs.versions.toml`)
+
+```toml
+[versions]
+pdfkmp = "0.2.0-alpha01"
+
+[libraries]
+pdfkmp = { module = "io.github.conamobiledev:pdfkmp", version.ref = "pdfkmp" }
+pdfkmp-android = { module = "io.github.conamobiledev:pdfkmp-android", version.ref = "pdfkmp" }
+pdfkmp-compose-resources = { module = "io.github.conamobiledev:pdfkmp-compose-resources", version.ref = "pdfkmp" }
+```
+
+### Kotlin Multiplatform project
+
+With a version catalog:
+
+```kotlin
+// build.gradle.kts
+kotlin {
+    sourceSets {
+        commonMain.dependencies {
+            implementation(libs.pdfkmp)
+        }
+    }
+}
+```
+
+Without a version catalog:
 
 ```kotlin
 // build.gradle.kts
@@ -96,6 +128,17 @@ kotlin {
 
 ### Android-only project
 
+With a version catalog:
+
+```kotlin
+// app/build.gradle.kts
+dependencies {
+    implementation(libs.pdfkmp.android)
+}
+```
+
+Without a version catalog:
+
 ```kotlin
 // app/build.gradle.kts
 dependencies {
@@ -106,6 +149,15 @@ dependencies {
 ### Optional — Compose Multiplatform Resources integration
 
 If your project already uses Compose Multiplatform Resources (`Res.drawable.*`), add the companion module so you can drop typed resource references straight into the PdfKmp DSL. Skip this dependency entirely if you don't use Compose Resources — the core artifact above stays Compose-free.
+
+With a version catalog:
+
+```kotlin
+// build.gradle.kts (add next to the core artifact)
+implementation(libs.pdfkmp.compose.resources)
+```
+
+Without a version catalog:
 
 ```kotlin
 // build.gradle.kts (add next to the core artifact)
