@@ -94,9 +94,12 @@ pdfkmp = "0.2.0-alpha01"
 
 [libraries]
 pdfkmp = { module = "io.github.conamobiledev:pdfkmp", version.ref = "pdfkmp" }
+pdfkmp-compose-resources = { module = "io.github.conamobiledev:pdfkmp-compose-resources", version.ref = "pdfkmp" } # optional
+
 pdfkmp-android = { module = "io.github.conamobiledev:pdfkmp-android", version.ref = "pdfkmp" }
-pdfkmp-compose-resources = { module = "io.github.conamobiledev:pdfkmp-compose-resources", version.ref = "pdfkmp" }
 ```
+
+`pdfkmp-compose-resources` is **optional** — add it only if your project uses Compose Multiplatform Resources (`Res.drawable.*`) and you want typed resource references inside the PdfKmp DSL. The core `pdfkmp` artifact itself stays Compose-free. Full usage in the [Compose Multiplatform Resources](#compose-multiplatform-resources) section below.
 
 ### Kotlin Multiplatform project
 
@@ -108,6 +111,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(libs.pdfkmp)
+            implementation(libs.pdfkmp.compose.resources) // optional
         }
     }
 }
@@ -121,6 +125,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation("io.github.conamobiledev:pdfkmp:0.2.0-alpha01")
+            implementation("io.github.conamobiledev:pdfkmp-compose-resources:0.2.0-alpha01") // optional
         }
     }
 }
@@ -145,26 +150,6 @@ dependencies {
     implementation("io.github.conamobiledev:pdfkmp-android:0.2.0-alpha01")
 }
 ```
-
-### Optional — Compose Multiplatform Resources integration
-
-If your project already uses Compose Multiplatform Resources (`Res.drawable.*`), add the companion module so you can drop typed resource references straight into the PdfKmp DSL. Skip this dependency entirely if you don't use Compose Resources — the core artifact above stays Compose-free.
-
-With a version catalog:
-
-```kotlin
-// build.gradle.kts (add next to the core artifact)
-implementation(libs.pdfkmp.compose.resources)
-```
-
-Without a version catalog:
-
-```kotlin
-// build.gradle.kts (add next to the core artifact)
-implementation("io.github.conamobiledev:pdfkmp-compose-resources:0.2.0-alpha01")
-```
-
-Full usage in the [Compose Multiplatform Resources](#compose-multiplatform-resources) section below.
 
 ### Requirements
 
