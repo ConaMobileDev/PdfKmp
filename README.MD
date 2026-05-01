@@ -84,26 +84,23 @@ dependencyResolutionManagement {
 }
 ```
 
-Pick whichever dependency style your project already uses. The `libs.versions.toml` form is recommended for new projects — it keeps the version in one place across modules.
+Pick the section that matches your project. The two paths are mutually exclusive — KMP projects depend on `pdfkmp` only (Gradle resolves the right platform variant automatically, **including for Android targets**), while plain Android projects depend on `pdfkmp-android` instead. Inside each path, use whichever dependency style your project already uses; the `libs.versions.toml` form is recommended for new projects.
 
-### Version catalog (`gradle/libs.versions.toml`)
+### Kotlin Multiplatform project
+
+Depend on `pdfkmp` from `commonMain`. Do **not** add `pdfkmp-android` separately — Gradle picks the Android variant of `pdfkmp` for your Android target on its own.
+
+With a version catalog:
 
 ```toml
+# gradle/libs.versions.toml
 [versions]
 pdfkmp = "0.2.0-alpha01"
 
 [libraries]
 pdfkmp = { module = "io.github.conamobiledev:pdfkmp", version.ref = "pdfkmp" }
 pdfkmp-compose-resources = { module = "io.github.conamobiledev:pdfkmp-compose-resources", version.ref = "pdfkmp" } # optional
-
-pdfkmp-android = { module = "io.github.conamobiledev:pdfkmp-android", version.ref = "pdfkmp" }
 ```
-
-`pdfkmp-compose-resources` is **optional** — add it only if your project uses Compose Multiplatform Resources (`Res.drawable.*`) and you want typed resource references inside the PdfKmp DSL. The core `pdfkmp` artifact itself stays Compose-free. Full usage in the [Compose Multiplatform Resources](#compose-multiplatform-resources) section below.
-
-### Kotlin Multiplatform project
-
-With a version catalog:
 
 ```kotlin
 // build.gradle.kts
@@ -131,9 +128,22 @@ kotlin {
 }
 ```
 
+`pdfkmp-compose-resources` is **optional** — add it only if your project uses Compose Multiplatform Resources (`Res.drawable.*`) and you want typed resource references inside the PdfKmp DSL. The core `pdfkmp` artifact itself stays Compose-free. Full usage in the [Compose Multiplatform Resources](#compose-multiplatform-resources) section below.
+
 ### Android-only project
 
+For projects that don't use Kotlin Multiplatform (plain `com.android.application` or `com.android.library`), depend on `pdfkmp-android`. KMP consumers should use the section above instead — they should not add this artifact.
+
 With a version catalog:
+
+```toml
+# gradle/libs.versions.toml
+[versions]
+pdfkmp = "0.2.0-alpha01"
+
+[libraries]
+pdfkmp-android = { module = "io.github.conamobiledev:pdfkmp-android", version.ref = "pdfkmp" }
+```
 
 ```kotlin
 // app/build.gradle.kts
