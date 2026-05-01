@@ -38,6 +38,7 @@ Every DSL node funnels into these system PDF APIs, so the resulting bytes are re
 ## Table of contents
 
 - [Installation](#installation)
+  - [Optional — Compose Multiplatform Resources integration](#optional--compose-multiplatform-resources-integration)
   - [R8 / ProGuard](#r8--proguard)
 - [Hello world](#hello-world)
 - [Document & pages](#document--pages)
@@ -102,6 +103,17 @@ dependencies {
 }
 ```
 
+### Optional — Compose Multiplatform Resources integration
+
+If your project already uses Compose Multiplatform Resources (`Res.drawable.*`), add the companion module so you can drop typed resource references straight into the PdfKmp DSL. Skip this dependency entirely if you don't use Compose Resources — the core artifact above stays Compose-free.
+
+```kotlin
+// build.gradle.kts (add next to the core artifact)
+implementation("io.github.conamobiledev:pdfkmp-compose-resources:0.1.0-alpha02")
+```
+
+Full usage in the [Compose Multiplatform Resources](#compose-multiplatform-resources) section below.
+
 ### iOS / Swift consumer
 
 The Xcode project consumes the framework via a Gradle build phase that calls
@@ -140,6 +152,9 @@ import com.conamobile.pdfkmp.style.PdfColor
 import com.conamobile.pdfkmp.unit.sp
 
 // 1. Build the document
+//    Use `pdf { }` for a synchronous build, or `pdfAsync { }` (suspend) when
+//    the tree contains typed `Res.drawable.*` references — see Compose
+//    Multiplatform Resources below.
 val document = pdf {
     metadata { title = "Hello, PdfKmp" }
     page {
@@ -696,7 +711,7 @@ import myapp.generated.resources.cover_photo
 
 // `suspend` because pdfAsync awaits the resource preflight pass.
 // The DSL block itself — page { ... }, row { ... } — stays synchronous.
-suspend fun report(): PdfDocument = pdfAsync {
+suspend fun buildReport(): PdfDocument = pdfAsync {
     metadata { title = "Quarterly Report" }
     page {
         // `drawable` accepts both vector XML and raster bytes.

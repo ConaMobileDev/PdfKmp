@@ -2,6 +2,7 @@ package com.conamobile.pdfkmp.sample
 
 import com.conamobile.pdfkmp.PdfDocument
 import com.conamobile.pdfkmp.composeresources.drawable
+import com.conamobile.pdfkmp.composeresources.vector
 import com.conamobile.pdfkmp.pdfAsync
 import com.conamobile.pdfkmp.style.PdfColor
 import com.conamobile.pdfkmp.unit.dp
