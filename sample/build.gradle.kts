@@ -1,7 +1,50 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     alias(libs.plugins.androidApplication)
+    alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.compose.compiler)
+}
+
+kotlin {
+    jvmToolchain(17)
+
+    androidTarget {
+        compilations.configureEach {
+            compileTaskProvider.configure {
+                compilerOptions {
+                    jvmTarget.set(JvmTarget.JVM_17)
+                }
+            }
+        }
+    }
+
+    sourceSets {
+        commonMain.dependencies {
+            implementation(project(":pdfkmp"))
+            implementation(project(":pdfkmp-compose-resources"))
+
+            implementation(libs.coroutines.core)
+        }
+
+        androidMain.dependencies {
+            implementation(libs.androidx.activityCompose)
+
+            implementation(libs.compose.runtime)
+            implementation(libs.compose.foundation)
+            implementation(libs.compose.material3)
+            implementation(libs.compose.ui)
+
+            implementation(libs.coroutines.android)
+        }
+    }
+}
+
+compose.resources {
+    publicResClass = false
+    packageOfResClass = "com.conamobile.pdfkmp.sample.generated.resources"
+    generateResClass = always
 }
 
 android {
@@ -30,16 +73,5 @@ android {
 }
 
 dependencies {
-    implementation(project(":pdfkmp"))
-
-    implementation(libs.androidx.activityCompose)
-
-    implementation(libs.compose.runtime)
-    implementation(libs.compose.foundation)
-    implementation(libs.compose.material3)
-    implementation(libs.compose.ui)
-
-    implementation(libs.coroutines.android)
-
     debugImplementation(libs.compose.ui.tooling)
 }

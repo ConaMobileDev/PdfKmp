@@ -42,3 +42,32 @@ public suspend fun DrawableResource.toBytes(): ByteArray =
  */
 public suspend fun DrawableResource.toVectorImage(): VectorImage =
     VectorImage.parse(toBytes().decodeToString())
+
+/**
+ * Loads a Compose Multiplatform [DrawableResource] without caring whether
+ * it's XML (parsed into a [VectorImage]) or a raster bitmap (kept as raw
+ * bytes). The leading bytes of the file are inspected — anything that
+ * looks like XML is parsed as a vector, everything else is returned as a
+ * [PdfDrawable.Raster].
+ *
+ * Pair this with the `drawable(...)` DSL extension to render a resource
+ * regardless of its underlying format:
+ *
+ * ```kotlin
+ * val any = Res.drawable.icon_or_photo.toPdfDrawable()
+ * pdf {
+ *     page { drawable(any, width = 64.dp) }
+ * }
+ * ```
+ *
+ * Falls back to the [toBytes] / [toVectorImage] path when the call site
+ * already knows which variant to expect.
+ */
+public suspend fun DrawableResource.toPdfDrawable(): PdfDrawable {
+    val bytes = toBytes()
+    return if (bytes.looksLikeXml()) {
+        PdfDrawable.Vector(VectorImage.parse(bytes.decodeToString()))
+    } else {
+        PdfDrawable.Raster(bytes)
+    }
+}
