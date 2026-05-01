@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <!--
+          AndroidX App Startup initializer that captures the application
+          Context so the renderer (which runs in a coroutine, not a
+          Composable) can resolve the cache directory without the caller
+          having to wire anything up by hand. The authority must match
+          the canonical androidx.startup authority so this contribution
+          merges with the provider declaration that the consumer app's
+          merged manifest already carries.
+        -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="com.conamobile.pdfkmp.viewer.internal.ViewerContextInitializer"
+                android:value="androidx.startup" />
+        </provider>
+
+        <!--
+          Per-app FileProvider used by the built-in share sheet of the
+          PdfViewer composable. The authority is suffixed with the
+          consumer app's package name so two apps that both depend on
+          `pdfkmp-viewer` cannot collide. The path mapping lives in
+          res/xml/pdfkmp_viewer_file_paths.xml.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.pdfkmp.viewer.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true"
+            tools:replace="android:authorities">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/pdfkmp_viewer_file_paths" />
+        </provider>
+    </application>
+</manifest>
