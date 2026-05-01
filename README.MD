@@ -126,7 +126,7 @@ The library follows [semver](https://semver.org). Pre-1.0 releases (`0.x.y`) may
 
 ### R8 / ProGuard
 
-Use R8 if you want — PdfKmp doesn't care. The library uses zero reflection, no `ServiceLoader`, no JNI, and no annotation-driven code generation, so it ships no `consumerProguardFiles` and needs no keep rules in your `proguard-rules.pro`. Toggle `isMinifyEnabled` in your app's release buildType to whatever you prefer; R8 fully shrinks and obfuscates everything PdfKmp imports without breaking anything. Any missing-class warning in your release build is coming from another dependency, not from PdfKmp.
+R8 is fully supported — no additional keep rules required.
 
 ---
 
