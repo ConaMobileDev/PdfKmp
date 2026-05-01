@@ -22,47 +22,36 @@ import platform.posix.memcpy
 import kotlin.math.max
 
 /**
- * iOS implementation that walks the PDF with PDFKit. Each page is
- * rasterised through [platform.PDFKit.PDFPage.thumbnailOfSize] —
- * PDFKit takes care of the coordinate flip and DPI scaling internally
- * and returns a ready-to-use [platform.UIKit.UIImage]. The image is
- * re-encoded to PNG and decoded by Skia so the resulting [ImageBitmap]
- * is the same type the Android backend produces.
+ * iOS implementation of [PdfPageRenderer]. PDFKit's `PDFDocument`
+ * holds the parsed page tree and is naturally thread-safe for
+ * read-only access, so [renderPage] does not need its own mutex.
  *
- * The PNG round-trip is the cheapest way to get a Compose-compatible
- * [ImageBitmap] out of a UIImage in Kotlin/Native — Compose
- * Multiplatform's iOS image pipeline goes through Skia for decode, so
- * any other path would still end up encoding to a known format first.
+ * Each render goes `PDFKit.thumbnailOfSize → UIImage → PNG → Skia`,
+ * the same path used by the previous one-shot renderer — Compose
+ * Multiplatform's iOS bridge decodes PNG straight into the
+ * [ImageBitmap] type used by Android.
  *
- * The vector quality of the source document is preserved — PDFKit
- * consumes the PDF's path geometry and produces pixels at the requested
- * density, so retina-sharpness on a 3x device is one `density = 3f`
- * argument away. The encoded `%PDF-…` bytes that flow into the share
- * sheet are byte-for-byte identical to what came in.
+ * `close()` is a no-op because Kotlin/Native ARC releases
+ * `PDFDocument` automatically when the handle drops out of scope.
  */
-internal actual suspend fun renderPdfPages(
-    bytes: ByteArray,
-    density: Float,
-): List<ImageBitmap> = withContext(Dispatchers.Default) {
-    if (bytes.isEmpty()) return@withContext emptyList()
-    val safeDensity = max(density, 0.5f).toDouble()
+internal actual class PdfPageRenderer private constructor(
+    private val document: PDFDocument,
+) {
 
-    val nsData: NSData = bytes.usePinned { pinned ->
-        NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong())
+    actual val pageCount: Int = document.pageCount.toInt()
+
+    actual val pageSizes: List<PageSize> = (0 until pageCount).mapNotNull { i ->
+        document.pageAtIndex(i.toULong())?.let { page ->
+            page.boundsForBox(kPDFDisplayBoxMediaBox).useContents {
+                PageSize(size.width.toFloat(), size.height.toFloat())
+            }
+        }
     }
 
-    // Kotlin/Native's PDFKit binding currently exposes PDFDocument(data:)
-    // as a non-null initializer even though the Objective-C side returns
-    // nil for malformed payloads. The cheapest portable safety net is to
-    // guard `pageCount` — a freshly-allocated empty document still
-    // reports zero pages, so we exit early instead of risking a render.
-    val document = PDFDocument(data = nsData)
-    val pageCount = document.pageCount.toInt()
-    if (pageCount == 0) return@withContext emptyList()
-    val pages = ArrayList<ImageBitmap>(pageCount)
-
-    for (i in 0 until pageCount) {
-        val page = document.pageAtIndex(i.toULong()) ?: continue
+    actual suspend fun renderPage(index: Int, density: Float): ImageBitmap? = withContext(Dispatchers.Default) {
+        if (index !in 0 until pageCount) return@withContext null
+        val page = document.pageAtIndex(index.toULong()) ?: return@withContext null
+        val safeDensity = max(density, 0.5f).toDouble()
         val (pointWidth, pointHeight) = page.boundsForBox(kPDFDisplayBoxMediaBox).useContents {
             size.width to size.height
         }
@@ -71,12 +60,33 @@ internal actual suspend fun renderPdfPages(
             height = pointHeight * safeDensity,
         )
         val image = page.thumbnailOfSize(pixelSize, forBox = kPDFDisplayBoxMediaBox)
-        val pngData = UIImagePNGRepresentation(image) ?: continue
-        val pngBytes = pngData.toByteArray()
-        pages += SkiaImage.makeFromEncoded(pngBytes).toComposeImageBitmap()
+        val pngData = UIImagePNGRepresentation(image) ?: return@withContext null
+        SkiaImage.makeFromEncoded(pngData.toByteArray()).toComposeImageBitmap()
     }
-    pages
+
+    actual fun close() {
+        // PDFDocument is reference-counted by the Kotlin/Native ARC
+        // bridge; dropping the handle releases the underlying memory.
+    }
+
+    internal companion object {
+        suspend fun open(bytes: ByteArray): PdfPageRenderer? = withContext(Dispatchers.Default) {
+            if (bytes.isEmpty()) return@withContext null
+            val nsData: NSData = bytes.usePinned { pinned ->
+                NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong())
+            }
+            // Kotlin/Native exposes `PDFDocument(data:)` as non-null even
+            // though the Objective-C initializer is failable. Guarding on
+            // pageCount catches a "successfully" returned but malformed
+            // document — a freshly-allocated empty document reports 0.
+            val document = PDFDocument(data = nsData)
+            if (document.pageCount.toInt() == 0) null else PdfPageRenderer(document)
+        }
+    }
 }
+
+internal actual suspend fun openPdfRenderer(bytes: ByteArray): PdfPageRenderer? =
+    PdfPageRenderer.open(bytes)
 
 /** Copies an [NSData] payload into a Kotlin [ByteArray]. */
 private fun NSData.toByteArray(): ByteArray {

@@ -3,35 +3,52 @@ package com.conamobile.pdfkmp.viewer
 import androidx.compose.ui.graphics.ImageBitmap
 
 /**
- * Vector-rasterises every page of an encoded PDF to an [ImageBitmap]
- * using the host platform's PDF rendering pipeline.
+ * Stateful handle around an opened PDF document. The viewer creates one
+ * per [PdfSource] inside a [androidx.compose.runtime.DisposableEffect]
+ * and routes per-page render requests through it so each
+ * [androidx.compose.foundation.lazy.LazyColumn] item only allocates the
+ * bitmap it actually needs to draw.
  *
- * The library never asks the platform to embed a pre-rasterised bitmap —
- * the rasterisation that happens here is purely a *display* step driven
- * by the fact that Compose draws bitmaps, not vector PDF. The encoded
- * PDF stays vector and stays sharp at any zoom level — the bytes that
- * reach the share sheet are exactly what the document author produced.
+ * Eager full-document rasterisation (the previous shape of this API)
+ * works for two-page invoices but quickly turns into hundreds of MB of
+ * heap pressure on real-world documents. Lazy per-page rendering is
+ * what makes the viewer usable for catalogues, manuals, and books.
  *
- * **Android** — `android.graphics.pdf.PdfRenderer` opens the file
- * descriptor and renders each page into an `ARGB_8888` bitmap with the
- * `RENDER_MODE_FOR_DISPLAY` mode. Pages are scaled by [density] so a
- * screen-sized preview retains crisp edges on retina displays.
- *
- * **iOS** — `CoreGraphics.CGPDFDocument` opens the document; each page
- * is drawn into a `CGBitmapContext` via `CGContextDrawPDFPage`, then
- * wrapped as an `ImageBitmap` via `Skia.Image.makeFromEncoded(...)`
- * (after re-encoding to PNG for cross-cutting compatibility with
- * Compose Multiplatform's iOS image bridge).
- *
- * @param bytes encoded PDF bytes (the `%PDF-…` payload).
- * @param density multiplicative scaling factor applied to each page's
- *   intrinsic point size before rasterisation. `2f` doubles the pixel
- *   density (good default for retina screens); pass `3f` for extra
- *   sharpness when the viewer fills a large surface.
- * @return one [ImageBitmap] per page, in document order. Empty when
- *   [bytes] is not a parseable PDF.
+ * The encoded `%PDF-…` bytes the share sheet hands out are unaffected
+ * — rasterisation only ever happens to fill the on-screen preview.
  */
-internal expect suspend fun renderPdfPages(
-    bytes: ByteArray,
-    density: Float,
-): List<ImageBitmap>
+internal expect class PdfPageRenderer {
+
+    /** Total number of pages in the document. */
+    val pageCount: Int
+
+    /**
+     * Intrinsic dimensions for every page, in PDF points. Pre-computed
+     * at open time so the viewer can reserve correctly-sized
+     * placeholders before any bitmap exists — this keeps `LazyColumn`
+     * scrolling smooth as pages stream in.
+     */
+    val pageSizes: List<PageSize>
+
+    /**
+     * Rasterises [index] into an [ImageBitmap] scaled by [density].
+     * Returns `null` when the page cannot be rendered (corrupt input,
+     * out-of-range index, etc.).
+     *
+     * Implementations must be safe to call concurrently from multiple
+     * coroutines — the Android backend serialises through a [Mutex]
+     * because [android.graphics.pdf.PdfRenderer] only allows one open
+     * page at a time; the iOS PDFKit backend is naturally re-entrant.
+     */
+    suspend fun renderPage(index: Int, density: Float): ImageBitmap?
+
+    /** Releases the underlying file descriptor / native handle. */
+    fun close()
+}
+
+/**
+ * Opens an in-memory PDF for lazy per-page rendering. Returns `null`
+ * when [bytes] is empty or the platform decoder rejects the payload —
+ * the viewer surfaces an error UI when this happens.
+ */
+internal expect suspend fun openPdfRenderer(bytes: ByteArray): PdfPageRenderer?
