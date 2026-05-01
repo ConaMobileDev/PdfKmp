@@ -35,4 +35,5 @@ dependencyResolutionManagement {
 
 include(":pdfkmp")
 include(":pdfkmp-compose-resources")
+include(":pdfkmp-viewer")
 include(":sample")

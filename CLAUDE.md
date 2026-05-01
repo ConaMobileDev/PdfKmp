@@ -37,9 +37,9 @@ Every text glyph and shape is emitted as a vector path — no rasterisation. Out
 ./gradlew :sample:installDebug                     # Android, on connected device
 # iOS sample: open iosApp/iosApp.xcodeproj in Xcode and Run
 
-# Publishing — both publishable modules ship together; release them in lock-step
-./gradlew :pdfkmp:publishToMavenLocal :pdfkmp-compose-resources:publishToMavenLocal              # local install
-./gradlew :pdfkmp:publishAndReleaseToMavenCentral :pdfkmp-compose-resources:publishAndReleaseToMavenCentral  # Maven Central (requires signing creds)
+# Publishing — all three publishable modules ship together; release them in lock-step
+./gradlew :pdfkmp:publishToMavenLocal :pdfkmp-compose-resources:publishToMavenLocal :pdfkmp-viewer:publishToMavenLocal              # local install
+./gradlew :pdfkmp:publishAndReleaseToMavenCentral :pdfkmp-compose-resources:publishAndReleaseToMavenCentral :pdfkmp-viewer:publishAndReleaseToMavenCentral  # Maven Central (requires signing creds)
 ```
 
 JDK 21 recommended (`export JAVA_HOME=$(/usr/libexec/java_home -v 21)` on macOS).
@@ -48,7 +48,8 @@ JDK 21 recommended (`export JAVA_HOME=$(/usr/libexec/java_home -v 21)` on macOS)
 
 - `:pdfkmp` — KMP library, Android (`aar`) + iOS framework `PdfKmp` (static, baseName `PdfKmp`). Publishable. Compose-free.
 - `:pdfkmp-compose-resources` — opt-in KMP integration that maps Compose Multiplatform `DrawableResource` references onto the core PdfKmp DSL (`toVectorImage()`, `toBytes()`). Depends on `:pdfkmp` + `org.jetbrains.compose.components:components-resources`. Publishable as a separate artifact (`io.github.conamobiledev:pdfkmp-compose-resources`).
-- `:sample` — Compose Android sample app, structured as a **single-target KMP module** (`androidTarget()` only) so Compose Multiplatform Resources can be loaded from `commonMain/composeResources/`. The Activity and other Android-specific code live in `src/androidMain/kotlin/`, the resource-driven demo lives in `src/commonMain/kotlin/`. Depends on `:pdfkmp` and `:pdfkmp-compose-resources`. Requires the `android.newDsl=false` + `android.builtInKotlin=false` shims in root `gradle.properties` for AGP 9 compatibility — see the comment in that file.
+- `:pdfkmp-viewer` — opt-in Compose Multiplatform `PdfViewer` composable that renders any PdfKmp document on Android (`PdfRenderer`) and iOS (`PDFKit.PDFDocument` + `thumbnailOfSize`) and surfaces an optional share sheet (`Intent.ACTION_SEND` via `FileProvider` on Android, `UIActivityViewController` on iOS). Depends on `:pdfkmp` + Compose Multiplatform runtime/foundation/ui/material3. Android resources are turned on via `androidResources { enable = true }` in the KMP library DSL because the FileProvider needs `res/xml/pdfkmp_viewer_file_paths.xml`. Publishable as `io.github.conamobiledev:pdfkmp-viewer`.
+- `:sample` — Compose Android sample app, structured as a **single-target KMP module** (`androidTarget()` only) so Compose Multiplatform Resources can be loaded from `commonMain/composeResources/`. The Activity and other Android-specific code live in `src/androidMain/kotlin/`, the resource-driven demo lives in `src/commonMain/kotlin/`. Depends on `:pdfkmp`, `:pdfkmp-compose-resources`, and `:pdfkmp-viewer`. Requires the `android.newDsl=false` + `android.builtInKotlin=false` shims in root `gradle.properties` for AGP 9 compatibility — see the comment in that file.
 - `iosApp/` — SwiftUI / PDFKit sample app. Build phase calls `:pdfkmp:embedAndSignAppleFrameworkForXcode`.
 
 ## Where things live in the library
@@ -99,17 +100,17 @@ The pure-common surface uses `FakePdfDriver` so layout and rendering decisions c
 
 ## Publishing checklist
 
-Both `:pdfkmp` and `:pdfkmp-compose-resources` share the same `VERSION_NAME` in root `gradle.properties` and are released together — never ship one without the other, otherwise consumers pulling the companion artifact will get a version mismatch against the core. The runtime [`PdfKmp.VERSION`][version] constant is generated from `VERSION_NAME` by the `generatePdfKmpVersion` Gradle task, so a release bump only requires editing `gradle.properties` once.
+All three publishable modules — `:pdfkmp`, `:pdfkmp-compose-resources`, `:pdfkmp-viewer` — share the same `VERSION_NAME` in root `gradle.properties` and are released together. Never ship one without the others, otherwise consumers pulling a companion artifact will get a version mismatch against the core. The runtime [`PdfKmp.VERSION`][version] constant is generated from `VERSION_NAME` by the `generatePdfKmpVersion` Gradle task, so a release bump only requires editing `gradle.properties` once.
 
 [version]: pdfkmp/src/commonMain/kotlin/com/conamobile/pdfkmp/Pdf.kt
 
 When cutting a release:
 
 1. Update `VERSION_NAME` in `gradle.properties` (drop `-SNAPSHOT`, e.g. `0.2.0` or `0.2.0-alpha01`).
-2. Run `./gradlew :pdfkmp:iosSimulatorArm64Test` and `./gradlew :pdfkmp:assemble :pdfkmp-compose-resources:assemble` locally.
+2. Run `./gradlew :pdfkmp:iosSimulatorArm64Test :pdfkmp-viewer:iosSimulatorArm64Test` and `./gradlew :pdfkmp:assemble :pdfkmp-compose-resources:assemble :pdfkmp-viewer:assemble` locally.
 3. `git tag v0.2.0 && git push --tags` (or use GitHub Releases UI).
-4. Maven Central publish: `./gradlew :pdfkmp:publishAndReleaseToMavenCentral :pdfkmp-compose-resources:publishAndReleaseToMavenCentral --no-configuration-cache` (or trigger the GitHub Actions `publish.yml` workflow by publishing a Release — it ships both modules in one run).
-5. Verify both artifacts landed: `https://repo1.maven.org/maven2/io/github/conamobiledev/pdfkmp/<version>/` and `.../pdfkmp-compose-resources/<version>/` should both return 200.
+4. Maven Central publish: `./gradlew :pdfkmp:publishAndReleaseToMavenCentral :pdfkmp-compose-resources:publishAndReleaseToMavenCentral :pdfkmp-viewer:publishAndReleaseToMavenCentral --no-configuration-cache` (or trigger the GitHub Actions `publish.yml` workflow by publishing a Release — it ships all three modules in one run).
+5. Verify all three artifacts landed: `https://repo1.maven.org/maven2/io/github/conamobiledev/pdfkmp/<version>/`, `.../pdfkmp-compose-resources/<version>/`, and `.../pdfkmp-viewer/<version>/` should all return 200.
 6. Bump `VERSION_NAME` to the next `-SNAPSHOT` (e.g. `0.3.0-SNAPSHOT`) and commit.
 
 Versions follow [semver](https://semver.org). Pre-1.0 minor versions may break API; alpha tags (`-alpha0N`) signal an actively settling surface.
