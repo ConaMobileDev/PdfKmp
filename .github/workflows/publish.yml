@@ -35,4 +35,7 @@ jobs:
           ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
-          ./gradlew :pdfkmp:publishAndReleaseToMavenCentral --no-configuration-cache --stacktrace
+          ./gradlew \
+            :pdfkmp:publishAndReleaseToMavenCentral \
+            :pdfkmp-compose-resources:publishAndReleaseToMavenCentral \
+            --no-configuration-cache --stacktrace

@@ -19,8 +19,30 @@ The library bundles the **Inter** font for Latin text. Non-Latin scripts (CJK, A
 - User wants vector output that prints / zooms cleanly.
 - User wants type-safe document construction (DSL with explicit constraints) instead of imperative Canvas drawing.
 - User is already in a Compose/SwiftUI mental model and wants similar primitives.
+- User has Compose Multiplatform `Res.drawable.*` assets and wants to embed them in a PDF without a manual byte-loading dance — pair the core `pdfkmp` artifact with `pdfkmp-compose-resources` (see below).
 
 Not a fit for: parsing/editing existing PDFs, OCR, form filling, complex typography (RTL bidi, ligature shaping, hyphenation are minimal in v1).
+
+## Companion artifact: `pdfkmp-compose-resources`
+
+Opt-in KMP integration that bridges Compose Multiplatform `DrawableResource` references onto the core PdfKmp DSL. Add it alongside the core dependency only if the consumer project uses Compose Multiplatform Resources:
+
+```kotlin
+implementation("io.github.conamobiledev:pdfkmp:<version>")
+implementation("io.github.conamobiledev:pdfkmp-compose-resources:<version>")
+```
+
+It exposes:
+
+| Helper | Purpose |
+|---|---|
+| `DrawableResource.toBytes()` (`suspend`) | Raw bytes — feed to `image(bytes = …)` for raster, or to your own decoder. |
+| `DrawableResource.toVectorImage()` (`suspend`) | Parse `<vector>` / `<svg>` XML into a reusable `VectorImage`. |
+| `DrawableResource.toPdfDrawable()` (`suspend`) | Auto-detects vector vs raster from leading bytes, returns a `PdfDrawable`. |
+| `drawable(resource = Res.drawable.x, …)` | Inline DSL extension on `ContainerScope`. Auto-detects format. **Requires `pdfAsync { }` — not `pdf { }`.** |
+| `vector(resource = Res.drawable.x, …)` | Inline DSL extension when the asset is known XML. **Requires `pdfAsync { }`.** |
+| `image(resource = Res.drawable.x, …)` | Inline DSL extension when the asset is known raster. **Requires `pdfAsync { }`.** |
+| `drawable(drawable = pdfDrawable, …)` | Eager DSL extension that takes an already-loaded `PdfDrawable`. Works inside synchronous `pdf { }`. |
 
 ## Mental model — the DSL is a tree
 
@@ -188,6 +210,44 @@ pdf {
 }
 ```
 
+### 7. Compose Multiplatform `DrawableResource` inline (auto-detect)
+
+Requires the `io.github.conamobiledev:pdfkmp-compose-resources` artifact. Inline overloads run inside `pdfAsync { }`, which has a suspend preflight pass that loads the bytes before layout — the call site stays non-`suspend`:
+
+```kotlin
+import com.conamobile.pdfkmp.composeresources.drawable
+import com.conamobile.pdfkmp.composeresources.toPdfDrawable
+import com.conamobile.pdfkmp.pdfAsync
+import myproject.composeapp.generated.resources.Res
+import myproject.composeapp.generated.resources.logo
+import myproject.composeapp.generated.resources.hero_photo
+
+val pdf = pdfAsync {
+    page {
+        // Auto-detects XML vs raster at preflight time.
+        drawable(Res.drawable.logo, width = 64.dp, tint = PdfColor.Black)
+        drawable(Res.drawable.hero_photo, width = 460.dp, height = 180.dp)
+    }
+}
+```
+
+Eager variant — load once outside the DSL, draw many times inside synchronous `pdf { }`:
+
+```kotlin
+suspend fun buildReport(): PdfDocument {
+    val icon = Res.drawable.logo.toPdfDrawable()        // suspend
+    return pdf {
+        page {
+            drawable(icon, width = 24.dp)               // synchronous
+            // …
+            drawable(icon, width = 24.dp)               // re-use, no re-parse
+        }
+    }
+}
+```
+
+For vector-only or raster-only call sites, use the typed `vector(resource = …)` / `image(resource = …)` overloads instead — same preflight model, but the format is fixed at the call site.
+
 ## Common pitfalls
 
 - **Do not import classes by their fully-qualified name inline.** The repo style requires `import com.conamobile.pdfkmp.style.PdfColor` then short usage. (See CLAUDE.md.)
@@ -202,6 +262,7 @@ pdf {
 - **Watermark renders behind the body**, not in front. To put a "DRAFT" stamp visible above content, draw it at the end of the body or use `box` with a top child.
 - **Container backgrounds with corners**: pass `cornerRadius` for uniform; `cornerRadiusEach` for asymmetric. Do not pass both — `cornerRadiusEach` wins.
 - **Border per-side**: pass `borderEach: BorderSides`. Each side is independent — leave any `null` to skip.
+- **Compose Resources inline overloads need `pdfAsync { }`.** The synchronous `pdf { }` entry point has no suspend preflight pass and throws when it encounters a deferred `DrawableResource` node. Either switch to `pdfAsync { }`, or load the resource into a `PdfDrawable` outside and pass it to the eager `drawable(drawable = …)` overload.
 
 ## Where to find more
 
@@ -209,6 +270,7 @@ pdf {
 - `pdfkmp/src/commonMain/kotlin/com/conamobile/pdfkmp/samples/Samples.kt` — every feature exercised end-to-end.
 - `:sample` (Android) and `iosApp/` (iOS) sample apps render every `Samples.*` function.
 - `pdfkmp/src/commonMain/kotlin/com/conamobile/pdfkmp/dsl/ContainerScope.kt` — full list of DSL functions on `column { … }` / `row { … }` / `box { … }`.
+- `pdfkmp-compose-resources/src/commonMain/kotlin/com/conamobile/pdfkmp/composeresources/` — DSL extensions and `DrawableResource` helpers shipped by the companion artifact.
 
 ## Powered by Claude
 
