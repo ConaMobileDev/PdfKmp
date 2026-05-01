@@ -6,6 +6,8 @@ import com.conamobile.pdfkmp.node.resolveDeferred
 import com.conamobile.pdfkmp.render.DocumentRenderer
 import com.conamobile.pdfkmp.render.PdfDriverFactory
 import com.conamobile.pdfkmp.style.PdfFont
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Returns the platform's default [PdfDriverFactory].
@@ -67,6 +69,13 @@ public fun pdf(
  * extension functions enqueue a `LazyNode` whose suspend resolver is
  * awaited here, before the layout engine ever sees the tree.
  *
+ * The whole pipeline — DSL evaluation, preflight, layout, rendering, and
+ * encoding — runs on [Dispatchers.Default], so calling this from the main
+ * thread does not block UI. Callers that need a different dispatcher (a
+ * single-threaded test scope, an existing background pool) can wrap the
+ * call in their own `withContext(...)` — the inner `withContext` switch
+ * to `Default` is a no-op when the outer context is already `Default`.
+ *
  * Calling the synchronous [pdf] with deferred nodes throws at render
  * time — the error message points back to this entry point.
  *
@@ -87,7 +96,7 @@ public fun pdf(
 public suspend fun pdfAsync(
     factory: PdfDriverFactory = defaultPdfDriverFactory(),
     block: DocumentScope.() -> Unit,
-): PdfDocument {
+): PdfDocument = withContext(Dispatchers.Default) {
     val scope = DocumentScope().apply(block)
     val rawSpec = scope.build()
     val resolvedSpec = rawSpec.resolveDeferred()
@@ -102,7 +111,7 @@ public suspend fun pdfAsync(
     val finalSpec = resolvedSpec.copy(customFonts = refreshedFonts.toList())
     val driver = factory.create(finalSpec.metadata, finalSpec.customFonts)
     val bytes = DocumentRenderer.render(finalSpec, driver)
-    return PdfDocument(bytes)
+    PdfDocument(bytes)
 }
 
 /**
