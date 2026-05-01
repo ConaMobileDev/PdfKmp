@@ -105,7 +105,11 @@ public suspend fun pdfAsync(
     return PdfDocument(bytes)
 }
 
-/** Library version. Bumped on each public release. */
+/**
+ * Library version. The string is generated at build time from the
+ * `VERSION_NAME` Gradle property in the root `gradle.properties`, so a
+ * release bump cannot drift from what consumers see at runtime.
+ */
 public object PdfKmp {
-    public const val VERSION: String = "0.1.0-SNAPSHOT"
+    public val VERSION: String get() = PDFKMP_VERSION_NAME
 }

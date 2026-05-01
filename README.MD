@@ -88,7 +88,7 @@ dependencyResolutionManagement {
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("io.github.conamobiledev:pdfkmp:0.1.0-alpha03")
+            implementation("io.github.conamobiledev:pdfkmp:0.2.0-alpha01")
         }
     }
 }
@@ -99,7 +99,7 @@ kotlin {
 ```kotlin
 // app/build.gradle.kts
 dependencies {
-    implementation("io.github.conamobiledev:pdfkmp-android:0.1.0-alpha03")
+    implementation("io.github.conamobiledev:pdfkmp-android:0.2.0-alpha01")
 }
 ```
 
@@ -109,7 +109,7 @@ If your project already uses Compose Multiplatform Resources (`Res.drawable.*`),
 
 ```kotlin
 // build.gradle.kts (add next to the core artifact)
-implementation("io.github.conamobiledev:pdfkmp-compose-resources:0.1.0-alpha03")
+implementation("io.github.conamobiledev:pdfkmp-compose-resources:0.2.0-alpha01")
 ```
 
 Full usage in the [Compose Multiplatform Resources](#compose-multiplatform-resources) section below.
@@ -675,8 +675,8 @@ The optional `pdfkmp-compose-resources` module wires Compose Multiplatform's typ
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("io.github.conamobiledev:pdfkmp:0.1.0-alpha03")
-            implementation("io.github.conamobiledev:pdfkmp-compose-resources:0.1.0-alpha03")
+            implementation("io.github.conamobiledev:pdfkmp:0.2.0-alpha01")
+            implementation("io.github.conamobiledev:pdfkmp-compose-resources:0.2.0-alpha01")
         }
     }
 }
