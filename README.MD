@@ -57,6 +57,7 @@ Every DSL node funnels into these system PDF APIs, so the resulting bytes are re
 - [Saving the document](#saving-the-document)
 - [What to do after save — view, share, open](#what-to-do-after-save--view-share-open)
 - [Page break strategies](#page-break-strategies)
+- [Bundled samples](#bundled-samples)
 - [Sample apps](#sample-apps)
 - [Contributing](#contributing)
 - [License](#license)
@@ -680,7 +681,9 @@ Custom fonts referenced anywhere in the document are picked up automatically —
 
 ## Compose Multiplatform Resources
 
-The optional `pdfkmp-compose-resources` artifact lets you feed a typed `Res.drawable.*` reference straight into the DSL — no string paths, no manual byte decoding, no `VectorImage.parse(...)` boilerplate. Add it next to the core dependency:
+The optional `pdfkmp-compose-resources` module wires Compose Multiplatform's typed `Res.drawable.*` accessors into the PdfKmp DSL. You point at a resource by reference — no string paths, no manual byte decoding, no `VectorImage.parse(...)` boilerplate, no `runBlocking`. The companion `pdfAsync { ... }` builder runs a one-shot suspend preflight before layout; inside the block the DSL stays fully synchronous and reads exactly like the eager `pdf { ... }` API.
+
+### Install
 
 ```kotlin
 // build.gradle.kts
@@ -694,35 +697,70 @@ kotlin {
 }
 ```
 
-Two suspend extensions on `DrawableResource`:
+Pulls in `org.jetbrains.compose.components:components-resources` transitively. The core `:pdfkmp` artifact stays Compose-free — non-Compose consumers don't pay for it.
+
+### Inline DSL — `pdfAsync` + typed `Res.drawable.*`
+
+Place a typed `Res.drawable.*` reference exactly where you would normally call `vector(image = …)` or `image(bytes = …)`. The library auto-detects vector XML vs raster bytes from the file's leading magic bytes and dispatches to the correct rendering path:
 
 ```kotlin
-import com.conamobile.pdfkmp.composeresources.toBytes
-import com.conamobile.pdfkmp.composeresources.toVectorImage
+import com.conamobile.pdfkmp.composeresources.drawable
+import com.conamobile.pdfkmp.composeresources.image
+import com.conamobile.pdfkmp.composeresources.vector
+import com.conamobile.pdfkmp.pdfAsync
 import myapp.generated.resources.Res
-import myapp.generated.resources.icon
-import myapp.generated.resources.photo
+import myapp.generated.resources.logo
+import myapp.generated.resources.cover_photo
 
-// Anywhere a coroutine is available — ViewModel, LaunchedEffect, Swift Task { }, etc.
-suspend fun buildReport(): ByteArray {
-    val icon = Res.drawable.icon.toVectorImage()    // <vector> XML or <svg>
-    val photoBytes = Res.drawable.photo.toBytes()   // PNG / JPEG / WEBP
+// `suspend` because pdfAsync awaits the resource preflight pass.
+// The DSL block itself — page { ... }, row { ... } — stays synchronous.
+suspend fun report(): PdfDocument = pdfAsync {
+    metadata { title = "Quarterly Report" }
+    page {
+        // `drawable` accepts both vector XML and raster bytes.
+        // Auto-detect happens at preflight, before layout.
+        drawable(Res.drawable.logo, width = 64.dp, tint = PdfColor.Blue)
+        drawable(Res.drawable.cover_photo, width = 480.dp)
 
-    return pdf {
-        page {
-            row(spacing = 8.dp) {
-                vector(image = icon, width = 24.dp, tint = PdfColor.Blue)
-                text("Section heading") { bold = true }
-            }
-            image(bytes = photoBytes, width = 320.dp)
-        }
-    }.toByteArray()
+        // Or be explicit when the format is known up front:
+        vector(Res.drawable.logo, width = 24.dp, tint = PdfColor.Blue)
+        image(Res.drawable.cover_photo, width = 480.dp, contentScale = ContentScale.Fit)
+    }
 }
 ```
 
-`toVectorImage()` parses the XML once — hold on to the returned `VectorImage` and pass it to every `vector(image = …)` call site so repeated icons aren't re-parsed.
+### `pdf { }` vs `pdfAsync { }`
 
-The core `:pdfkmp` artifact stays Compose-free; only consumers who actually want this integration pay the dependency cost.
+`pdfAsync` is `pdf` with a one-shot suspend preflight pass tacked onto the front. The DSL inside is **identical** — every container scope (`page`, `column`, `row`, `box`, `card`, `table`, `richText`, `link`, …) has the same shape and same options. Only the top-level entry differs:
+
+| | `pdf { }` | `pdfAsync { }` |
+|---|---|---|
+| Function shape | non-suspend | `suspend` |
+| `drawable / vector / image (Res.drawable.X)` | throws at render time | works |
+| All other DSL features | identical | identical |
+| When to reach for it | document is built from in-memory bytes or pre-parsed `VectorImage`s | the tree contains one or more `Res.drawable.*` references |
+
+`pdf { }` is preserved verbatim — existing code keeps working with zero changes. Reach for `pdfAsync` only when you actually want the typed-resource overloads.
+
+> **Limitation.** Headers, footers, and watermarks are invoked per physical page during the render pass, after the preflight is over. They cannot hold deferred resource references — load anything async-loaded in the page body, or pre-resolve via `toVectorImage()` / `toBytes()` and pass the parsed result into the header / footer factory.
+
+### Lower-level helpers
+
+When you want the parsed bytes outside the DSL — preloading icons at app startup, sharing one `VectorImage` across many call sites, or caching by your own key — three suspend extensions hand you the raw payload:
+
+```kotlin
+import com.conamobile.pdfkmp.composeresources.toBytes
+import com.conamobile.pdfkmp.composeresources.toPdfDrawable
+import com.conamobile.pdfkmp.composeresources.toVectorImage
+
+suspend fun preload() {
+    val icon: VectorImage = Res.drawable.logo.toVectorImage()       // <vector> XML or <svg>
+    val png: ByteArray = Res.drawable.cover_photo.toBytes()         // PNG / JPEG / WEBP / HEIF
+    val auto: PdfDrawable = Res.drawable.something.toPdfDrawable()  // auto-detect (Vector | Raster)
+}
+```
+
+Hand `icon` to the eager `vector(image = icon, …)` overload from inside a synchronous `pdf { }` so each repeated call site reuses the same parsed paths instead of re-parsing the XML.
 
 ---
 
@@ -945,37 +983,7 @@ func sharePdf(savedPath: String, presenter: UIViewController) {
 
 This brings up the standard share sheet — AirDrop, Messages, Mail, "Save to Files", any installed PDF viewer.
 
-### Cross-platform Compose Multiplatform helper (recipe)
-
-If you're on **Compose Multiplatform**, expose a single `@Composable` and `expect / actual` the platform interop:
-
-```kotlin
-// commonMain
-@Composable
-expect fun PdfViewer(saved: SavedPdf, modifier: Modifier = Modifier)
-
-// androidMain
-@Composable
-actual fun PdfViewer(saved: SavedPdf, modifier: Modifier) {
-    // Compose AndroidView around PdfRenderer, see Android snippet above
-}
-
-// iosMain
-@Composable
-actual fun PdfViewer(saved: SavedPdf, modifier: Modifier) {
-    UIKitView(
-        factory = {
-            val view = PDFView()
-            view.autoScales = true
-            view.document = PDFDocument(url = NSURL.fileURLWithPath(saved.path))
-            view
-        },
-        modifier = modifier,
-    )
-}
-```
-
-> A first-class `PdfViewer` Compose Multiplatform component is on the roadmap for `0.2.0`. Until then, the `:sample` and `iosApp/` projects in this repo show working implementations you can copy verbatim.
+> On Compose Multiplatform, wrap the two snippets above in an `expect` / `actual` `@Composable PdfViewer(saved: SavedPdf)` — `AndroidView { PdfRenderer(...) }` on `androidMain`, `UIKitView { PDFView() }` on `iosMain`. A first-class `PdfViewer` component is on the `0.2.0` roadmap.
 
 ---
 
@@ -1000,14 +1008,41 @@ Set the document-wide default via `defaultPageBreakStrategy`, override per page 
 
 ---
 
+## Bundled samples
+
+[`Samples.kt`](pdfkmp/src/commonMain/kotlin/com/conamobile/pdfkmp/samples/Samples.kt) ships ready-to-render demo documents you can call straight from any consumer — handy as smoke tests, copy-paste starting points, or fixtures for golden-file comparisons. Every entry returns a `PdfDocument`; pipe it through `.toByteArray()` or `.save(...)` and you have a real PDF in seconds.
+
+| Function | What it shows |
+|---|---|
+| `Samples.brochure()` | The hero document at the top of this README — multi-page marketing layout |
+| `Samples.helloWorld()` | Minimal one-page document |
+| `Samples.typography()` | Text styling + decorations + alignment + `richText` spans |
+| `Samples.rowAndColumn()` | Layout primitives with `weighted` children |
+| `Samples.columnSpaceBetween()` | Column with `VerticalArrangement.SpaceBetween` |
+| `Samples.tableShowcase()` | Tables, bullet lists, numbered lists |
+| `Samples.vectorShowcase()` | Vector / SVG icons + circles + ellipses |
+| `Samples.vectorAdvanced()` | Gradient fills, elliptical arcs, group transforms |
+| `Samples.customDesigns(imageBytes)` | Cards with gradients, corner radii, per-side borders |
+| `Samples.pageChrome()` | Header, footer, page numbers, watermark, hyperlinks, i18n fonts |
+| `Samples.longBody()` | Page break strategy `MoveToNextPage` |
+| `Samples.slicedBody()` | Page break strategy `Slice` |
+| `Samples.customPadding()` | Per-page padding override |
+| `Samples.withImage(imageBytes)` | Raster image with `ContentScale.Fit` + `.Crop` |
+| `Samples.slicedImage(imageBytes)` | Tall image sliced across multiple physical pages |
+| `Samples.showcase()` | Every v1 feature in a single PDF |
+
+Three samples (`withImage`, `slicedImage`, `customDesigns`) take a `ByteArray` so the demo media stays in the consumer app's assets rather than the library jar — see `:sample/src/androidMain/assets/sample.png` for the bytes used by the bundled apps.
+
+---
+
 ## Sample apps
 
-The repo contains two sample apps that mirror each other feature-for-feature:
+The repo ships two sample apps that mirror each other feature-for-feature:
 
-- `:sample` — Compose Android app (`./gradlew :sample:installDebug`).
+- `:sample` — Compose Android app, structured as a single-target KMP module (`androidTarget()` only) so it can pull resources from `commonMain/composeResources/` for the `pdfAsync { drawable(Res.drawable.X) }` showcase. Run with `./gradlew :sample:installDebug`.
 - `iosApp/iosApp.xcodeproj` — SwiftUI iOS app. Open in Xcode and Run; the build phase calls `:pdfkmp:embedAndSignAppleFrameworkForXcode` automatically.
 
-Both apps surface every demo from `Samples` (in `:pdfkmp/src/commonMain/kotlin/.../samples/Samples.kt`) so you can eyeball each feature on real devices.
+Both apps surface every demo from `Samples` (in `:pdfkmp/src/commonMain/kotlin/.../samples/Samples.kt`) plus `ComposeResourcesDemo` (Android sample only — iOS demo coming with the next iOS sample refresh) so you can eyeball each feature on real devices.
 
 ---
 
