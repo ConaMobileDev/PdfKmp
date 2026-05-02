@@ -1,5 +1,7 @@
 package com.conamobile.pdfkmp
 
+import com.conamobile.pdfkmp.text.PdfHyperlink
+import com.conamobile.pdfkmp.text.PdfTextRun
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -17,7 +19,24 @@ import kotlinx.io.write
  * iOS, and any future Kotlin/JVM, Kotlin/Native, or Kotlin/JS target without
  * platform-specific code.
  */
-public class PdfDocument internal constructor(private val bytes: ByteArray) {
+public class PdfDocument internal constructor(
+    private val bytes: ByteArray,
+    /**
+     * Every laid-out text run captured during rendering, in draw order.
+     * Powers `:pdfkmp-viewer`'s text selection overlay — see
+     * [PdfTextRun] for the coordinate system. Empty for documents that
+     * were rendered before the recording infrastructure existed (e.g.
+     * tests that build a [PdfDocument] manually).
+     */
+    public val textRuns: List<PdfTextRun> = emptyList(),
+    /**
+     * Every hyperlink annotation captured during rendering. Powers
+     * `:pdfkmp-viewer`'s clickable-link overlay — see [PdfHyperlink]
+     * for the coordinate system. Empty for documents that were
+     * rendered before the recording infrastructure existed.
+     */
+    public val hyperlinks: List<PdfHyperlink> = emptyList(),
+) {
 
     /** Total size of the encoded document in bytes. */
     public val size: Int get() = bytes.size

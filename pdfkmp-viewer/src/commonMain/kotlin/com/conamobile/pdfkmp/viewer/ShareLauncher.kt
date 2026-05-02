@@ -26,6 +26,12 @@ public fun interface PdfShareAction {
  * Returns a remembered [PdfShareAction] bound to the current platform's
  * share machinery. On Android this snapshots the [androidx.compose.ui.platform.LocalContext];
  * on iOS this snapshots the key window's root view controller.
+ *
+ * Useful when the host app wants its own share affordance — typically a
+ * toolbar / app-bar icon — instead of (or alongside) the built-in FAB
+ * exposed by [PdfViewer]. Pair it with `showShareButton = false` on
+ * [PdfViewer] to suppress the default button and route the share through
+ * a custom call site.
  */
 @Composable
-internal expect fun rememberPdfShareAction(): PdfShareAction
+public expect fun rememberPdfShareAction(): PdfShareAction

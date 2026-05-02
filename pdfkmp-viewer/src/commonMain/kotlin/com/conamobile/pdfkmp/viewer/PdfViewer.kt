@@ -1,20 +1,40 @@
 package com.conamobile.pdfkmp.viewer
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
@@ -24,36 +44,58 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.conamobile.pdfkmp.PdfDocument
+import com.conamobile.pdfkmp.text.PdfHyperlink
+import com.conamobile.pdfkmp.text.PdfTextRun
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/**
- * Default page background — neutral light grey that matches the chrome
- * of every native viewer (PDFKit, Adobe Reader, Google Drive) and stays
- * out of the document's way.
- */
-internal val DefaultViewerBackground: Color = Color(0xFFE0E0E0)
-
-/** Hard-coded ceiling for pinch zoom. 5× is the iOS PDFKit default. */
+/** Hard-coded ceiling for pinch zoom. 5× matches iOS PDFKit's default. */
 private const val DEFAULT_MAX_ZOOM: Float = 5f
+
+/** Step zoom triggered by a double tap, between `1×` and [DEFAULT_MAX_ZOOM]. */
+private const val DOUBLE_TAP_ZOOM: Float = 2.5f
+
+/**
+ * Cap the multiplier applied to [PdfViewer]'s `renderDensity` when the
+ * document is zoomed in. Going past this on a 2× base produces 4×
+ * pixels — already as crisp as a retina screen — so anything higher
+ * burns memory without a perceivable gain.
+ */
+private const val MAX_DENSITY_BOOST: Float = 2f
+
+/**
+ * Debounce window before a stable zoom value triggers a higher-density
+ * re-render. Keeps the renderer idle during an active pinch gesture and
+ * snaps the bitmap to its sharper version once the user has settled.
+ */
+private const val DENSITY_REFRESH_DELAY_MS: Long = 250L
 
 /**
  * Compose Multiplatform viewer for PDFs produced by `:pdfkmp` (or any
@@ -61,24 +103,27 @@ private const val DEFAULT_MAX_ZOOM: Float = 5f
  *
  * Pages stream through the host platform's native PDF renderer
  * (Android `PdfRenderer`, iOS `PDFKit.PDFDocument`) one at a time,
- * driven by a [LazyColumn] — even hundred-page documents only keep
- * the visible bitmaps in memory. The encoded PDF retains its vector
+ * driven by a [LazyColumn] — even hundred-page documents only keep the
+ * visible bitmaps in memory. The encoded PDF retains its vector
  * geometry, so what users see on screen and what reaches the share
  * sheet are identical.
  *
- * Built-in UI:
+ * Gestures (document-wide):
  *
- * - **Pinch-to-zoom** per page (`Modifier.transformable`). Two-finger
- *   pan moves within a zoomed page. Single-finger drag always scrolls
- *   the list, so the gesture model never fights the parent
- *   [LazyColumn].
- * - **Page indicator** (`n / total`) anchored bottom-centre. Hidden
- *   automatically for single-page documents.
- * - **Share** [FloatingActionButton] anchored bottom-end. Toggle off
- *   via [showShareButton] when the host screen already has its own
- *   share affordance.
- * - **Loading + error states** rendered in the central area while the
- *   renderer opens / when the bytes can't be parsed.
+ * - **Pinch** anywhere to zoom the whole document between `1×` and
+ *   [maxZoom]. The pinch focal point stays under the user's fingers on
+ *   the horizontal axis.
+ * - **Single-finger drag** scrolls vertically through the document.
+ *   Once the user has zoomed in, drags also pan the horizontally
+ *   scrolling viewport.
+ * - **Double tap** toggles between `1×` and a comfortable reading zoom
+ *   (`2.5×`).
+ *
+ * Sharpness on zoom is handled automatically — the viewer re-rasterises
+ * each visible page at `renderDensity * stableZoom` (capped at
+ * `2×renderDensity`) once the user has stopped pinching. This keeps
+ * text crisp at any zoom level without paying the memory cost during
+ * the gesture itself.
  *
  * @param source encoded PDF wrapped in a [PdfSource]. Use
  *   [PdfSource.of] to convert from a [PdfDocument] or raw bytes.
@@ -89,20 +134,38 @@ private const val DEFAULT_MAX_ZOOM: Float = 5f
  * @param shareFileName user-visible filename presented to the share
  *   sheet (must include the `.pdf` extension).
  * @param backgroundColor colour painted behind the page bitmaps. The
- *   default mirrors what native PDF viewers use.
+ *   default tracks the active Material 3 theme.
  * @param pageBackgroundColor colour painted behind each individual page
  *   (visible while the page is still rasterising or through transparent
  *   margins inside the PDF itself).
  * @param contentPadding padding applied around the [LazyColumn] content.
- * @param pageSpacing vertical gap between page previews.
- * @param renderDensity multiplicative scaling factor applied during
+ *   Defaults to zero for a fully edge-to-edge layout.
+ * @param pageSpacing vertical gap between page previews. Defaults to a
+ *   tight `4.dp` so adjacent pages read as a continuous document.
+ * @param renderDensity baseline scaling factor applied during
  *   rasterisation. `2f` is sharp on retina displays without ballooning
  *   memory; bump to `3f` for very large surfaces.
  * @param maxZoom upper bound for the pinch gesture. Defaults to `5f`
  *   to match iOS PDFKit.
+ * @param zoomEnabled master switch for both pinch-to-zoom and
+ *   double-tap-to-zoom. `false` keeps the document permanently at `1×`
+ *   and disables the auxiliary horizontal pan logic — useful for
+ *   read-only one-page receipts where zoom would only get in the way.
+ * @param doubleTapToZoom toggles the double-tap shortcut between `1×`
+ *   and a comfortable reading zoom. Independent of [zoomEnabled];
+ *   leaving pinch on while suppressing double-tap is a common
+ *   accessibility preference. Has no effect when [zoomEnabled] is
+ *   `false`.
+ * @param textSelectable toggles the invisible selectable text overlay.
+ *   `true` by default. Only effective on documents loaded via
+ *   [PdfSource.of] from a PdfKmp [PdfDocument] — opaque external PDFs
+ *   carry no text-position data so the overlay has nothing to render
+ *   regardless of this flag.
+ * @param hyperlinksEnabled toggles the invisible clickable overlay
+ *   that opens hyperlink annotations in the system browser. Same
+ *   "needs PdfKmp-built document" caveat as [textSelectable].
  * @param showPageIndicator toggles the bottom-centre `n / total`
- *   chip. `true` by default; the chip is suppressed automatically for
- *   single-page documents regardless.
+ *   chip. `true` by default.
  * @param shareButtonAlignment positions the share FAB inside the
  *   outer [Box]. Defaults to [Alignment.BottomEnd] to match Material 3
  *   guidance.
@@ -115,17 +178,28 @@ public fun PdfViewer(
     modifier: Modifier = Modifier,
     showShareButton: Boolean = true,
     shareFileName: String = "document.pdf",
-    backgroundColor: Color = DefaultViewerBackground,
+    backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
     pageBackgroundColor: Color = Color.White,
-    contentPadding: PaddingValues = PaddingValues(16.dp),
-    pageSpacing: Dp = 16.dp,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    pageSpacing: Dp = 4.dp,
     renderDensity: Float = 2f,
     maxZoom: Float = DEFAULT_MAX_ZOOM,
+    zoomEnabled: Boolean = true,
+    doubleTapToZoom: Boolean = true,
+    textSelectable: Boolean = true,
+    hyperlinksEnabled: Boolean = true,
     showPageIndicator: Boolean = true,
     shareButtonAlignment: Alignment = Alignment.BottomEnd,
     shareButtonPadding: PaddingValues = PaddingValues(16.dp),
 ) {
     val bytes = remember(source) { source.bytes() }
+    val textRunsByPage = remember(source, textSelectable) {
+        if (textSelectable) source.textRuns().groupBy { it.pageIndex } else emptyMap()
+    }
+    val hyperlinksByPage = remember(source, hyperlinksEnabled) {
+        if (hyperlinksEnabled) source.hyperlinks().groupBy { it.pageIndex } else emptyMap()
+    }
+    val urlLauncher = if (hyperlinksEnabled) rememberPdfUrlLauncher() else null
     var renderer by remember(bytes) { mutableStateOf<PdfPageRenderer?>(null) }
     var loading by remember(bytes) { mutableStateOf(true) }
     var error by remember(bytes) { mutableStateOf(false) }
@@ -149,6 +223,27 @@ public fun PdfViewer(
     }
 
     val listState = rememberLazyListState()
+    val horizontalScrollState = rememberScrollState()
+    val zoom = remember { Animatable(1f) }
+    var stableEffectiveDensity by remember(renderDensity) {
+        mutableFloatStateOf(renderDensity)
+    }
+
+    LaunchedEffect(zoom.value, renderDensity) {
+        delay(DENSITY_REFRESH_DELAY_MS)
+        val multiplier = zoom.value.coerceAtMost(MAX_DENSITY_BOOST)
+        stableEffectiveDensity = renderDensity * multiplier
+    }
+
+    // Snap back to 1× whenever the host disables zooming so the
+    // document doesn't get stuck mid-zoom after a runtime toggle.
+    LaunchedEffect(zoomEnabled) {
+        if (!zoomEnabled && zoom.value != 1f) {
+            zoom.snapTo(1f)
+            horizontalScrollState.scrollTo(0)
+        }
+    }
+
     val shareAction = if (showShareButton) rememberPdfShareAction() else null
     val current = renderer
 
@@ -161,16 +256,24 @@ public fun PdfViewer(
             )
 
             else -> {
-                PdfPagesList(
+                PdfPagesContent(
                     renderer = current,
                     listState = listState,
+                    horizontalScrollState = horizontalScrollState,
+                    zoom = zoom,
+                    maxZoom = maxZoom,
+                    zoomEnabled = zoomEnabled,
+                    doubleTapToZoom = doubleTapToZoom,
+                    effectiveDensity = stableEffectiveDensity,
                     pageBackgroundColor = pageBackgroundColor,
                     contentPadding = contentPadding,
                     pageSpacing = pageSpacing,
-                    renderDensity = renderDensity,
-                    maxZoom = maxZoom,
+                    textRunsByPage = textRunsByPage,
+                    hyperlinksByPage = hyperlinksByPage,
+                    urlLauncher = urlLauncher,
+                    scope = scope,
                 )
-                if (showPageIndicator && current.pageCount > 1) {
+                if (showPageIndicator) {
                     PdfPageIndicator(
                         listState = listState,
                         pageCount = current.pageCount,
@@ -211,12 +314,16 @@ public fun PdfViewer(
     modifier: Modifier = Modifier,
     showShareButton: Boolean = true,
     shareFileName: String = "document.pdf",
-    backgroundColor: Color = DefaultViewerBackground,
+    backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
     pageBackgroundColor: Color = Color.White,
-    contentPadding: PaddingValues = PaddingValues(16.dp),
-    pageSpacing: Dp = 16.dp,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    pageSpacing: Dp = 4.dp,
     renderDensity: Float = 2f,
     maxZoom: Float = DEFAULT_MAX_ZOOM,
+    zoomEnabled: Boolean = true,
+    doubleTapToZoom: Boolean = true,
+    textSelectable: Boolean = true,
+    hyperlinksEnabled: Boolean = true,
     showPageIndicator: Boolean = true,
     shareButtonAlignment: Alignment = Alignment.BottomEnd,
     shareButtonPadding: PaddingValues = PaddingValues(16.dp),
@@ -232,6 +339,10 @@ public fun PdfViewer(
         pageSpacing = pageSpacing,
         renderDensity = renderDensity,
         maxZoom = maxZoom,
+        zoomEnabled = zoomEnabled,
+        doubleTapToZoom = doubleTapToZoom,
+        textSelectable = textSelectable,
+        hyperlinksEnabled = hyperlinksEnabled,
         showPageIndicator = showPageIndicator,
         shareButtonAlignment = shareButtonAlignment,
         shareButtonPadding = shareButtonPadding,
@@ -249,12 +360,14 @@ public fun PdfViewer(
     modifier: Modifier = Modifier,
     showShareButton: Boolean = true,
     shareFileName: String = "document.pdf",
-    backgroundColor: Color = DefaultViewerBackground,
+    backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
     pageBackgroundColor: Color = Color.White,
-    contentPadding: PaddingValues = PaddingValues(16.dp),
-    pageSpacing: Dp = 16.dp,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    pageSpacing: Dp = 4.dp,
     renderDensity: Float = 2f,
     maxZoom: Float = DEFAULT_MAX_ZOOM,
+    zoomEnabled: Boolean = true,
+    doubleTapToZoom: Boolean = true,
     showPageIndicator: Boolean = true,
     shareButtonAlignment: Alignment = Alignment.BottomEnd,
     shareButtonPadding: PaddingValues = PaddingValues(16.dp),
@@ -270,42 +383,187 @@ public fun PdfViewer(
         pageSpacing = pageSpacing,
         renderDensity = renderDensity,
         maxZoom = maxZoom,
+        zoomEnabled = zoomEnabled,
+        doubleTapToZoom = doubleTapToZoom,
         showPageIndicator = showPageIndicator,
         shareButtonAlignment = shareButtonAlignment,
         shareButtonPadding = shareButtonPadding,
     )
 }
 
+/**
+ * Inner composable that owns the document-wide gesture detector and the
+ * scrollable container hierarchy. Split out from [PdfViewer] so the
+ * latter stays focused on lifecycle / chrome and its parameter list
+ * remains the public surface area.
+ *
+ * The hierarchy is intentionally:
+ *
+ * ```
+ * BoxWithConstraints              // captures pinch + double tap
+ *   Box(horizontalScroll = ...)   // pans X when contentWidth > viewport
+ *     LazyColumn(width = ...)     // virtualises pages, scrolls Y
+ *       PdfPageItem               // re-rasterises at effectiveDensity
+ * ```
+ *
+ * — `LazyColumn` provides vertical virtualisation, the parent
+ * `horizontalScroll` provides horizontal panning when the document is
+ * zoomed in, and the gestures are read from the outer container so they
+ * compose with both scrollables instead of fighting them.
+ */
 @Composable
-private fun PdfPagesList(
+private fun PdfPagesContent(
     renderer: PdfPageRenderer,
     listState: LazyListState,
+    horizontalScrollState: ScrollState,
+    zoom: Animatable<Float, *>,
+    maxZoom: Float,
+    zoomEnabled: Boolean,
+    doubleTapToZoom: Boolean,
+    effectiveDensity: Float,
     pageBackgroundColor: Color,
     contentPadding: PaddingValues,
     pageSpacing: Dp,
-    renderDensity: Float,
-    maxZoom: Float,
+    textRunsByPage: Map<Int, List<PdfTextRun>>,
+    hyperlinksByPage: Map<Int, List<PdfHyperlink>>,
+    urlLauncher: PdfUrlLauncher?,
+    scope: CoroutineScope,
 ) {
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = contentPadding,
-        verticalArrangement = Arrangement.spacedBy(pageSpacing),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        items(
-            count = renderer.pageCount,
-            key = { it },
-        ) { index ->
-            PdfPageItem(
-                renderer = renderer,
-                index = index,
-                pageSize = renderer.pageSizes.getOrNull(index)
-                    ?: PageSize(widthPoints = 1f, heightPoints = 1f),
-                pageBackgroundColor = pageBackgroundColor,
-                renderDensity = renderDensity,
-                maxZoom = maxZoom,
-            )
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val viewportWidth = maxWidth
+        val contentWidth = viewportWidth * zoom.value
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(maxZoom, zoomEnabled) {
+                    if (!zoomEnabled) return@pointerInput
+                    // Initial-pass handler so we can take precedence
+                    // over the inner LazyColumn / horizontalScroll
+                    // scrollables when the user is pinching or panning
+                    // a zoomed-in document. At zoom == 1 we leave
+                    // single-finger drags unconsumed so the LazyColumn
+                    // continues to drive the page-to-page scroll with
+                    // its native fling and overscroll.
+                    awaitEachGesture {
+                        awaitFirstDown(
+                            requireUnconsumed = false,
+                            pass = PointerEventPass.Initial,
+                        )
+                        do {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val pressed = event.changes.count { it.pressed }
+                            if (pressed == 0) break
+
+                            val zoomChange = event.calculateZoom()
+                            val pan = event.calculatePan()
+
+                            if (pressed >= 2 &&
+                                (zoomChange != 1f || pan != Offset.Zero)
+                            ) {
+                                val previous = zoom.value
+                                val target = (previous * zoomChange)
+                                    .coerceIn(1f, maxZoom)
+                                val factor = if (previous == 0f) 1f else target / previous
+                                val centroid = event.calculateCentroid()
+
+                                // X axis: horizontalScroll exposes an
+                                // absolute pixel value, so we compute
+                                // the anchored scroll directly. The
+                                // pan component shifts the centroid,
+                                // which in turn shifts the anchor.
+                                val anchoredScrollX = ((centroid.x +
+                                    horizontalScrollState.value) * factor - centroid.x)
+                                val targetScrollX = (anchoredScrollX - pan.x)
+                                    .toInt()
+                                    .coerceAtLeast(0)
+
+                                // Y axis: LazyColumn re-measures with
+                                // new (taller) items but preserves
+                                // firstVisibleItemScrollOffset
+                                // verbatim — content grows downward
+                                // from that anchor. The corrective
+                                // delta keeps the focal Y point under
+                                // the user's fingers, plus the pan
+                                // delta translates the centroid.
+                                val firstOffsetBefore =
+                                    listState.firstVisibleItemScrollOffset.toFloat()
+                                val deltaY =
+                                    (firstOffsetBefore + centroid.y) * (factor - 1f) - pan.y
+
+                                scope.launch {
+                                    zoom.snapTo(target)
+                                    listState.scrollBy(deltaY)
+                                }
+                                scope.launch {
+                                    horizontalScrollState.scrollTo(targetScrollX)
+                                }
+                                event.changes.forEach { it.consume() }
+                            } else if (
+                                pressed == 1 &&
+                                zoom.value > 1.01f &&
+                                pan != Offset.Zero
+                            ) {
+                                // Free 2D pan once the document is
+                                // zoomed in. We dispatch deltas to
+                                // both scroll states ourselves so a
+                                // diagonal drag isn't axis-locked by
+                                // the inner scrollables.
+                                scope.launch { listState.scrollBy(-pan.y) }
+                                scope.launch { horizontalScrollState.scrollBy(-pan.x) }
+                                event.changes.forEach { it.consume() }
+                            }
+                            // pressed == 1 && zoom == 1 → leave the
+                            // event unconsumed; LazyColumn picks up
+                            // the drag in the Main pass and scrolls
+                            // vertically between pages.
+                        } while (event.changes.any { it.pressed })
+                    }
+                }
+                .pointerInput(zoomEnabled, doubleTapToZoom) {
+                    if (!zoomEnabled || !doubleTapToZoom) return@pointerInput
+                    detectTapGestures(
+                        onDoubleTap = {
+                            val zoomingIn = zoom.value <= 1.01f
+                            val target = if (zoomingIn) DOUBLE_TAP_ZOOM else 1f
+                            scope.launch { zoom.animateTo(target) }
+                            if (!zoomingIn) {
+                                scope.launch {
+                                    horizontalScrollState.animateScrollTo(0)
+                                }
+                            }
+                        },
+                    )
+                },
+        ) {
+            Box(modifier = Modifier.horizontalScroll(horizontalScrollState)) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .width(contentWidth)
+                        .fillMaxHeight(),
+                    contentPadding = contentPadding,
+                    verticalArrangement = Arrangement.spacedBy(pageSpacing),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    items(
+                        count = renderer.pageCount,
+                        key = { it },
+                    ) { index ->
+                        PdfPageItem(
+                            renderer = renderer,
+                            index = index,
+                            pageSize = renderer.pageSizes.getOrNull(index)
+                                ?: PageSize(widthPoints = 1f, heightPoints = 1f),
+                            pageBackgroundColor = pageBackgroundColor,
+                            renderDensity = effectiveDensity,
+                            textRuns = textRunsByPage[index].orEmpty(),
+                            hyperlinks = hyperlinksByPage[index].orEmpty(),
+                            urlLauncher = urlLauncher,
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -317,28 +575,21 @@ private fun PdfPageItem(
     pageSize: PageSize,
     pageBackgroundColor: Color,
     renderDensity: Float,
-    maxZoom: Float,
+    textRuns: List<PdfTextRun>,
+    hyperlinks: List<PdfHyperlink>,
+    urlLauncher: PdfUrlLauncher?,
 ) {
-    var bitmap by remember(renderer, index, renderDensity) {
+    // The bitmap state intentionally outlives `renderDensity` changes
+    // so the previous low-resolution frame stays on screen while the
+    // higher-density re-render is in flight — no zoom-induced flicker.
+    var bitmap by remember(renderer, index) {
         mutableStateOf<ImageBitmap?>(null)
     }
-    var scale by remember(renderer, index) { mutableFloatStateOf(1f) }
-    var offsetX by remember(renderer, index) { mutableFloatStateOf(0f) }
-    var offsetY by remember(renderer, index) { mutableFloatStateOf(0f) }
 
-    androidx.compose.runtime.LaunchedEffect(renderer, index, renderDensity) {
-        bitmap = renderer.renderPage(index, renderDensity)
-    }
-
-    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-        val newScale = (scale * zoomChange).coerceIn(1f, maxZoom)
-        scale = newScale
-        if (newScale > 1f) {
-            offsetX += panChange.x
-            offsetY += panChange.y
-        } else {
-            offsetX = 0f
-            offsetY = 0f
+    LaunchedEffect(renderer, index, renderDensity) {
+        val rendered = renderer.renderPage(index, renderDensity)
+        if (rendered != null) {
+            bitmap = rendered
         }
     }
 
@@ -357,23 +608,166 @@ private fun PdfPageItem(
                 bitmap = current,
                 contentDescription = null,
                 contentScale = ContentScale.FillBounds,
+                modifier = Modifier.fillMaxSize(),
+            )
+            if (textRuns.isNotEmpty()) {
+                PdfTextSelectionOverlay(
+                    textRuns = textRuns,
+                    pageSize = pageSize,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            if (hyperlinks.isNotEmpty() && urlLauncher != null) {
+                // Drawn AFTER the text overlay so a clickable Box sits
+                // on top — Compose's hit testing routes the tap to the
+                // topmost node, and the SelectionContainer below
+                // handles long-press separately so both gestures
+                // coexist on the same region.
+                PdfHyperlinkOverlay(
+                    hyperlinks = hyperlinks,
+                    pageSize = pageSize,
+                    onUrlClicked = urlLauncher::invoke,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Renders an invisible clickable layer over the rasterised page so
+ * hyperlink annotations baked into the PDF behave like real links —
+ * tapping fires [onUrlClicked] which delegates to the platform's URL
+ * handler (Android `ACTION_VIEW`, iOS `UIApplication.openURL`).
+ *
+ * Sits **below** [PdfTextSelectionOverlay] in the z-order so that
+ * long-press text selection wins over a tap; a tap that doesn't slide
+ * triggers the link, a long-press starts text selection. Both layers
+ * coexist without fighting because `Modifier.clickable` consumes only
+ * tap gestures, not long-press.
+ */
+@Composable
+private fun PdfHyperlinkOverlay(
+    hyperlinks: List<PdfHyperlink>,
+    pageSize: PageSize,
+    onUrlClicked: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val widthPoints = pageSize.widthPoints.takeIf { it > 0f } ?: return
+    val heightPoints = pageSize.heightPoints.takeIf { it > 0f } ?: return
+
+    BoxWithConstraints(modifier = modifier) {
+        val scaleX = maxWidth.value / widthPoints
+        val scaleY = maxHeight.value / heightPoints
+        hyperlinks.forEach { link ->
+            Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                        translationX = offsetX
-                        translationY = offsetY
-                    }
-                    // panZoomLock = true keeps single-finger drags free
-                    // for the parent LazyColumn to scroll. Pinch + two
-                    // finger pan engage the transform; everything else
-                    // bubbles up.
-                    .transformable(state = transformState),
+                    .offset(
+                        x = (link.xPoints * scaleX).dp,
+                        y = (link.yPoints * scaleY).dp,
+                    )
+                    .size(
+                        width = (link.widthPoints * scaleX).dp,
+                        height = (link.heightPoints * scaleY).dp,
+                    )
+                    .clickable { onUrlClicked(link.url) },
             )
         }
     }
 }
+
+/**
+ * Renders an invisible, selectable text layer over the rasterised page.
+ *
+ * Each [PdfTextRun] becomes a [BasicText] sized and positioned to mimic
+ * the visible glyph footprint. The text colour is [Color.Transparent]
+ * so the bitmap shows through; Compose's [SelectionContainer] picks up
+ * long-press / drag gestures and surfaces the system copy menu — same
+ * UX as Apple Books or Samsung Notes.
+ *
+ * The overlay matches the page's aspect-ratio-locked Box exactly, so
+ * we map PDF points → fractions of the page's intrinsic dimensions and
+ * multiply by the box's runtime width / height. The mapping scales
+ * automatically through pinch zoom — when the box widens, the
+ * fractions stay constant and positions follow.
+ *
+ * **Why the [TextMeasurer] dance**: Compose's selection highlight
+ * tracks the laid-out text, not whatever modifier we throw on top.
+ * If Compose's default font produces a narrower glyph run than what
+ * PdfKmp recorded, the highlight stops mid-word and the user sees a
+ * jagged tail even though the underlying text is selectable
+ * end-to-end. We measure the natural Compose width once per run,
+ * then dial in [TextStyle.letterSpacing] so the laid-out width
+ * matches the recorded bbox to the pixel — closing the visible gap
+ * without distorting the (invisible) glyphs vertically. Combined
+ * with [LineHeightStyle.Trim.Both] this also strips the default
+ * font-padding above and below, so the highlight rectangle hugs the
+ * recorded glyph footprint instead of the typographic line slot.
+ */
+@Composable
+private fun PdfTextSelectionOverlay(
+    textRuns: List<PdfTextRun>,
+    pageSize: PageSize,
+    modifier: Modifier = Modifier,
+) {
+    val widthPoints = pageSize.widthPoints.takeIf { it > 0f } ?: return
+    val heightPoints = pageSize.heightPoints.takeIf { it > 0f } ?: return
+
+    SelectionContainer(modifier = modifier) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val boxWidth = maxWidth
+            val boxHeight = maxHeight
+            val scaleX = boxWidth.value / widthPoints
+            val scaleY = boxHeight.value / heightPoints
+            val density = LocalDensity.current
+            val measurer = rememberTextMeasurer()
+
+            textRuns.forEach { run ->
+                val xDp = (run.xPoints * scaleX).dp
+                val yDp = (run.yPoints * scaleY).dp
+                val widthPx = run.widthPoints * scaleX * density.density
+                val fontSizeSp = with(density) {
+                    (run.fontSizePoints * scaleY).dp.toSp()
+                }
+
+                // Tight, padding-free style — line height collapses to
+                // the glyph footprint rather than the typographic slot.
+                val style = TextStyle(
+                    color = Color.Transparent,
+                    fontSize = fontSizeSp,
+                    lineHeight = fontSizeSp,
+                    lineHeightStyle = LineHeightStyle(
+                        alignment = LineHeightStyle.Alignment.Center,
+                        trim = LineHeightStyle.Trim.Both,
+                    ),
+                )
+
+                // Stretch the laid-out text to match the recorded width
+                // by inserting per-character spacing. Single-char runs
+                // can't be stretched between characters, so we leave
+                // them at their natural width (negligibly small gap).
+                val natural = measurer.measure(text = run.text, style = style, softWrap = false)
+                val naturalWidthPx = natural.size.width.toFloat()
+                val letterSpacingSp = if (run.text.length > 1 && naturalWidthPx > 0f) {
+                    val extraPx = (widthPx - naturalWidthPx) / (run.text.length - 1)
+                    with(density) { extraPx.toDp().toSp() }
+                } else {
+                    0.sp
+                }
+
+                BasicText(
+                    text = run.text,
+                    style = style.copy(letterSpacing = letterSpacingSp),
+                    softWrap = false,
+                    modifier = Modifier.offset(x = xDp, y = yDp),
+                )
+            }
+        }
+    }
+}
+
+/** Idle window after a scroll stops before the page indicator fades. */
+private const val INDICATOR_IDLE_DELAY_MS: Long = 900L
 
 @Composable
 private fun PdfPageIndicator(
@@ -390,19 +784,43 @@ private fun PdfPageIndicator(
         }
     }
 
-    Surface(
+    // Show the chip while the user is scrolling (or when the page index
+    // changes via zoom-induced auto-scroll), then fade it out after a
+    // short idle window. Initial state stays visible for the same
+    // window so the user can read the page count on first open.
+    var visible by remember { mutableStateOf(true) }
+
+    LaunchedEffect(listState, currentPage) {
+        visible = true
+        snapshotFlow { listState.isScrollInProgress }
+            .collect { scrolling ->
+                if (scrolling) {
+                    visible = true
+                } else {
+                    delay(INDICATOR_IDLE_DELAY_MS)
+                    visible = false
+                }
+            }
+    }
+
+    AnimatedVisibility(
         modifier = modifier,
-        shape = RoundedCornerShape(50),
-        color = Color.Black.copy(alpha = 0.65f),
-        contentColor = Color.White,
-        shadowElevation = 4.dp,
+        visible = visible,
+        enter = fadeIn(),
+        exit = fadeOut(),
     ) {
-        Text(
-            text = "$currentPage / $pageCount",
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
-        )
+        Surface(
+            shape = RoundedCornerShape(50),
+            color = Color.Black.copy(alpha = 0.55f),
+            contentColor = Color.White,
+        ) {
+            Text(
+                text = "$currentPage / $pageCount",
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+            )
+        }
     }
 }
 
