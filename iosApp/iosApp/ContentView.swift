@@ -152,18 +152,26 @@ private struct SamplePreviewView: View {
                 ProgressView("Rendering…")
             }
         }
+        // Hide the system navigation bar entirely. iOS 26's Liquid
+        // Glass styling renders toolbar items inside floating
+        // capsules with translucent material — that conflicts with
+        // the handoff's flat solid-white spec. We render our own
+        // topbar via `safeAreaInset(.top)` so the layout sits
+        // directly under the status bar without the system
+        // appearance kicking in.
+        .toolbar(.hidden, for: .navigationBar)
         .navigationBarBackButtonHidden(true)
-        .navigationBarTitleDisplayMode(.inline)
-        // Custom 17pt semibold title — matches the handoff exactly so
-        // we don't rely on the SwiftUI default that varies per OS
-        // version. Hidden during search so the field gets the slot.
-        .toolbar {
-            toolbarContent
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if searchActive {
+                searchTopBar
+            } else {
+                flatTopBar
+            }
         }
         .safeAreaInset(edge: .bottom) {
             // Match navigation overlay rides above the keyboard while
-            // search is active and at least one hit exists. Mirrors
-            // the Compose viewer's PdfSearchBar match counter.
+            // search is active. Mirrors the Compose viewer's
+            // PdfSearchBar match counter.
             if searchActive {
                 searchFooter
             }
@@ -180,94 +188,101 @@ private struct SamplePreviewView: View {
         }
     }
 
-    @ToolbarContentBuilder
-    private var toolbarContent: some ToolbarContent {
-        if searchActive {
-            // ── Morph: search field replaces the entire topbar.
-            ToolbarItem(placement: .principal) {
-                searchField
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Cancel") { closeSearch() }
-            }
-        } else {
-            // ── Default: chevron + back label, centered title, three
-            // 22pt trailing icons in iOS Blue. Color comes from the
-            // ambient `.tint(iosBlue)` set on the NavigationStack —
-            // applying explicit `.foregroundStyle` on a toolbar Button
-            // is fragile because SwiftUI re-tints the icons via the
-            // navigation bar appearance.
-            ToolbarItem(placement: .topBarLeading) {
+    /// Default flat 52pt topbar matching `Direction 2 — Classic iOS
+    /// Native` from the handoff. Uses a plain HStack + ZStack instead
+    /// of SwiftUI's `.toolbar` slot so iOS 26's Liquid Glass capsule
+    /// styling never gets a chance to wrap the items.
+    private var flatTopBar: some View {
+        ZStack {
+            HStack(spacing: 0) {
+                // Leading: chevron + parent screen label
                 Button(action: { dismiss() }) {
-                    // Size left to SwiftUI defaults — Mail / Files /
-                    // Notes use the system body font for the back
-                    // chevron + label, which on iOS 17+ resolves to
-                    // ~17pt with a slightly heavier chevron stroke.
-                    // Custom 28pt sizing was reading as oversized
-                    // versus the reference image.
                     HStack(spacing: 2) {
                         Image(systemName: "chevron.left")
                             .fontWeight(.semibold)
                         Text("Samples")
                     }
-                }
-            }
-            ToolbarItem(placement: .principal) {
-                // Title in BLACK, not the navigation tint — handoff
-                // is explicit about #000 here.
-                Text(entry.title)
-                    .font(.headline)
-                    .foregroundStyle(Color.black)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: 220)
-            }
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                // Trailing icons rely on the default toolbar font
-                // (`.body`, ~17pt) to match the visual weight of
-                // Mail's reply / move / flag affordances. The
-                // ambient `.tint(iosBlue)` paints them.
-                Button(action: openSearch) {
-                    Image(systemName: "magnifyingglass")
+                    .foregroundStyle(iosBlue)
                 }
 
-                if let data = pdfData {
-                    ShareLink(item: temporaryURL(for: data)) {
-                        Image(systemName: "square.and.arrow.up")
-                    }
+                Spacer(minLength: 0)
 
-                    Button(action: { saveToDocuments(data: data) }) {
-                        Image(systemName: "arrow.down.to.line")
+                // Trailing: three 17pt icon-only actions
+                HStack(spacing: 16) {
+                    Button(action: openSearch) {
+                        Image(systemName: "magnifyingglass")
+                    }
+                    if let data = pdfData {
+                        ShareLink(item: temporaryURL(for: data)) {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                        Button(action: { saveToDocuments(data: data) }) {
+                            Image(systemName: "arrow.down.to.line")
+                        }
                     }
                 }
+                .foregroundStyle(iosBlue)
             }
+
+            // Title floats centered via the ZStack — guarantees the
+            // text sits in the middle regardless of how wide the
+            // leading / trailing groups end up.
+            Text(entry.title)
+                .font(.headline)
+                .foregroundStyle(Color.black)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: 180)
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 52)
+        .background(Color.white)
+        .overlay(alignment: .bottom) {
+            // 0.5pt-equivalent hairline divider per the spec.
+            Rectangle()
+                .fill(Color.black.opacity(0.08))
+                .frame(height: 0.5)
         }
     }
 
-    private var searchField: some View {
+    /// Search-mode replacement — same shell as `flatTopBar` so the
+    /// morph is a content swap rather than a layout shift.
+    private var searchTopBar: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-                .font(.system(size: 14, weight: .regular))
-            TextField("Search in document", text: $searchQuery)
-                .focused($searchFieldFocused)
-                .submitLabel(.search)
-                .onSubmit { navigateMatch(by: 1) }
-                .textFieldStyle(.plain)
-            if !searchQuery.isEmpty {
-                Button {
-                    searchQuery = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                    .font(.system(size: 14, weight: .regular))
+                TextField("Search in document", text: $searchQuery)
+                    .focused($searchFieldFocused)
+                    .submitLabel(.search)
+                    .onSubmit { navigateMatch(by: 1) }
+                    .textFieldStyle(.plain)
+                if !searchQuery.isEmpty {
+                    Button {
+                        searchQuery = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color(uiColor: .tertiarySystemFill))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+
+            Button("Cancel") { closeSearch() }
+                .foregroundStyle(iosBlue)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Color(uiColor: .tertiarySystemFill))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .frame(minWidth: 220, idealWidth: 280, maxWidth: 320)
+        .padding(.horizontal, 12)
+        .frame(height: 52)
+        .background(Color.white)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.black.opacity(0.08))
+                .frame(height: 0.5)
+        }
         .onChange(of: searchQuery) { _, newValue in
             performSearch(query: newValue)
         }
