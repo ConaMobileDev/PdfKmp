@@ -155,7 +155,7 @@ IconButton(onClick = { save(doc.toByteArray(), "invoice.pdf") }) {
 }
 ```
 
-There's no built-in save FAB in the viewer — `Save` is a developer-side opt-in via the public action so you can place it where it fits your chrome (typically next to the share icon in your top app bar).
+There's no auto-rendered save FAB; placement is up to you. See [Customising the chrome](#customising-the-chrome) below for the two recommended patterns.
 
 ### Page indicator
 
@@ -163,6 +163,85 @@ A small pill — `n / total` — fades in at the bottom while the user scrolls a
 
 ```kotlin
 PdfViewer(document = doc, showPageIndicator = false)   // hide the chip
+```
+
+## Customising the chrome
+
+The viewer ships with sensible defaults (share FAB at bottom-end, page indicator at bottom-centre) but exposes two escape hatches so the chrome ends up exactly where the host app needs it.
+
+### Pattern 1 — actions in your own toolbar
+
+Best when your screen already has a `Scaffold` with a `TopAppBar`. Suppress the built-in share FAB, then call the public actions from your own `IconButton`s:
+
+```kotlin
+@Composable
+fun InvoiceScreen(doc: PdfDocument) {
+    val share = rememberPdfShareAction()
+    val save  = rememberPdfSaveAction()
+    val bytes = remember(doc) { doc.toByteArray() }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Invoice") },
+                actions = {
+                    IconButton(onClick = { save(bytes, "invoice.pdf") }) {
+                        Icon(PdfSaveIcon, contentDescription = "Save")
+                    }
+                    IconButton(onClick = { share(bytes, "invoice.pdf") }) {
+                        Icon(PdfShareIcon, contentDescription = "Share")
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        PdfViewer(
+            document = doc,
+            modifier = Modifier.padding(padding),
+            showShareButton = false,
+        )
+    }
+}
+```
+
+### Pattern 2 — `overlay` slot for floating actions
+
+Best for full-screen viewers without their own toolbar, or when you want extra FABs alongside the bitmap. The `overlay: @Composable BoxScope.() -> Unit` slot is rendered on top of every other piece of chrome — drop in [`PdfShareFab`](#public-api-surface) / [`PdfSaveFab`](#public-api-surface) for one-line setup, or any composable you like:
+
+```kotlin
+PdfViewer(
+    document = doc,
+    showShareButton = false,         // suppress the auto-rendered FAB
+    overlay = {                      // BoxScope receiver — use Modifier.align
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            PdfSaveFab(doc, fileName = "invoice.pdf")
+            PdfShareFab(doc, fileName = "invoice.pdf")
+        }
+    },
+)
+```
+
+The slot takes anything composable — watermarks, custom HUDs, page-jump controls, your branded action sheet:
+
+```kotlin
+PdfViewer(
+    document = doc,
+    overlay = {
+        Text(
+            "DRAFT",
+            modifier = Modifier
+                .align(Alignment.Center)
+                .graphicsLayer { rotationZ = -30f; alpha = 0.06f },
+            fontSize = 96.sp,
+            fontWeight = FontWeight.Black,
+        )
+    },
+)
 ```
 
 ## Public API surface
@@ -174,6 +253,9 @@ PdfViewer(document = doc, showPageIndicator = false)   // hide the chip
 | `PdfSource.of(document)` / `PdfSource.of(bytes)` | Convenience factories |
 | `rememberPdfShareAction()` | Action that triggers the system share sheet |
 | `rememberPdfSaveAction()` | Action that writes to Downloads / Documents |
+| `PdfShareFab(document / bytes, …)` | Material 3 share FAB ready for the `overlay` slot |
+| `PdfSaveFab(document / bytes, …)` | Material 3 save FAB ready for the `overlay` slot |
+| `PdfShareIcon` / `PdfSaveIcon` | Inline `ImageVector`s — reuse for visual consistency in your own toolbars |
 
 `PdfViewer` parameters (defaults shown):
 
@@ -192,8 +274,9 @@ PdfViewer(document = doc, showPageIndicator = false)   // hide the chip
 | `textSelectable: Boolean` | `true` | Selection overlay |
 | `hyperlinksEnabled: Boolean` | `true` | Clickable link overlay |
 | `showPageIndicator: Boolean` | `true` | Bottom-centre `n / total` chip |
-| `shareButtonAlignment` | `BottomEnd` | FAB anchor |
-| `shareButtonPadding` | `16.dp` | FAB inset |
+| `shareButtonAlignment` | `BottomEnd` | Default share FAB anchor (ignored once `overlay` is non-empty) |
+| `shareButtonPadding` | `16.dp` | Default share FAB inset |
+| `overlay: @Composable BoxScope.() -> Unit` | `{}` | Free-form slot rendered on top of the viewer — see [Customising the chrome](#customising-the-chrome) |
 
 ## Architecture
 

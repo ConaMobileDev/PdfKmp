@@ -18,6 +18,7 @@ import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
@@ -166,11 +167,19 @@ private const val DENSITY_REFRESH_DELAY_MS: Long = 250L
  *   "needs PdfKmp-built document" caveat as [textSelectable].
  * @param showPageIndicator toggles the bottom-centre `n / total`
  *   chip. `true` by default.
- * @param shareButtonAlignment positions the share FAB inside the
- *   outer [Box]. Defaults to [Alignment.BottomEnd] to match Material 3
- *   guidance.
- * @param shareButtonPadding padding between the share FAB and the
- *   nearest [Box] edge.
+ * @param shareButtonAlignment positions the **default** share FAB
+ *   inside the outer [Box]. Ignored once [overlay] is non-empty
+ *   because the slot takes over placement entirely. Defaults to
+ *   [Alignment.BottomEnd] to match Material 3 guidance.
+ * @param shareButtonPadding padding between the **default** share FAB
+ *   and the nearest [Box] edge. Same caveat as [shareButtonAlignment].
+ * @param overlay free-form overlay slot rendered last (on top) inside
+ *   the viewer's outer [Box]. Receives [BoxScope] so the lambda can
+ *   place children with `Modifier.align(...)` — drop in
+ *   [PdfShareFab] / [PdfSaveFab] for one-line FABs, stack additional
+ *   floating buttons, paint a watermark, layer a custom HUD, etc.
+ *   Defaults to an empty lambda; the built-in share FAB still
+ *   renders independently when [showShareButton] is `true`.
  */
 @Composable
 public fun PdfViewer(
@@ -191,6 +200,7 @@ public fun PdfViewer(
     showPageIndicator: Boolean = true,
     shareButtonAlignment: Alignment = Alignment.BottomEnd,
     shareButtonPadding: PaddingValues = PaddingValues(16.dp),
+    overlay: @Composable BoxScope.() -> Unit = {},
 ) {
     val bytes = remember(source) { source.bytes() }
     val textRunsByPage = remember(source, textSelectable) {
@@ -298,6 +308,15 @@ public fun PdfViewer(
                 Icon(imageVector = PdfShareIcon, contentDescription = "Share PDF")
             }
         }
+
+        // Slot rendered last so its content sits on top of every other
+        // chrome element (background, pages, page indicator, default
+        // share FAB). The lambda has BoxScope so callers reach for
+        // `Modifier.align(...)` and `Modifier.padding(...)` directly
+        // without wrapping their own Box.
+        if (current != null && !error) {
+            overlay()
+        }
     }
 }
 
@@ -327,6 +346,7 @@ public fun PdfViewer(
     showPageIndicator: Boolean = true,
     shareButtonAlignment: Alignment = Alignment.BottomEnd,
     shareButtonPadding: PaddingValues = PaddingValues(16.dp),
+    overlay: @Composable BoxScope.() -> Unit = {},
 ) {
     PdfViewer(
         source = remember(document) { PdfSource.of(document) },
@@ -346,6 +366,7 @@ public fun PdfViewer(
         showPageIndicator = showPageIndicator,
         shareButtonAlignment = shareButtonAlignment,
         shareButtonPadding = shareButtonPadding,
+        overlay = overlay,
     )
 }
 

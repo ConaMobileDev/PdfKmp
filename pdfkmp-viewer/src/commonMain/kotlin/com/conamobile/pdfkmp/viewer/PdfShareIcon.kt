@@ -15,11 +15,15 @@ import androidx.compose.ui.unit.dp
  * `compose-material-icons-extended` — that artifact alone adds tens of
  * thousands of vectors and noticeably inflates consumer bundle sizes.
  *
+ * Public so consumers can reuse the same glyph in their own toolbars,
+ * menus, or custom overlays for visual consistency with the built-in
+ * [PdfShareFab].
+ *
  * Path data lifted verbatim from the official Material Symbols set
  * (filled, 24dp baseline) so the rendered glyph matches what the rest of
  * a Material 3 surface is using.
  */
-internal val PdfShareIcon: ImageVector = ImageVector.Builder(
+public val PdfShareIcon: ImageVector = ImageVector.Builder(
     name = "PdfKmpViewerShare",
     defaultWidth = 24.dp,
     defaultHeight = 24.dp,
