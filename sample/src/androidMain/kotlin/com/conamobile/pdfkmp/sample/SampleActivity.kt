@@ -12,14 +12,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -28,19 +23,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathFillType
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.conamobile.pdfkmp.PdfDocument
 import com.conamobile.pdfkmp.samples.Samples
 import com.conamobile.pdfkmp.viewer.PdfViewer
+import com.conamobile.pdfkmp.viewer.PdfViewerTopBar
 import com.conamobile.pdfkmp.viewer.rememberPdfSaveAction
 import com.conamobile.pdfkmp.viewer.rememberPdfShareAction
 
@@ -102,7 +90,6 @@ private val SAMPLES = listOf(
     SampleEntry("Showcase — every v1 feature in one PDF") { Samples.showcase() },
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SampleApp() {
     var selected by remember { mutableStateOf<SampleEntry?>(null) }
@@ -119,66 +106,55 @@ private fun SampleApp() {
         document = current.build(assets)
     }
 
+    val entry = selected
+    val built = document
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = selected?.title ?: "PdfKmp samples",
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                },
-                navigationIcon = {
-                    if (selected != null) {
-                        IconButton(onClick = { selected = null }) {
-                            Icon(
-                                imageVector = BackArrowIcon,
-                                contentDescription = "Back",
-                            )
-                        }
-                    }
-                },
-                actions = {
-                    val entry = selected
-                    val built = document
-                    if (entry != null && built != null) {
-                        val fileName = "${entry.title.toFileSlug()}.pdf"
-                        IconButton(
-                            onClick = { saveAction(built.toByteArray(), fileName) },
-                        ) {
-                            Icon(
-                                imageVector = SaveIcon,
-                                contentDescription = "Save to Downloads",
-                            )
-                        }
-                        IconButton(
-                            onClick = { shareAction(built.toByteArray(), fileName) },
-                        ) {
-                            Icon(
-                                imageVector = ShareIcon,
-                                contentDescription = "Share",
-                            )
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(),
-            )
+            if (entry == null) {
+                // List screen — minimal header so the demo focuses on
+                // the viewer chrome that the handoff design covers.
+                PdfViewerTopBar(
+                    title = "PdfKmp samples",
+                    showBack = false,
+                    showShare = false,
+                    showDownload = false,
+                )
+            } else {
+                val fileName = "${entry.title.toFileSlug()}.pdf"
+                val subtitle = built?.let { "PDF · ${formatSize(it.size)}" }
+                PdfViewerTopBar(
+                    title = entry.title,
+                    subtitle = subtitle,
+                    backLabel = "Samples",
+                    onBack = { selected = null },
+                    onShare = { built?.let { shareAction(it.toByteArray(), fileName) } },
+                    onDownload = { built?.let { saveAction(it.toByteArray(), fileName) } },
+                    showShare = built != null,
+                    showDownload = built != null,
+                )
+            }
         },
     ) { padding ->
-        if (selected == null) {
+        if (entry == null) {
             SampleList(
                 onPick = { selected = it },
                 modifier = Modifier.padding(padding),
             )
         } else {
             SamplePreview(
-                document = document,
+                document = built,
                 modifier = Modifier.padding(padding),
             )
         }
     }
+}
+
+/** Friendly file-size hint for the topbar's meta line. */
+private fun formatSize(bytes: Int): String = when {
+    bytes >= 1_048_576 -> "${"%.1f".format(bytes / 1_048_576f)} MB"
+    bytes >= 1024 -> "${bytes / 1024} KB"
+    else -> "$bytes B"
 }
 
 @Composable
@@ -219,123 +195,3 @@ private fun SamplePreview(
 
 private fun String.toFileSlug(): String =
     lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
-
-/**
- * Inline back-arrow [ImageVector] so the sample doesn't need a
- * dependency on `compose-material-icons-extended` for a single glyph.
- * Path data lifted from the official Material Symbols `arrow_back`
- * (filled, 24dp baseline).
- */
-private val BackArrowIcon: ImageVector = ImageVector.Builder(
-    name = "BackArrow",
-    defaultWidth = 24.dp,
-    defaultHeight = 24.dp,
-    viewportWidth = 24f,
-    viewportHeight = 24f,
-).apply {
-    path(
-        fill = SolidColor(Color.Black),
-        stroke = null,
-        strokeLineWidth = 0f,
-        strokeLineCap = StrokeCap.Butt,
-        strokeLineJoin = StrokeJoin.Miter,
-        strokeLineMiter = 4f,
-        pathFillType = PathFillType.NonZero,
-    ) {
-        moveTo(20f, 11f)
-        horizontalLineTo(7.83f)
-        lineToRelative(5.59f, -5.59f)
-        lineTo(12f, 4f)
-        lineToRelative(-8f, 8f)
-        lineToRelative(8f, 8f)
-        lineToRelative(1.41f, -1.41f)
-        lineTo(7.83f, 13f)
-        horizontalLineTo(20f)
-        verticalLineToRelative(-2f)
-        close()
-    }
-}.build()
-
-/**
- * Inline Material Symbols `download` glyph used in the top app bar
- * for the "Save to Downloads" action.
- */
-private val SaveIcon: ImageVector = ImageVector.Builder(
-    name = "Save",
-    defaultWidth = 24.dp,
-    defaultHeight = 24.dp,
-    viewportWidth = 24f,
-    viewportHeight = 24f,
-).apply {
-    path(
-        fill = SolidColor(Color.Black),
-        stroke = null,
-        strokeLineWidth = 0f,
-        strokeLineCap = StrokeCap.Butt,
-        strokeLineJoin = StrokeJoin.Miter,
-        strokeLineMiter = 4f,
-        pathFillType = PathFillType.NonZero,
-    ) {
-        moveTo(19f, 9f)
-        horizontalLineToRelative(-4f)
-        verticalLineTo(3f)
-        horizontalLineTo(9f)
-        verticalLineToRelative(6f)
-        horizontalLineTo(5f)
-        lineToRelative(7f, 7f)
-        lineToRelative(7f, -7f)
-        close()
-        moveTo(5f, 18f)
-        verticalLineToRelative(2f)
-        horizontalLineToRelative(14f)
-        verticalLineToRelative(-2f)
-        horizontalLineTo(5f)
-        close()
-    }
-}.build()
-
-/**
- * Inline Material Symbols `share` glyph used in the top app bar. We
- * keep a separate copy from `:pdfkmp-viewer`'s internal share icon so
- * neither side leaks into the other's API surface.
- */
-private val ShareIcon: ImageVector = ImageVector.Builder(
-    name = "Share",
-    defaultWidth = 24.dp,
-    defaultHeight = 24.dp,
-    viewportWidth = 24f,
-    viewportHeight = 24f,
-).apply {
-    path(
-        fill = SolidColor(Color.Black),
-        stroke = null,
-        strokeLineWidth = 0f,
-        strokeLineCap = StrokeCap.Butt,
-        strokeLineJoin = StrokeJoin.Miter,
-        strokeLineMiter = 4f,
-        pathFillType = PathFillType.NonZero,
-    ) {
-        moveTo(18f, 16.08f)
-        curveToRelative(-0.76f, 0f, -1.44f, 0.3f, -1.96f, 0.77f)
-        lineTo(8.91f, 12.7f)
-        curveToRelative(0.05f, -0.23f, 0.09f, -0.46f, 0.09f, -0.7f)
-        reflectiveCurveToRelative(-0.04f, -0.47f, -0.09f, -0.7f)
-        lineToRelative(7.05f, -4.11f)
-        curveToRelative(0.54f, 0.5f, 1.25f, 0.81f, 2.04f, 0.81f)
-        curveToRelative(1.66f, 0f, 3f, -1.34f, 3f, -3f)
-        reflectiveCurveToRelative(-1.34f, -3f, -3f, -3f)
-        reflectiveCurveToRelative(-3f, 1.34f, -3f, 3f)
-        curveToRelative(0f, 0.24f, 0.04f, 0.47f, 0.09f, 0.7f)
-        lineTo(8.04f, 9.81f)
-        curveTo(7.5f, 9.31f, 6.79f, 9f, 6f, 9f)
-        curveToRelative(-1.66f, 0f, -3f, 1.34f, -3f, 3f)
-        reflectiveCurveToRelative(1.34f, 3f, 3f, 3f)
-        curveToRelative(0.79f, 0f, 1.5f, -0.31f, 2.04f, -0.81f)
-        lineToRelative(7.12f, 4.16f)
-        curveToRelative(-0.05f, 0.21f, -0.08f, 0.43f, -0.08f, 0.65f)
-        curveToRelative(0f, 1.61f, 1.31f, 2.92f, 2.92f, 2.92f)
-        reflectiveCurveToRelative(2.92f, -1.31f, 2.92f, -2.92f)
-        reflectiveCurveToRelative(-1.31f, -2.92f, -2.92f, -2.92f)
-        close()
-    }
-}.build()
