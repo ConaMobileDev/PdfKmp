@@ -39,5 +39,19 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/pdfkmp_viewer_file_paths" />
         </provider>
+
+        <!--
+          Hosted full-screen Activity that backs `KmpPdfLauncher.open(...)`.
+          Inherits the consumer app's theme via `@android:style/Theme.Material.NoActionBar`
+          so the system status bar still renders the host's accent and
+          status-bar icon colour scheme. `exported="false"` so external
+          apps can't bind to the activity directly — entry is through
+          `KmpPdfLauncher` only.
+        -->
+        <activity
+            android:name="com.conamobile.pdfkmp.viewer.KmpPdfViewerHostActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden|keyboard|locale|layoutDirection|smallestScreenSize|screenLayout|uiMode"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
     </application>
 </manifest>

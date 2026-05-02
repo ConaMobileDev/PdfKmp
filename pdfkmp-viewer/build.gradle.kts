@@ -65,6 +65,10 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.androidx.core)
             implementation(libs.androidx.startup.runtime)
+            // KmpPdfLauncher hosts KmpPdfViewer in an internal
+            // `ComponentActivity`; activity-compose pulls in the
+            // `setContent` extension and edge-to-edge helpers.
+            implementation(libs.androidx.activityCompose)
             implementation(libs.coroutines.android)
         }
 
