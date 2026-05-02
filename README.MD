@@ -97,7 +97,7 @@ With a version catalog:
 ```toml
 # gradle/libs.versions.toml
 [versions]
-pdfkmp = "0.2.0-alpha01"
+pdfkmp = "0.2.0-rc01"
 
 [libraries]
 pdfkmp = { module = "io.github.conamobiledev:pdfkmp", version.ref = "pdfkmp" }
@@ -125,9 +125,9 @@ Without a version catalog:
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("io.github.conamobiledev:pdfkmp:0.2.0-alpha01")
-            implementation("io.github.conamobiledev:pdfkmp-compose-resources:0.2.0-alpha01") // optional
-            implementation("io.github.conamobiledev:pdfkmp-viewer:0.2.0-alpha01")            // optional
+            implementation("io.github.conamobiledev:pdfkmp:0.2.0-rc01")
+            implementation("io.github.conamobiledev:pdfkmp-compose-resources:0.2.0-rc01") // optional
+            implementation("io.github.conamobiledev:pdfkmp-viewer:0.2.0-rc01")            // optional
         }
     }
 }
@@ -149,7 +149,7 @@ With a version catalog:
 ```toml
 # gradle/libs.versions.toml
 [versions]
-pdfkmp = "0.2.0-alpha01"
+pdfkmp = "0.2.0-rc01"
 
 [libraries]
 pdfkmp-android = { module = "io.github.conamobiledev:pdfkmp-android", version.ref = "pdfkmp" }
@@ -169,8 +169,8 @@ Without a version catalog:
 ```kotlin
 // app/build.gradle.kts
 dependencies {
-    implementation("io.github.conamobiledev:pdfkmp-android:0.2.0-alpha01")
-    implementation("io.github.conamobiledev:pdfkmp-viewer:0.2.0-alpha01") // optional
+    implementation("io.github.conamobiledev:pdfkmp-android:0.2.0-rc01")
+    implementation("io.github.conamobiledev:pdfkmp-viewer:0.2.0-rc01") // optional
 }
 ```
 
@@ -737,8 +737,8 @@ The optional `pdfkmp-compose-resources` module wires Compose Multiplatform's typ
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("io.github.conamobiledev:pdfkmp:0.2.0-alpha01")
-            implementation("io.github.conamobiledev:pdfkmp-compose-resources:0.2.0-alpha01")
+            implementation("io.github.conamobiledev:pdfkmp:0.2.0-rc01")
+            implementation("io.github.conamobiledev:pdfkmp-compose-resources:0.2.0-rc01")
         }
     }
 }
