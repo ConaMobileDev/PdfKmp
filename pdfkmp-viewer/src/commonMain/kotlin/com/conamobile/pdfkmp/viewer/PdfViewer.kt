@@ -63,9 +63,12 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -167,19 +170,11 @@ private const val DENSITY_REFRESH_DELAY_MS: Long = 250L
  *   "needs PdfKmp-built document" caveat as [textSelectable].
  * @param showPageIndicator toggles the bottom-centre `n / total`
  *   chip. `true` by default.
- * @param shareButtonAlignment positions the **default** share FAB
- *   inside the outer [Box]. Ignored once [overlay] is non-empty
- *   because the slot takes over placement entirely. Defaults to
- *   [Alignment.BottomEnd] to match Material 3 guidance.
- * @param shareButtonPadding padding between the **default** share FAB
- *   and the nearest [Box] edge. Same caveat as [shareButtonAlignment].
- * @param overlay free-form overlay slot rendered last (on top) inside
- *   the viewer's outer [Box]. Receives [BoxScope] so the lambda can
- *   place children with `Modifier.align(...)` — drop in
- *   [PdfShareFab] / [PdfSaveFab] for one-line FABs, stack additional
- *   floating buttons, paint a watermark, layer a custom HUD, etc.
- *   Defaults to an empty lambda; the built-in share FAB still
- *   renders independently when [showShareButton] is `true`.
+ * @param shareButtonAlignment positions the built-in share FAB inside
+ *   the outer [Box]. Defaults to [Alignment.BottomEnd] to match
+ *   Material 3 guidance.
+ * @param shareButtonPadding padding between the built-in share FAB
+ *   and the nearest [Box] edge.
  */
 @Composable
 public fun PdfViewer(
@@ -200,7 +195,6 @@ public fun PdfViewer(
     showPageIndicator: Boolean = true,
     shareButtonAlignment: Alignment = Alignment.BottomEnd,
     shareButtonPadding: PaddingValues = PaddingValues(16.dp),
-    overlay: @Composable BoxScope.() -> Unit = {},
 ) {
     val bytes = remember(source) { source.bytes() }
     val textRunsByPage = remember(source, textSelectable) {
@@ -289,7 +283,7 @@ public fun PdfViewer(
                         pageCount = current.pageCount,
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
-                            .padding(bottom = 16.dp),
+                            .padding(bottom = 28.dp),
                     )
                 }
             }
@@ -309,14 +303,6 @@ public fun PdfViewer(
             }
         }
 
-        // Slot rendered last so its content sits on top of every other
-        // chrome element (background, pages, page indicator, default
-        // share FAB). The lambda has BoxScope so callers reach for
-        // `Modifier.align(...)` and `Modifier.padding(...)` directly
-        // without wrapping their own Box.
-        if (current != null && !error) {
-            overlay()
-        }
     }
 }
 
@@ -346,7 +332,6 @@ public fun PdfViewer(
     showPageIndicator: Boolean = true,
     shareButtonAlignment: Alignment = Alignment.BottomEnd,
     shareButtonPadding: PaddingValues = PaddingValues(16.dp),
-    overlay: @Composable BoxScope.() -> Unit = {},
 ) {
     PdfViewer(
         source = remember(document) { PdfSource.of(document) },
@@ -366,7 +351,6 @@ public fun PdfViewer(
         showPageIndicator = showPageIndicator,
         shareButtonAlignment = shareButtonAlignment,
         shareButtonPadding = shareButtonPadding,
-        overlay = overlay,
     )
 }
 
@@ -830,16 +814,40 @@ private fun PdfPageIndicator(
         enter = fadeIn(),
         exit = fadeOut(),
     ) {
+        // Spec: rgba(20,20,22,0.78) bg, white text 13sp semibold
+        // tabular-nums, padding 8x14, 0/4/16 + 0/1/2 shadow.
         Surface(
             shape = RoundedCornerShape(50),
-            color = Color.Black.copy(alpha = 0.55f),
+            color = Color(0xC7141416),
             contentColor = Color.White,
+            shadowElevation = 4.dp,
         ) {
+            // AnnotatedString: slash at 0.5 alpha, total at 0.6 alpha —
+            // visually subordinates the divider/total so the current
+            // page reads as the dominant glyph.
+            val display = remember(currentPage, pageCount) {
+                buildAnnotatedString {
+                    append("$currentPage")
+                    withStyle(SpanStyle(color = Color.White.copy(alpha = 0.5f))) {
+                        append(" / ")
+                    }
+                    withStyle(SpanStyle(color = Color.White.copy(alpha = 0.6f))) {
+                        append("$pageCount")
+                    }
+                }
+            }
             Text(
-                text = "$currentPage / $pageCount",
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
+                text = display,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                style = TextStyle(
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = (-0.1).sp,
+                    // tabular numerals so the indicator doesn't shift
+                    // width when the page count crosses a digit
+                    // boundary (e.g. 9 → 10, 99 → 100).
+                    fontFeatureSettings = "tnum",
+                ),
             )
         }
     }
