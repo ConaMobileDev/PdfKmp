@@ -175,6 +175,14 @@ private const val DENSITY_REFRESH_DELAY_MS: Long = 250L
  *   Material 3 guidance.
  * @param shareButtonPadding padding between the built-in share FAB
  *   and the nearest [Box] edge.
+ * @param searchHighlights translucent yellow rectangles painted over
+ *   page bitmaps to mark in-document search matches. Pass the result
+ *   of [searchPdfText] (or any custom logic that produces
+ *   [PdfSearchHighlight]s) — empty list disables the layer.
+ * @param activeSearchHighlightIndex index into [searchHighlights]
+ *   identifying the "current" match. Rendered with a stronger fill
+ *   and auto-scrolled into view whenever it changes. `-1` means no
+ *   active match (all highlights painted with the resting fill).
  */
 @Composable
 public fun PdfViewer(
@@ -195,6 +203,8 @@ public fun PdfViewer(
     showPageIndicator: Boolean = true,
     shareButtonAlignment: Alignment = Alignment.BottomEnd,
     shareButtonPadding: PaddingValues = PaddingValues(16.dp),
+    searchHighlights: List<PdfSearchHighlight> = emptyList(),
+    activeSearchHighlightIndex: Int = -1,
 ) {
     val bytes = remember(source) { source.bytes() }
     val textRunsByPage = remember(source, textSelectable) {
@@ -248,6 +258,23 @@ public fun PdfViewer(
         }
     }
 
+    // Group search highlights by page index for cheap per-page lookup.
+    // Resolve the active highlight (if any) so the page item that
+    // owns it can paint the stronger fill.
+    val searchHighlightsByPage = remember(searchHighlights) {
+        searchHighlights.groupBy { it.pageIndex }
+    }
+    val activeSearchHighlight = searchHighlights.getOrNull(activeSearchHighlightIndex)
+
+    // When the active match changes, scroll the LazyColumn so the page
+    // hosting it is visible. Page-level scroll is good enough for v1
+    // — within-page scrolling would also need the zoomed-in horizontal
+    // position, which can land in a follow-up.
+    LaunchedEffect(activeSearchHighlightIndex, activeSearchHighlight?.pageIndex) {
+        val target = activeSearchHighlight?.pageIndex ?: return@LaunchedEffect
+        listState.animateScrollToItem(target)
+    }
+
     val shareAction = if (showShareButton) rememberPdfShareAction() else null
     val current = renderer
 
@@ -275,6 +302,8 @@ public fun PdfViewer(
                     textRunsByPage = textRunsByPage,
                     hyperlinksByPage = hyperlinksByPage,
                     urlLauncher = urlLauncher,
+                    searchHighlightsByPage = searchHighlightsByPage,
+                    activeSearchHighlight = activeSearchHighlight,
                     scope = scope,
                 )
                 if (showPageIndicator) {
@@ -332,6 +361,8 @@ public fun PdfViewer(
     showPageIndicator: Boolean = true,
     shareButtonAlignment: Alignment = Alignment.BottomEnd,
     shareButtonPadding: PaddingValues = PaddingValues(16.dp),
+    searchHighlights: List<PdfSearchHighlight> = emptyList(),
+    activeSearchHighlightIndex: Int = -1,
 ) {
     PdfViewer(
         source = remember(document) { PdfSource.of(document) },
@@ -351,6 +382,8 @@ public fun PdfViewer(
         showPageIndicator = showPageIndicator,
         shareButtonAlignment = shareButtonAlignment,
         shareButtonPadding = shareButtonPadding,
+        searchHighlights = searchHighlights,
+        activeSearchHighlightIndex = activeSearchHighlightIndex,
     )
 }
 
@@ -376,6 +409,8 @@ public fun PdfViewer(
     showPageIndicator: Boolean = true,
     shareButtonAlignment: Alignment = Alignment.BottomEnd,
     shareButtonPadding: PaddingValues = PaddingValues(16.dp),
+    searchHighlights: List<PdfSearchHighlight> = emptyList(),
+    activeSearchHighlightIndex: Int = -1,
 ) {
     PdfViewer(
         source = remember(bytes) { PdfSource.Bytes(bytes) },
@@ -393,6 +428,8 @@ public fun PdfViewer(
         showPageIndicator = showPageIndicator,
         shareButtonAlignment = shareButtonAlignment,
         shareButtonPadding = shareButtonPadding,
+        searchHighlights = searchHighlights,
+        activeSearchHighlightIndex = activeSearchHighlightIndex,
     )
 }
 
@@ -432,6 +469,8 @@ private fun PdfPagesContent(
     textRunsByPage: Map<Int, List<PdfTextRun>>,
     hyperlinksByPage: Map<Int, List<PdfHyperlink>>,
     urlLauncher: PdfUrlLauncher?,
+    searchHighlightsByPage: Map<Int, List<PdfSearchHighlight>>,
+    activeSearchHighlight: PdfSearchHighlight?,
     scope: CoroutineScope,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -565,6 +604,9 @@ private fun PdfPagesContent(
                             textRuns = textRunsByPage[index].orEmpty(),
                             hyperlinks = hyperlinksByPage[index].orEmpty(),
                             urlLauncher = urlLauncher,
+                            searchHighlights = searchHighlightsByPage[index].orEmpty(),
+                            activeSearchHighlight = activeSearchHighlight
+                                ?.takeIf { it.pageIndex == index },
                         )
                     }
                 }
@@ -583,6 +625,8 @@ private fun PdfPageItem(
     textRuns: List<PdfTextRun>,
     hyperlinks: List<PdfHyperlink>,
     urlLauncher: PdfUrlLauncher?,
+    searchHighlights: List<PdfSearchHighlight>,
+    activeSearchHighlight: PdfSearchHighlight?,
 ) {
     // The bitmap state intentionally outlives `renderDensity` changes
     // so the previous low-resolution frame stays on screen while the
@@ -615,6 +659,18 @@ private fun PdfPageItem(
                 contentScale = ContentScale.FillBounds,
                 modifier = Modifier.fillMaxSize(),
             )
+            if (searchHighlights.isNotEmpty()) {
+                // Painted ABOVE the bitmap but BELOW the text-selection
+                // overlay so long-press selection still wins on the
+                // same region — yellow rectangles only need to be
+                // visible, not tappable.
+                PdfSearchOverlay(
+                    highlights = searchHighlights,
+                    activeHighlight = activeSearchHighlight,
+                    pageSize = pageSize,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
             if (textRuns.isNotEmpty()) {
                 PdfTextSelectionOverlay(
                     textRuns = textRuns,
@@ -638,6 +694,51 @@ private fun PdfPageItem(
         }
     }
 }
+
+/**
+ * Renders translucent yellow rectangles over the rasterised page for
+ * every in-document search match. The active match (if it lives on
+ * this page) gets a stronger fill so the user can spot the current
+ * highlight after tapping next/previous.
+ *
+ * No interaction is wired — the rectangles are pure paint, scrolled
+ * into view by [PdfViewer] via `LazyListState.animateScrollToItem`.
+ */
+@Composable
+private fun PdfSearchOverlay(
+    highlights: List<PdfSearchHighlight>,
+    activeHighlight: PdfSearchHighlight?,
+    pageSize: PageSize,
+    modifier: Modifier = Modifier,
+) {
+    val widthPoints = pageSize.widthPoints.takeIf { it > 0f } ?: return
+    val heightPoints = pageSize.heightPoints.takeIf { it > 0f } ?: return
+
+    BoxWithConstraints(modifier = modifier) {
+        val scaleX = maxWidth.value / widthPoints
+        val scaleY = maxHeight.value / heightPoints
+        highlights.forEach { match ->
+            val isActive = match === activeHighlight
+            Box(
+                modifier = Modifier
+                    .offset(
+                        x = (match.xPoints * scaleX).dp,
+                        y = (match.yPoints * scaleY).dp,
+                    )
+                    .size(
+                        width = (match.widthPoints * scaleX).dp,
+                        height = (match.heightPoints * scaleY).dp,
+                    )
+                    .background(
+                        color = if (isActive) ActiveMatchFill else IdleMatchFill,
+                    ),
+            )
+        }
+    }
+}
+
+private val IdleMatchFill = Color(0x66FFE57F)    // ~40% amber 200
+private val ActiveMatchFill = Color(0xCCFFB300)  // ~80% amber 700
 
 /**
  * Renders an invisible clickable layer over the rasterised page so
