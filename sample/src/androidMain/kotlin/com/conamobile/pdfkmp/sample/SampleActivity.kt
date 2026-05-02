@@ -48,7 +48,7 @@ import com.conamobile.pdfkmp.viewer.PdfViewerTopBar
  * - **List** (this file → [SampleApp]) — eight categories of bundled
  *   sample documents. Tap one and the activity navigates to the
  *   detail.
- * - **Detail** — a *single* call into [`KmpPdfViewer.open`][KmpPdfViewer.open]
+ * - **Detail** — a *single* call into [`KmpPdfViewer`][KmpPdfViewer]
  *   which gives you the full topbar + search bar morph + share /
  *   save / hyperlink launcher + page indicator + gesture-driven
  *   zoom / pan / selection — no extra wiring required by the host.
@@ -243,7 +243,7 @@ private val SAMPLE_CATEGORIES = listOf(
 // ─────────────────────────────────────────────────────────────────────
 // Top-level navigator. Owns the selected entry, asynchronously builds
 // the document for the detail screen, and routes between list /
-// loading / KmpPdfViewer.open.
+// loading / KmpPdfViewer.
 // ─────────────────────────────────────────────────────────────────────
 
 @Composable
@@ -395,7 +395,7 @@ private fun LoadingScreen(entry: SampleEntry, onBack: () -> Unit) {
 //
 // Every chrome layer the design handoff covers (topbar, search bar
 // morph, share + save + URL launchers, page indicator, gestures) is
-// owned by `KmpPdfViewer.open`. The host's only job is to hand it
+// owned by `KmpPdfViewer`. The host's only job is to hand it
 // the document, a title, and a back callback.
 //
 // Replace the bundled `Samples.brochure()` with your own PDF source
@@ -410,7 +410,7 @@ private fun DetailScreen(
     document: PdfDocument,
     onBack: () -> Unit,
 ) {
-    KmpPdfViewer.open(
+    KmpPdfViewer(
         document = document,
         title = entry.title,
         fileName = "${entry.id}.pdf",

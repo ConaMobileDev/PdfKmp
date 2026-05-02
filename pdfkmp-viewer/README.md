@@ -48,17 +48,23 @@ The viewer pulls in Compose Multiplatform 1.10+ (`compose.foundation`, `compose.
 
 ## Quick start
 
-**One call, complete screen.** `KmpPdfViewer.open(...)` is the recommended entry point — it owns the topbar, search bar morph, share / save / hyperlink launchers, page indicator, and gesture model. The host configures *what* is exposed and *what happens on back*; nothing else.
+The library ships **two paired entry points** so you can open the viewer from anywhere — Compose UI tree *or* arbitrary imperative code.
+
+### `KmpPdfViewer(...)` — Composable (idiomatic Compose)
+
+Drop into your navigation graph or any `@Composable` scope. Owns the topbar, search bar morph, share / save / hyperlink launchers, page indicator, and gesture model.
 
 ```kotlin
-// Open a remote PDF
-KmpPdfViewer.open(
-    uri = "https://example.com/invoice.pdf",
-    title = "Invoice 2026 Q1",
-    onBack = { navController.popBackStack() },
-)
+@Composable
+fun MyScreen() {
+    KmpPdfViewer(
+        uri = "https://example.com/invoice.pdf",
+        title = "Invoice 2026 Q1",
+        onBack = { navController.popBackStack() },
+    )
+}
 
-// Open a PdfKmp document — text selection + hyperlinks light up automatically
+// PdfKmp DSL document — text selection + hyperlinks light up automatically
 val document = remember {
     pdf {
         page {
@@ -69,7 +75,7 @@ val document = remember {
         }
     }
 }
-KmpPdfViewer.open(
+KmpPdfViewer(
     document = document,
     title = "Hello",
     fileName = "hello.pdf",
@@ -77,16 +83,38 @@ KmpPdfViewer.open(
 )
 ```
 
-`KmpPdfViewer.open` accepts four input shapes:
+### `KmpPdfLauncher.open(...)` — Imperative (call from anywhere)
+
+For fire-and-forget launches outside a `@Composable` scope: click handlers, `LaunchedEffect`, suspend functions, notification taps, etc. The launcher hosts `KmpPdfViewer` inside an Activity (Android) / `UIViewController` (iOS) and dismisses on back.
+
+```kotlin
+Button(onClick = {
+    scope.launch {
+        val pdf = pdfAsync { … build PDF … }
+        KmpPdfLauncher.open(pdf, title = "Invoice")
+    }
+})
+
+// URI directly — bytes fetched on a background dispatcher
+KmpPdfLauncher.open(
+    uri = "content://com.example.docs/123",
+    title = "Document",
+    fileName = "document.pdf",
+)
+```
+
+Both APIs accept four input shapes:
 
 | Overload | Use when | Selection / hyperlinks |
 |---|---|---|
-| `open(uri: String, …)` | `content://`, `file://`, `http(s)://`, asset / bundle paths | **disabled** — opaque bytes |
-| `open(document: PdfDocument, …)` | document came from PdfKmp's `pdf { }` DSL | **enabled** |
-| `open(bytes: ByteArray, …)` | raw `%PDF-…` from disk / network / file picker | **disabled** |
-| `open(source: PdfSource, …)` | you constructed a `PdfSource.Document(bytes, runs, links)` yourself | **enabled** when `source` is `Document` |
+| `KmpPdfViewer(uri / KmpPdfLauncher.open(uri, …)` | `content://`, `file://`, `http(s)://`, asset / bundle paths | **disabled** — opaque bytes |
+| `KmpPdfViewer(document / KmpPdfLauncher.open(document, …)` | from PdfKmp's `pdf { }` DSL | **enabled** |
+| `KmpPdfViewer(bytes / KmpPdfLauncher.open(bytes, …)` | raw `%PDF-…` from disk / network / file picker | **disabled** |
+| `KmpPdfViewer(source = …)` (composable only) | you constructed a `PdfSource.Document(bytes, runs, links)` yourself | **enabled** when `source` is `Document` |
 
-> Need finer control (custom topbar, multi-FAB layouts, bottom-sheet share)? The lower-level composables — [`PdfViewer`](#public-api-surface), `PdfViewerTopBar`, `PdfSearchBar`, plus the `rememberPdfShareAction` / `rememberPdfSaveAction` / `rememberPdfUrlLauncher` action factories — stay public. `KmpPdfViewer.open` is the opinionated default; the building blocks remain available.
+> **When to prefer which** — composable form integrates with the host's back stack and theming directly (no Activity / `presentViewController` ceremony) and is the right default for Compose-based navigation. The imperative form is for code that doesn't have a composable surface to mount the viewer into — modal launches from worker coroutines, click handlers in legacy View hierarchies, etc.
+
+> Need finer control (custom topbar, multi-FAB layouts, bottom-sheet share)? The lower-level composables — [`PdfViewer`](#public-api-surface), `PdfViewerTopBar`, `PdfSearchBar`, plus the `rememberPdfShareAction` / `rememberPdfSaveAction` / `rememberPdfUrlLauncher` action factories — stay public.
 
 ## Features
 
@@ -262,7 +290,8 @@ PdfViewer(
 
 | Composable / function | Purpose |
 |---|---|
-| **`KmpPdfViewer.open(uri / document / bytes / source, …)`** | **All-in-one viewer screen — recommended entry point** |
+| **`@Composable KmpPdfViewer(uri / document / bytes / source, …)`** | **All-in-one viewer screen — recommended composable entry** |
+| **`KmpPdfLauncher.open(uri / document / bytes, …)`** | **Imperative wrapper — call from any scope** |
 | `PdfViewer(source / document / bytes, …)` | Lower-level viewer (no topbar / search) — for advanced layouts |
 | `PdfSource.Bytes(bytes)` / `PdfSource.Document(bytes, runs, links)` | Sealed input shape |
 | `PdfSource.of(document)` / `PdfSource.of(bytes)` | Convenience factories |
