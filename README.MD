@@ -55,6 +55,7 @@ Every DSL node funnels into these system PDF APIs, so the resulting bytes are re
 - [Hyperlinks](#hyperlinks)
 - [i18n fonts (CJK / Arabic / Persian) and custom fonts](#i18n-fonts-cjk--arabic--persian-and-custom-fonts)
 - [Compose Multiplatform Resources](#compose-multiplatform-resources)
+- [PDF viewer — `KmpPdfViewer` / `KmpPdfLauncher`](#pdf-viewer--kmppdfviewer--kmppdflauncher)
 - [Saving the document](#saving-the-document)
 - [What to do after save — view, share, open](#what-to-do-after-save--view-share-open)
 - [Page break strategies](#page-break-strategies)
@@ -71,7 +72,8 @@ PdfKmp is published to **Maven Central**. The library exposes:
 - an Android `aar` (`io.github.conamobiledev:pdfkmp-android`),
 - an iOS framework named `PdfKmp` for arm64, x64, and simulator-arm64,
 - common Kotlin metadata (`io.github.conamobiledev:pdfkmp`),
-- an optional Compose Multiplatform Resources companion (`io.github.conamobiledev:pdfkmp-compose-resources`).
+- an optional Compose Multiplatform Resources companion (`io.github.conamobiledev:pdfkmp-compose-resources`),
+- an optional Compose Multiplatform PDF viewer screen (`io.github.conamobiledev:pdfkmp-viewer`).
 
 Make sure Maven Central is in your repository list:
 
@@ -100,6 +102,7 @@ pdfkmp = "0.2.0-alpha01"
 [libraries]
 pdfkmp = { module = "io.github.conamobiledev:pdfkmp", version.ref = "pdfkmp" }
 pdfkmp-compose-resources = { module = "io.github.conamobiledev:pdfkmp-compose-resources", version.ref = "pdfkmp" } # optional
+pdfkmp-viewer = { module = "io.github.conamobiledev:pdfkmp-viewer", version.ref = "pdfkmp" } # optional
 ```
 
 ```kotlin
@@ -109,6 +112,7 @@ kotlin {
         commonMain.dependencies {
             implementation(libs.pdfkmp)
             implementation(libs.pdfkmp.compose.resources) // optional
+            implementation(libs.pdfkmp.viewer)            // optional
         }
     }
 }
@@ -123,12 +127,18 @@ kotlin {
         commonMain.dependencies {
             implementation("io.github.conamobiledev:pdfkmp:0.2.0-alpha01")
             implementation("io.github.conamobiledev:pdfkmp-compose-resources:0.2.0-alpha01") // optional
+            implementation("io.github.conamobiledev:pdfkmp-viewer:0.2.0-alpha01")            // optional
         }
     }
 }
 ```
 
-`pdfkmp-compose-resources` is **optional** — add it only if your project uses Compose Multiplatform Resources (`Res.drawable.*`) and you want typed resource references inside the PdfKmp DSL. The core `pdfkmp` artifact itself stays Compose-free. Full usage in the [Compose Multiplatform Resources](#compose-multiplatform-resources) section below.
+Both companions are **opt-in**:
+
+- `pdfkmp-compose-resources` — add it only if your project uses Compose Multiplatform Resources (`Res.drawable.*`) and you want typed resource references inside the PdfKmp DSL. Full usage in the [Compose Multiplatform Resources](#compose-multiplatform-resources) section.
+- `pdfkmp-viewer` — Compose Multiplatform PDF viewer screen with topbar, search, share, save, hyperlinks, gesture-driven zoom & text selection. Skip it if you only need to *generate* PDFs and let users view them in their system default reader. Full usage in the [PDF viewer](#pdf-viewer--kmppdfviewer--kmppdflauncher) section.
+
+The core `pdfkmp` artifact itself stays Compose-free — non-Compose consumers don't pay for either companion.
 
 ### Android-only project
 
@@ -143,12 +153,14 @@ pdfkmp = "0.2.0-alpha01"
 
 [libraries]
 pdfkmp-android = { module = "io.github.conamobiledev:pdfkmp-android", version.ref = "pdfkmp" }
+pdfkmp-viewer = { module = "io.github.conamobiledev:pdfkmp-viewer", version.ref = "pdfkmp" } # optional
 ```
 
 ```kotlin
 // app/build.gradle.kts
 dependencies {
     implementation(libs.pdfkmp.android)
+    implementation(libs.pdfkmp.viewer) // optional — Compose viewer screen
 }
 ```
 
@@ -158,8 +170,11 @@ Without a version catalog:
 // app/build.gradle.kts
 dependencies {
     implementation("io.github.conamobiledev:pdfkmp-android:0.2.0-alpha01")
+    implementation("io.github.conamobiledev:pdfkmp-viewer:0.2.0-alpha01") // optional
 }
 ```
+
+`pdfkmp-viewer` brings in Compose Multiplatform — skip it if your Android project still uses the legacy View system. The viewer assumes Compose hosting (a `ComponentActivity` with `setContent { … }` or an embedded `ComposeView`).
 
 ### Requirements
 
@@ -780,6 +795,118 @@ For preloading or custom caching outside the DSL, every `DrawableResource` expos
 
 ---
 
+## PDF viewer — `KmpPdfViewer` / `KmpPdfLauncher`
+
+The optional [`pdfkmp-viewer`](pdfkmp-viewer/README.md) module ships a complete Compose Multiplatform PDF viewer screen — drop it in and you get a polished topbar, in-document text search, share, save-to-Downloads, hyperlink launcher, page indicator, and gesture-driven zoom / pan / text selection. The screen ships in two flavours so you can wire it up from anywhere — Compose UI tree *or* arbitrary imperative code.
+
+> Skip this section if you only need to *generate* PDFs and let users view them in their system default reader (the manual platform recipes in [What to do after save](#what-to-do-after-save--view-share-open) below stay valid). Add the viewer when you want a unified, on-brand viewing experience inside your app.
+
+### Install
+
+See [Installation](#installation) above for full Gradle wiring. In short: add `io.github.conamobiledev:pdfkmp-viewer` alongside `pdfkmp` in your `commonMain` dependencies.
+
+### `KmpPdfViewer(...)` — composable (idiomatic Compose)
+
+For Compose-based navigation graphs (`NavHost` / Voyager / Decompose). PascalCase, top-level, integrates with the host's back stack and theming.
+
+```kotlin
+import com.conamobile.pdfkmp.viewer.KmpPdfViewer
+
+@Composable
+fun InvoiceDetail(navController: NavController) {
+    KmpPdfViewer(
+        uri = "https://example.com/invoice.pdf",
+        title = "Invoice 2026 Q1",
+        onBack = { navController.popBackStack() },
+    )
+}
+
+// PdfKmp DSL document — text selection + clickable hyperlinks light up automatically
+val document = remember {
+    pdf {
+        page {
+            text("Hello, world!") { fontSize = 18.sp; bold = true }
+            link(url = "https://example.com") {
+                text("Visit our site") { color = PdfColor.Blue; underline = true }
+            }
+        }
+    }
+}
+KmpPdfViewer(
+    document = document,
+    title = "Hello",
+    fileName = "hello.pdf",
+    onBack = { navController.popBackStack() },
+)
+```
+
+### `KmpPdfLauncher.open(...)` — imperative (call from anywhere)
+
+For fire-and-forget launches outside a `@Composable` scope: click handlers, `LaunchedEffect`, suspend functions, notification taps, etc. The launcher hosts `KmpPdfViewer` inside an Activity (Android) / `UIViewController` (iOS) and dismisses on back.
+
+```kotlin
+import com.conamobile.pdfkmp.viewer.KmpPdfLauncher
+
+Button(onClick = {
+    scope.launch {
+        val pdf = pdfAsync { /* … build PDF … */ }
+        KmpPdfLauncher.open(pdf, title = "Invoice")
+    }
+})
+
+// URI directly — bytes fetched on a background dispatcher
+KmpPdfLauncher.open(
+    uri = "content://com.example.docs/123",
+    title = "Document",
+    fileName = "document.pdf",
+)
+```
+
+### Input shapes
+
+Both APIs accept four input shapes — pick whichever matches what your code already has:
+
+| Overload | Use when | Selection / hyperlinks |
+|---|---|---|
+| `uri: String` | `content://`, `file://`, `http(s)://`, asset / bundle paths | **disabled** — opaque bytes |
+| `document: PdfDocument` | from PdfKmp's `pdf { }` DSL | **enabled** |
+| `bytes: ByteArray` | raw `%PDF-…` from disk / network / file picker | **disabled** |
+| `source: PdfSource` (composable only) | you constructed a `PdfSource.Document(bytes, runs, links)` yourself | **enabled** when `source` is `Document` |
+
+### Features
+
+- **Topbar** — Material-style Minimal Mono on Android, Classic iOS Native on iOS. Picks the right variant per platform via expect/actual.
+- **Search** — long-press the search chip → topbar morphs into an inline `TextField`. Matches yellow-highlight in the page; previous / next chevrons cycle through results; auto-scrolls to the active match.
+- **Share** — Material 3 share affordance. Hands the bytes to `Intent.ACTION_SEND` (Android) / `UIActivityViewController` (iOS).
+- **Save to Downloads** — `MediaStore.Downloads` on Android (Toast on success) / `NSDocumentDirectory` on iOS (alert on success).
+- **Hyperlinks** — `link(url) { … }` blocks in the DSL produce real clickable hotspots. Tapping opens the URL in the system browser.
+- **Text selection** — invisible `SelectionContainer` overlay backed by the captured glyph positions. Long-press → drag handles → Copy.
+- **Gestures** — pinch zoom (1× → 5×), single-finger pan when zoomed, free 2D pan, double-tap toggle, focal-point anchoring.
+- **Page indicator** — auto-fades pill that switches to the next page once it crosses the viewport midpoint.
+
+Every action button has a matching `showSearch` / `showShare` / `showDownload` / `showBack` / `showPageIndicator` Boolean — pass `false` to hide individual affordances without un-wiring callbacks. Behaviour toggles `zoomEnabled`, `doubleTapToZoom`, `textSelectable`, `hyperlinksEnabled` follow the same shape.
+
+### Lower-level building blocks
+
+When the all-in-one shape doesn't fit (custom topbar, multi-FAB layouts, bottom-sheet share), the underlying composables stay public:
+
+- `PdfViewer(...)` — viewer surface only, no topbar / search.
+- `PdfViewerTopBar(...)` / `PdfViewerTopBarMinimalMono(...)` / `PdfViewerTopBarClassicIos(...)` — topbar variants.
+- `PdfSearchBar(...)` — morphing search field.
+- `PdfShareFab(...)` / `PdfSaveFab(...)` — Material 3 FAB convenience composables.
+- `rememberPdfShareAction()` / `rememberPdfSaveAction()` / `rememberPdfUrlLauncher()` — action factories.
+- `searchPdfText(textRuns, query)` — substring scanner over captured text runs.
+
+The full surface — every parameter, every overload, every tradeoff — lives in [`pdfkmp-viewer/README.md`](pdfkmp-viewer/README.md).
+
+### Limitations
+
+- **Text selection / hyperlinks only on PdfKmp-built documents.** External PDFs (network, file picker, etc.) are bitmap-only because the bytes don't carry text-position metadata. Adding general PDF parsing would require a heavy dependency (PdfBox-Android, PDF.js) — not in scope.
+- **iOS Liquid Glass.** iOS 26's default toolbar wraps every action in a translucent floating capsule. The library's iOS topbar bypasses this with a custom flat shell so the design matches the handoff. Apps that prefer the Liquid Glass look can drop down to `PdfViewer` and host their own SwiftUI navigation bar.
+- **Compose-only.** No legacy View / UIKit-only entry point. Both APIs assume Compose Multiplatform is already set up in the host.
+
+---
+
 ## Saving the document
 
 PdfKmp gives you three ways to handle the generated PDF, in order of convenience:
@@ -843,7 +970,21 @@ val data: NSData = doc.toNSData()
 
 ## What to do after save — view, share, open
 
-Most apps don't stop at "I have a file on disk" — you want to **show the PDF** to the user, **share it** to another app, or **let them email it**. Here's what each platform needs.
+Most apps don't stop at "I have a file on disk" — you want to **show the PDF** to the user, **share it** to another app, or **let them email it**.
+
+### Recommended path — `pdfkmp-viewer`
+
+For Compose-based apps, the optional [`pdfkmp-viewer`](#pdf-viewer--kmppdfviewer--kmppdflauncher) module gives you the entire flow in a single call. Topbar, search, share, save-to-Downloads, hyperlinks, gestures — all built in:
+
+```kotlin
+KmpPdfLauncher.open(saved.path, title = "Invoice")    // imperative
+// or
+KmpPdfViewer(uri = saved.path, title = "Invoice", onBack = { … })   // composable
+```
+
+See [PDF viewer — `KmpPdfViewer` / `KmpPdfLauncher`](#pdf-viewer--kmppdfviewer--kmppdflauncher) above for the full feature list and lower-level building blocks.
+
+If you'd rather stick with platform primitives — say you don't want to pull in Compose — the rest of this section walks through hand-rolled Android `PdfRenderer` + iOS PDFKit + share-sheet recipes.
 
 ### Android — display the PDF in your app
 
@@ -999,7 +1140,7 @@ func sharePdf(savedPath: String, presenter: UIViewController) {
 
 This brings up the standard share sheet — AirDrop, Messages, Mail, "Save to Files", any installed PDF viewer.
 
-> On Compose Multiplatform, wrap the two snippets above in an `expect` / `actual` `@Composable PdfViewer(saved: SavedPdf)` — `AndroidView { PdfRenderer(...) }` on `androidMain`, `UIKitView { PDFView() }` on `iosMain`. A first-class `PdfViewer` component is on the `0.2.0` roadmap.
+> On Compose Multiplatform, the [`pdfkmp-viewer`](#pdf-viewer--kmppdfviewer--kmppdflauncher) module covers this end-to-end — same `expect` / `actual` shape sketched here, plus the topbar / search / share chrome already wired up. The hand-rolled snippets above are the "I want a custom UI" escape hatch.
 
 ---
 
@@ -1055,8 +1196,8 @@ Three samples (`withImage`, `slicedImage`, `customDesigns`) take a `ByteArray` s
 
 The repo ships two sample apps that mirror each other feature-for-feature:
 
-- `:sample` — Compose Android app, structured as a single-target KMP module (`androidTarget()` only) so it can pull resources from `commonMain/composeResources/` for the `pdfAsync { drawable(Res.drawable.X) }` showcase. Run with `./gradlew :sample:installDebug`.
-- `iosApp/iosApp.xcodeproj` — SwiftUI iOS app. Open in Xcode and Run; the build phase calls `:pdfkmp:embedAndSignAppleFrameworkForXcode` automatically.
+- `:sample` — Compose Android app, structured as a single-target KMP module (`androidTarget()` only) so it can pull resources from `commonMain/composeResources/` for the `pdfAsync { drawable(Res.drawable.X) }` showcase. Detail screen drops straight into `KmpPdfViewer(...)` — five lines for a complete viewer with topbar, search, share, save, hyperlinks, and gestures. Run with `./gradlew :sample:installDebug`.
+- `iosApp/iosApp.xcodeproj` — SwiftUI iOS app. Detail view follows the Classic iOS Native handoff with chevron + label, centered title, and three iOS-blue trailing icons; PDFKit handles rendering. Open in Xcode and Run; the build phase calls `:pdfkmp:embedAndSignAppleFrameworkForXcode` automatically.
 
 Both apps surface every demo from `Samples` (in `:pdfkmp/src/commonMain/kotlin/.../samples/Samples.kt`) plus `ComposeResourcesDemo` (Android sample only — iOS demo coming with the next iOS sample refresh) so you can eyeball each feature on real devices.
 
