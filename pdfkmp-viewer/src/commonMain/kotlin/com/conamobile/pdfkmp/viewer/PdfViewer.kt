@@ -819,16 +819,36 @@ private fun PdfTextSelectionOverlay(
     val widthPoints = pageSize.widthPoints.takeIf { it > 0f } ?: return
     val heightPoints = pageSize.heightPoints.takeIf { it > 0f } ?: return
 
+    val density = LocalDensity.current
+    val measurer = rememberTextMeasurer()
+
+    // Compose's natural width scales linearly with fontSize for a
+    // fixed string, so we measure each run ONCE at its base PDF
+    // fontSize and rescale in the per-frame loop. Without this cache
+    // the measurer ran per-run-per-frame during pinch (≈3000
+    // measure() calls per second on a typical page) and made the
+    // gesture feel sluggish.
+    val baseNaturalWidthsPx = remember(textRuns) {
+        textRuns.map { run ->
+            if (run.text.length <= 1) 0f else {
+                val baseStyle = TextStyle(fontSize = run.fontSizePoints.sp)
+                measurer.measure(
+                    text = run.text,
+                    style = baseStyle,
+                    softWrap = false,
+                ).size.width.toFloat()
+            }
+        }
+    }
+
     SelectionContainer(modifier = modifier) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val boxWidth = maxWidth
             val boxHeight = maxHeight
             val scaleX = boxWidth.value / widthPoints
             val scaleY = boxHeight.value / heightPoints
-            val density = LocalDensity.current
-            val measurer = rememberTextMeasurer()
 
-            textRuns.forEach { run ->
+            textRuns.forEachIndexed { idx, run ->
                 val xDp = (run.xPoints * scaleX).dp
                 val yDp = (run.yPoints * scaleY).dp
                 val widthPx = run.widthPoints * scaleX * density.density
@@ -848,12 +868,11 @@ private fun PdfTextSelectionOverlay(
                     ),
                 )
 
-                // Stretch the laid-out text to match the recorded width
-                // by inserting per-character spacing. Single-char runs
-                // can't be stretched between characters, so we leave
-                // them at their natural width (negligibly small gap).
-                val natural = measurer.measure(text = run.text, style = style, softWrap = false)
-                val naturalWidthPx = natural.size.width.toFloat()
+                // Scale the cached base width by the current zoom
+                // factor — fontSize and Compose's natural advance
+                // both scale linearly, so this is a multiplication
+                // instead of a fresh measurement.
+                val naturalWidthPx = baseNaturalWidthsPx[idx] * scaleY
                 val letterSpacingSp = if (run.text.length > 1 && naturalWidthPx > 0f) {
                     val extraPx = (widthPx - naturalWidthPx) / (run.text.length - 1)
                     with(density) { extraPx.toDp().toSp() }
@@ -883,10 +902,22 @@ private fun PdfPageIndicator(
 ) {
     val currentPage by remember(listState, pageCount) {
         derivedStateOf {
-            // Pages are 1-based for human readers. Clamp to pageCount
-            // because LazyColumn can briefly report an index past the
-            // end during a fling.
-            (listState.firstVisibleItemIndex + 1).coerceAtMost(pageCount)
+            // Pick the page whose midpoint is closest to the viewport
+            // centre — that's the one occupying the most screen real
+            // estate, so the indicator flips to "2/2" the moment page
+            // 2 crosses the half-way mark rather than waiting for
+            // page 1 to fully scroll off (which is what
+            // `firstVisibleItemIndex` would give us).
+            val info = listState.layoutInfo
+            val visible = info.visibleItemsInfo
+            if (visible.isEmpty()) return@derivedStateOf 1
+            val viewportMid =
+                (info.viewportStartOffset + info.viewportEndOffset) / 2
+            val current = visible.minByOrNull { item ->
+                val mid = item.offset + item.size / 2
+                kotlin.math.abs(mid - viewportMid)
+            } ?: visible.first()
+            (current.index + 1).coerceAtMost(pageCount)
         }
     }
 

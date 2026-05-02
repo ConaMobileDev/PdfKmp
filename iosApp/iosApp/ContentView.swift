@@ -199,45 +199,45 @@ private struct SamplePreviewView: View {
             // navigation bar appearance.
             ToolbarItem(placement: .topBarLeading) {
                 Button(action: { dismiss() }) {
+                    // Size left to SwiftUI defaults — Mail / Files /
+                    // Notes use the system body font for the back
+                    // chevron + label, which on iOS 17+ resolves to
+                    // ~17pt with a slightly heavier chevron stroke.
+                    // Custom 28pt sizing was reading as oversized
+                    // versus the reference image.
                     HStack(spacing: 2) {
                         Image(systemName: "chevron.left")
-                            // 28pt chevron per the handoff spec —
-                            // larger than the SwiftUI default so the
-                            // glyph reads on its own next to the
-                            // 17pt label.
-                            .font(.system(size: 28, weight: .semibold))
+                            .fontWeight(.semibold)
                         Text("Samples")
-                            .font(.system(size: 17))
-                            .kerning(-0.4)
                     }
                 }
             }
             ToolbarItem(placement: .principal) {
-                // Title is BLACK, not the navigation tint — handoff is
-                // explicit about #000 here.
+                // Title in BLACK, not the navigation tint — handoff
+                // is explicit about #000 here.
                 Text(entry.title)
-                    .font(.system(size: 17, weight: .semibold))
-                    .kerning(-0.4)
+                    .font(.headline)
                     .foregroundStyle(Color.black)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: 220)
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
+                // Trailing icons rely on the default toolbar font
+                // (`.body`, ~17pt) to match the visual weight of
+                // Mail's reply / move / flag affordances. The
+                // ambient `.tint(iosBlue)` paints them.
                 Button(action: openSearch) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 22, weight: .regular))
                 }
 
                 if let data = pdfData {
                     ShareLink(item: temporaryURL(for: data)) {
                         Image(systemName: "square.and.arrow.up")
-                            .font(.system(size: 22, weight: .regular))
                     }
 
                     Button(action: { saveToDocuments(data: data) }) {
                         Image(systemName: "arrow.down.to.line")
-                            .font(.system(size: 22, weight: .regular))
                     }
                 }
             }
@@ -289,13 +289,11 @@ private struct SamplePreviewView: View {
                     navigateMatch(by: -1)
                 } label: {
                     Image(systemName: "chevron.up")
-                        .font(.system(size: 17, weight: .regular))
                 }
                 Button {
                     navigateMatch(by: 1)
                 } label: {
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 17, weight: .regular))
                 }
             }
         }
