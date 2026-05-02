@@ -7,13 +7,12 @@ import SwiftUI
 /// glyph edges stay sharp at any magnification, matching the on-device
 /// behaviour of native PDF apps.
 ///
-/// The detail screen now mirrors `:pdfkmp-viewer`'s Classic iOS Native
-/// topbar variant from `design_handoff_pdf_topbar/`: search via the
-/// system `.searchable` modifier (matches typed → next match scrolls
-/// into view), download via a custom toolbar button that writes to the
-/// app's `Documents` directory, and share via SwiftUI's `ShareLink`
-/// with a `.pdf` temp URL — same UX shape as the Compose viewer on
-/// Android, expressed in iOS-native primitives.
+/// The detail screen implements `Direction 2 — Classic iOS Native` from
+/// `design_handoff_pdf_topbar/`: a 52pt nav bar with a custom
+/// chevron + "Samples" back label, a centered 17pt semibold title,
+/// and three 22pt iOS-blue trailing icons (search, share, download).
+/// Tapping search morphs the toolbar into a `TextField` + `Cancel`
+/// button — same pattern as Mail / Files / Notes.
 struct ContentView: View {
     @State private var selected: SampleEntry?
 
@@ -25,8 +24,6 @@ struct ContentView: View {
             .navigationTitle("PdfKmp samples")
             .navigationDestination(item: $selected) { entry in
                 SamplePreviewView(entry: entry)
-                    .navigationTitle(entry.title)
-                    .navigationBarTitleDisplayMode(.inline)
             }
         }
     }
@@ -115,15 +112,23 @@ private let samples: [SampleEntry] = [
     },
 ]
 
+/// iOS Blue (#0A84FF) from the design handoff. Hard-coded rather than
+/// `.tint` because the spec is explicit about the exact accent.
+private let iosBlue = Color(red: 0x0A / 255, green: 0x84 / 255, blue: 0xFF / 255)
+
 private struct SamplePreviewView: View {
     let entry: SampleEntry
+
+    @Environment(\.dismiss) private var dismiss
 
     @State private var document: PDFDocument?
     @State private var pdfData: Data?
 
+    @State private var searchActive: Bool = false
     @State private var searchQuery: String = ""
     @State private var matches: [PDFSelection] = []
     @State private var activeMatchIndex: Int = 0
+    @FocusState private var searchFieldFocused: Bool
     @State private var savedAlert: Bool = false
 
     /// Filename used by both the share sheet and the "save to Files"
@@ -143,69 +148,20 @@ private struct SamplePreviewView: View {
                 ProgressView("Rendering…")
             }
         }
-        .searchable(text: $searchQuery, prompt: "Search in document")
-        .onChange(of: searchQuery) { _, newValue in
-            performSearch(query: newValue)
-        }
+        .navigationBarBackButtonHidden(true)
+        .navigationBarTitleDisplayMode(.inline)
+        // Custom 17pt semibold title — matches the handoff exactly so
+        // we don't rely on the SwiftUI default that varies per OS
+        // version. Hidden during search so the field gets the slot.
         .toolbar {
-            // Match counter — only visible while there's a query and at
-            // least one hit, mirrors the Compose PdfSearchBar's "N / M"
-            // badge.
-            if !searchQuery.isEmpty {
-                ToolbarItem(placement: .principal) {
-                    if matches.isEmpty {
-                        Text("No matches")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("\(activeMatchIndex + 1) / \(matches.count)")
-                            .font(.footnote.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-
-            // Prev / Next match navigation surfaces only while
-            // searching so the toolbar isn't permanently cluttered.
-            if !matches.isEmpty {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        navigateMatch(by: -1)
-                    } label: {
-                        Image(systemName: "chevron.up")
-                    }
-                    .accessibilityLabel("Previous match")
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        navigateMatch(by: 1)
-                    } label: {
-                        Image(systemName: "chevron.down")
-                    }
-                    .accessibilityLabel("Next match")
-                }
-            }
-
-            // Download — writes the PDF into the app's Documents
-            // directory, surfaced in the Files app under
-            // "On My iPhone / <AppName>". Equivalent of
-            // `rememberPdfSaveAction()` on iOS.
-            if let data = pdfData {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        saveToDocuments(data: data)
-                    } label: {
-                        Image(systemName: "arrow.down.to.line")
-                    }
-                    .accessibilityLabel("Save to Files")
-                }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    ShareLink(item: temporaryURL(for: data)) {
-                        Image(systemName: "square.and.arrow.up")
-                    }
-                    .accessibilityLabel("Share PDF")
-                }
+            toolbarContent
+        }
+        .safeAreaInset(edge: .bottom) {
+            // Match navigation overlay rides above the keyboard while
+            // search is active and at least one hit exists. Mirrors
+            // the Compose viewer's PdfSearchBar match counter.
+            if searchActive {
+                searchFooter
             }
         }
         .alert("Saved to Files", isPresented: $savedAlert) {
@@ -220,7 +176,147 @@ private struct SamplePreviewView: View {
         }
     }
 
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        if searchActive {
+            // ── Morph: search field replaces the entire topbar.
+            ToolbarItem(placement: .principal) {
+                searchField
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Cancel") {
+                    closeSearch()
+                }
+                .foregroundStyle(iosBlue)
+            }
+        } else {
+            // ── Default: chevron + back label, centered title, three
+            // 22pt trailing icons in iOS Blue.
+            ToolbarItem(placement: .topBarLeading) {
+                Button(action: { dismiss() }) {
+                    HStack(spacing: 2) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 17, weight: .semibold))
+                        Text("Samples")
+                            .font(.system(size: 17))
+                            .kerning(-0.4)
+                    }
+                    .foregroundStyle(iosBlue)
+                }
+            }
+            ToolbarItem(placement: .principal) {
+                Text(entry.title)
+                    .font(.system(size: 17, weight: .semibold))
+                    .kerning(-0.4)
+                    .foregroundStyle(.black)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 220)
+            }
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button(action: openSearch) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 22, weight: .regular))
+                }
+                .foregroundStyle(iosBlue)
+
+                if let data = pdfData {
+                    ShareLink(item: temporaryURL(for: data)) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 22, weight: .regular))
+                    }
+                    .foregroundStyle(iosBlue)
+
+                    Button(action: { saveToDocuments(data: data) }) {
+                        Image(systemName: "arrow.down.to.line")
+                            .font(.system(size: 22, weight: .regular))
+                    }
+                    .foregroundStyle(iosBlue)
+                }
+            }
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .font(.system(size: 14, weight: .regular))
+            TextField("Search in document", text: $searchQuery)
+                .focused($searchFieldFocused)
+                .submitLabel(.search)
+                .onSubmit { navigateMatch(by: 1) }
+                .textFieldStyle(.plain)
+            if !searchQuery.isEmpty {
+                Button {
+                    searchQuery = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color(uiColor: .tertiarySystemFill))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .frame(minWidth: 220, idealWidth: 280, maxWidth: 320)
+        .onChange(of: searchQuery) { _, newValue in
+            performSearch(query: newValue)
+        }
+    }
+
+    private var searchFooter: some View {
+        HStack(spacing: 12) {
+            if matches.isEmpty {
+                Text(searchQuery.isEmpty ? "" : "No matches")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            } else {
+                Text("\(activeMatchIndex + 1) of \(matches.count)")
+                    .font(.footnote.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    navigateMatch(by: -1)
+                } label: {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 17, weight: .regular))
+                }
+                .foregroundStyle(iosBlue)
+                Button {
+                    navigateMatch(by: 1)
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 17, weight: .regular))
+                }
+                .foregroundStyle(iosBlue)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.regularMaterial)
+    }
+
     // MARK: - Search
+
+    private func openSearch() {
+        searchActive = true
+        // Defer focus-grab until the toolbar morph has had a frame to
+        // mount the TextField — focusing too eagerly is a no-op.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            searchFieldFocused = true
+        }
+    }
+
+    private func closeSearch() {
+        searchFieldFocused = false
+        searchActive = false
+        searchQuery = ""
+        matches = []
+        activeMatchIndex = 0
+    }
 
     private func performSearch(query: String) {
         guard let document, !query.isEmpty else {
@@ -274,9 +370,6 @@ private struct PdfPreview: UIViewRepresentable {
         view.autoScales = true
         view.displayMode = .singlePageContinuous
         view.displayDirection = .vertical
-        // Highlight active search hits with a translucent yellow fill so
-        // the visual treatment lines up with the Compose viewer's
-        // PdfSearchOverlay on Android.
         view.highlightedSelections = nil
         return view
     }
@@ -286,11 +379,11 @@ private struct PdfPreview: UIViewRepresentable {
             uiView.document = document
         }
         if let active = activeMatch {
-            // Two layers: `highlightedSelections` paints every match
-            // with a translucent fill (PDFKit defaults to yellow),
-            // `setCurrentSelection` plus `go(to:)` scrolls the page so
-            // the active hit lands in view and inverts its colour to
-            // call attention to it.
+            // `highlightedSelections` paints every match with a
+            // translucent fill (PDFKit defaults to yellow);
+            // `setCurrentSelection` + `go(to:)` scrolls the page so
+            // the active hit lands in view and inverts its colour
+            // to call attention to it.
             let highlight = active.copy() as? PDFSelection
             highlight?.color = .systemYellow.withAlphaComponent(0.5)
             uiView.highlightedSelections = highlight.map { [$0] }
