@@ -27,7 +27,7 @@ Available on Maven Central as `io.github.conamobiledev:pdfkmp-viewer`.
 ```kotlin
 // libs.versions.toml
 [versions]
-pdfkmp = "0.2.0-beta01"
+pdfkmp = "0.2.0-rc01"
 
 [libraries]
 pdfkmp = { module = "io.github.conamobiledev:pdfkmp", version.ref = "pdfkmp" }
