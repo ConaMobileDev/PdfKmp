@@ -26,6 +26,10 @@ struct ContentView: View {
                 SamplePreviewView(entry: entry)
             }
         }
+        // System accent for the entire stack — every toolbar Button
+        // (chevron, "Samples" label, search / share / download icons,
+        // Cancel) inherits iOS Blue without per-item overrides.
+        .tint(iosBlue)
     }
 }
 
@@ -184,31 +188,37 @@ private struct SamplePreviewView: View {
                 searchField
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Cancel") {
-                    closeSearch()
-                }
-                .foregroundStyle(iosBlue)
+                Button("Cancel") { closeSearch() }
             }
         } else {
             // ── Default: chevron + back label, centered title, three
-            // 22pt trailing icons in iOS Blue.
+            // 22pt trailing icons in iOS Blue. Color comes from the
+            // ambient `.tint(iosBlue)` set on the NavigationStack —
+            // applying explicit `.foregroundStyle` on a toolbar Button
+            // is fragile because SwiftUI re-tints the icons via the
+            // navigation bar appearance.
             ToolbarItem(placement: .topBarLeading) {
                 Button(action: { dismiss() }) {
                     HStack(spacing: 2) {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 17, weight: .semibold))
+                            // 28pt chevron per the handoff spec —
+                            // larger than the SwiftUI default so the
+                            // glyph reads on its own next to the
+                            // 17pt label.
+                            .font(.system(size: 28, weight: .semibold))
                         Text("Samples")
                             .font(.system(size: 17))
                             .kerning(-0.4)
                     }
-                    .foregroundStyle(iosBlue)
                 }
             }
             ToolbarItem(placement: .principal) {
+                // Title is BLACK, not the navigation tint — handoff is
+                // explicit about #000 here.
                 Text(entry.title)
                     .font(.system(size: 17, weight: .semibold))
                     .kerning(-0.4)
-                    .foregroundStyle(.black)
+                    .foregroundStyle(Color.black)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: 220)
@@ -218,20 +228,17 @@ private struct SamplePreviewView: View {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 22, weight: .regular))
                 }
-                .foregroundStyle(iosBlue)
 
                 if let data = pdfData {
                     ShareLink(item: temporaryURL(for: data)) {
                         Image(systemName: "square.and.arrow.up")
                             .font(.system(size: 22, weight: .regular))
                     }
-                    .foregroundStyle(iosBlue)
 
                     Button(action: { saveToDocuments(data: data) }) {
                         Image(systemName: "arrow.down.to.line")
                             .font(.system(size: 22, weight: .regular))
                     }
-                    .foregroundStyle(iosBlue)
                 }
             }
         }
@@ -284,14 +291,12 @@ private struct SamplePreviewView: View {
                     Image(systemName: "chevron.up")
                         .font(.system(size: 17, weight: .regular))
                 }
-                .foregroundStyle(iosBlue)
                 Button {
                     navigateMatch(by: 1)
                 } label: {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 17, weight: .regular))
                 }
-                .foregroundStyle(iosBlue)
             }
         }
         .padding(.horizontal, 16)
