@@ -5,6 +5,7 @@ import com.conamobile.pdfkmp.dsl.collectCustomFonts
 import com.conamobile.pdfkmp.node.resolveDeferred
 import com.conamobile.pdfkmp.render.DocumentRenderer
 import com.conamobile.pdfkmp.render.PdfDriverFactory
+import com.conamobile.pdfkmp.render.RecordingPdfDriver
 import com.conamobile.pdfkmp.style.PdfFont
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -53,8 +54,13 @@ public fun pdf(
     val scope = DocumentScope().apply(block)
     val spec = scope.build()
     val driver = factory.create(spec.metadata, spec.customFonts)
-    val bytes = DocumentRenderer.render(spec, driver)
-    return PdfDocument(bytes)
+    val recorder = RecordingPdfDriver(driver)
+    val bytes = DocumentRenderer.render(spec, recorder)
+    return PdfDocument(
+        bytes = bytes,
+        textRuns = recorder.textRuns,
+        hyperlinks = recorder.hyperlinks,
+    )
 }
 
 /**
@@ -110,8 +116,13 @@ public suspend fun pdfAsync(
     }
     val finalSpec = resolvedSpec.copy(customFonts = refreshedFonts.toList())
     val driver = factory.create(finalSpec.metadata, finalSpec.customFonts)
-    val bytes = DocumentRenderer.render(finalSpec, driver)
-    PdfDocument(bytes)
+    val recorder = RecordingPdfDriver(driver)
+    val bytes = DocumentRenderer.render(finalSpec, recorder)
+    PdfDocument(
+        bytes = bytes,
+        textRuns = recorder.textRuns,
+        hyperlinks = recorder.hyperlinks,
+    )
 }
 
 /**

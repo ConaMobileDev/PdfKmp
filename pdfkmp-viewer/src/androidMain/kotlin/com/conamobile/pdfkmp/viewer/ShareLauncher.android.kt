@@ -38,7 +38,7 @@ private const val SHARE_CACHE_DIR = "pdfkmp-viewer-share"
  * (which can include a chooser dismissal, a multi-second upload, etc.).
  */
 @Composable
-internal actual fun rememberPdfShareAction(): PdfShareAction {
+public actual fun rememberPdfShareAction(): PdfShareAction {
     val context = LocalContext.current.applicationContext
     return remember(context) { AndroidShareAction(context) }
 }

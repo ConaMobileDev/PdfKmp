@@ -39,7 +39,7 @@ import platform.UIKit.UIWindow
  * Swift / Objective-C where the popover anchor can be set directly.
  */
 @Composable
-internal actual fun rememberPdfShareAction(): PdfShareAction =
+public actual fun rememberPdfShareAction(): PdfShareAction =
     remember { IosShareAction() }
 
 private class IosShareAction : PdfShareAction {
