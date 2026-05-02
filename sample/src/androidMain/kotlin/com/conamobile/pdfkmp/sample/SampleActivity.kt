@@ -27,22 +27,18 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.conamobile.pdfkmp.PdfDocument
 import com.conamobile.pdfkmp.samples.Samples
-import com.conamobile.pdfkmp.viewer.PdfSearchBar
-import com.conamobile.pdfkmp.viewer.PdfViewer
+import com.conamobile.pdfkmp.viewer.PdfViewerScreen
 import com.conamobile.pdfkmp.viewer.PdfViewerTopBar
-import com.conamobile.pdfkmp.viewer.rememberPdfSaveAction
-import com.conamobile.pdfkmp.viewer.rememberPdfShareAction
-import com.conamobile.pdfkmp.viewer.searchPdfText
 
 /**
  * Hosts the Android demo for PdfKmp.
  *
- * The app shows a list of bundled sample documents; tapping one builds
- * the PDF in-process via PdfKmp and hands the resulting [PdfDocument]
- * straight to the [`:pdfkmp-viewer`][PdfViewer] composable. The viewer
- * itself goes through Android's system [android.graphics.pdf.PdfRenderer]
- * to rasterise pages for display only — the on-disk and shared PDF
- * stays vector and stays sharp at any zoom level.
+ * The list lives in a tiny Scaffold; tapping a sample drops the
+ * caller into [`PdfViewerScreen`][PdfViewerScreen], the library's
+ * one-call all-in-one viewer. That single composable handles the
+ * topbar (Minimal Mono on Android), search bar morph + match
+ * highlights, share / save / hyperlink launch, and the page
+ * indicator — the host doesn't manage any of that state.
  */
 class SampleActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -97,8 +93,6 @@ private fun SampleApp() {
     var selected by remember { mutableStateOf<SampleEntry?>(null) }
     var document by remember(selected) { mutableStateOf<PdfDocument?>(null) }
     val context = LocalContext.current
-    val shareAction = rememberPdfShareAction()
-    val saveAction = rememberPdfSaveAction()
 
     LaunchedEffect(selected) {
         val current = selected ?: return@LaunchedEffect
@@ -111,98 +105,64 @@ private fun SampleApp() {
     val entry = selected
     val built = document
 
-    // Search state — owned by the host, fed to PdfSearchBar +
-    // forwarded to PdfViewer's `searchHighlights` parameter.
-    var searchOpen by remember(entry) { mutableStateOf(false) }
-    var searchQuery by remember(entry) { mutableStateOf("") }
-    var activeMatchIndex by remember(entry) { mutableStateOf(0) }
-
-    val highlights = remember(built, searchQuery) {
-        if (built == null || !searchOpen || searchQuery.isBlank()) emptyList()
-        else searchPdfText(built.textRuns, searchQuery)
-    }
-    // Reset the active index when the result set changes so we don't
-    // dangle past the new size.
-    LaunchedEffect(highlights.size) {
-        activeMatchIndex = if (highlights.isEmpty()) -1 else 0
-    }
-
-    Scaffold(
-        topBar = {
-            when {
-                entry == null -> {
+    when {
+        entry == null -> {
+            // List screen — minimal header so the demo focuses on the
+            // viewer chrome the handoff covers.
+            Scaffold(
+                topBar = {
                     PdfViewerTopBar(
                         title = "PdfKmp samples",
                         showBack = false,
                         showShare = false,
                         showDownload = false,
                     )
-                }
-                searchOpen -> {
-                    PdfSearchBar(
-                        query = searchQuery,
-                        onQueryChange = { searchQuery = it },
-                        matchCount = highlights.size,
-                        activeIndex = activeMatchIndex,
-                        onPrevious = {
-                            if (highlights.isNotEmpty()) {
-                                activeMatchIndex =
-                                    (activeMatchIndex - 1 + highlights.size) % highlights.size
-                            }
-                        },
-                        onNext = {
-                            if (highlights.isNotEmpty()) {
-                                activeMatchIndex =
-                                    (activeMatchIndex + 1) % highlights.size
-                            }
-                        },
-                        onClose = {
-                            searchOpen = false
-                            searchQuery = ""
-                            activeMatchIndex = -1
-                        },
-                    )
-                }
-                else -> {
-                    val fileName = "${entry.title.toFileSlug()}.pdf"
-                    val subtitle = built?.let { "PDF · ${formatSize(it.size)}" }
+                },
+            ) { padding ->
+                SampleList(
+                    onPick = { selected = it },
+                    modifier = Modifier.padding(padding),
+                )
+            }
+        }
+        built == null -> {
+            // The PDF is still being built — show a tiny loading
+            // screen instead of an empty viewer slot.
+            Scaffold(
+                topBar = {
                     PdfViewerTopBar(
                         title = entry.title,
-                        subtitle = subtitle,
                         backLabel = "Samples",
                         onBack = { selected = null },
-                        onSearch = { searchOpen = true },
-                        onShare = { built?.let { shareAction(it.toByteArray(), fileName) } },
-                        onDownload = { built?.let { saveAction(it.toByteArray(), fileName) } },
-                        showSearch = built != null && built.textRuns.isNotEmpty(),
-                        showShare = built != null,
-                        showDownload = built != null,
+                        showSearch = false,
+                        showShare = false,
+                        showDownload = false,
                     )
-                }
+                },
+            ) { padding ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) { Text("Building…") }
             }
-        },
-    ) { padding ->
-        if (entry == null) {
-            SampleList(
-                onPick = { selected = it },
-                modifier = Modifier.padding(padding),
-            )
-        } else {
-            SamplePreview(
+        }
+        else -> {
+            // ── The whole detail screen is one composable. PdfViewerScreen
+            // owns the topbar + search bar morph, share / save / url
+            // launchers, page indicator, and viewer overlays. The sample
+            // only configures *which* affordances are exposed.
+            PdfViewerScreen(
                 document = built,
-                searchHighlights = highlights,
-                activeSearchHighlightIndex = activeMatchIndex,
-                modifier = Modifier.padding(padding),
+                title = entry.title,
+                fileName = "${entry.title.toFileSlug()}.pdf",
+                backLabel = "Samples",
+                onBack = { selected = null },
             )
         }
     }
-}
-
-/** Friendly file-size hint for the topbar's meta line. */
-private fun formatSize(bytes: Int): String = when {
-    bytes >= 1_048_576 -> "${"%.1f".format(bytes / 1_048_576f)} MB"
-    bytes >= 1024 -> "${bytes / 1024} KB"
-    else -> "$bytes B"
 }
 
 @Composable
@@ -218,30 +178,6 @@ private fun SampleList(onPick: (SampleEntry) -> Unit, modifier: Modifier = Modif
                 Text(entry.title)
             }
         }
-    }
-}
-
-@Composable
-private fun SamplePreview(
-    document: PdfDocument?,
-    searchHighlights: List<com.conamobile.pdfkmp.viewer.PdfSearchHighlight>,
-    activeSearchHighlightIndex: Int,
-    modifier: Modifier = Modifier,
-) {
-    if (document == null) {
-        Column(
-            modifier = modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) { Text("Building…") }
-    } else {
-        PdfViewer(
-            document = document,
-            modifier = modifier,
-            showShareButton = false,
-            searchHighlights = searchHighlights,
-            activeSearchHighlightIndex = activeSearchHighlightIndex,
-        )
     }
 }
 
