@@ -27,10 +27,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.conamobile.pdfkmp.PdfDocument
 import com.conamobile.pdfkmp.samples.Samples
+import com.conamobile.pdfkmp.viewer.PdfSearchBar
 import com.conamobile.pdfkmp.viewer.PdfViewer
 import com.conamobile.pdfkmp.viewer.PdfViewerTopBar
 import com.conamobile.pdfkmp.viewer.rememberPdfSaveAction
 import com.conamobile.pdfkmp.viewer.rememberPdfShareAction
+import com.conamobile.pdfkmp.viewer.searchPdfText
 
 /**
  * Hosts the Android demo for PdfKmp.
@@ -109,30 +111,74 @@ private fun SampleApp() {
     val entry = selected
     val built = document
 
+    // Search state — owned by the host, fed to PdfSearchBar +
+    // forwarded to PdfViewer's `searchHighlights` parameter.
+    var searchOpen by remember(entry) { mutableStateOf(false) }
+    var searchQuery by remember(entry) { mutableStateOf("") }
+    var activeMatchIndex by remember(entry) { mutableStateOf(0) }
+
+    val highlights = remember(built, searchQuery) {
+        if (built == null || !searchOpen || searchQuery.isBlank()) emptyList()
+        else searchPdfText(built.textRuns, searchQuery)
+    }
+    // Reset the active index when the result set changes so we don't
+    // dangle past the new size.
+    LaunchedEffect(highlights.size) {
+        activeMatchIndex = if (highlights.isEmpty()) -1 else 0
+    }
+
     Scaffold(
         topBar = {
-            if (entry == null) {
-                // List screen — minimal header so the demo focuses on
-                // the viewer chrome that the handoff design covers.
-                PdfViewerTopBar(
-                    title = "PdfKmp samples",
-                    showBack = false,
-                    showShare = false,
-                    showDownload = false,
-                )
-            } else {
-                val fileName = "${entry.title.toFileSlug()}.pdf"
-                val subtitle = built?.let { "PDF · ${formatSize(it.size)}" }
-                PdfViewerTopBar(
-                    title = entry.title,
-                    subtitle = subtitle,
-                    backLabel = "Samples",
-                    onBack = { selected = null },
-                    onShare = { built?.let { shareAction(it.toByteArray(), fileName) } },
-                    onDownload = { built?.let { saveAction(it.toByteArray(), fileName) } },
-                    showShare = built != null,
-                    showDownload = built != null,
-                )
+            when {
+                entry == null -> {
+                    PdfViewerTopBar(
+                        title = "PdfKmp samples",
+                        showBack = false,
+                        showShare = false,
+                        showDownload = false,
+                    )
+                }
+                searchOpen -> {
+                    PdfSearchBar(
+                        query = searchQuery,
+                        onQueryChange = { searchQuery = it },
+                        matchCount = highlights.size,
+                        activeIndex = activeMatchIndex,
+                        onPrevious = {
+                            if (highlights.isNotEmpty()) {
+                                activeMatchIndex =
+                                    (activeMatchIndex - 1 + highlights.size) % highlights.size
+                            }
+                        },
+                        onNext = {
+                            if (highlights.isNotEmpty()) {
+                                activeMatchIndex =
+                                    (activeMatchIndex + 1) % highlights.size
+                            }
+                        },
+                        onClose = {
+                            searchOpen = false
+                            searchQuery = ""
+                            activeMatchIndex = -1
+                        },
+                    )
+                }
+                else -> {
+                    val fileName = "${entry.title.toFileSlug()}.pdf"
+                    val subtitle = built?.let { "PDF · ${formatSize(it.size)}" }
+                    PdfViewerTopBar(
+                        title = entry.title,
+                        subtitle = subtitle,
+                        backLabel = "Samples",
+                        onBack = { selected = null },
+                        onSearch = { searchOpen = true },
+                        onShare = { built?.let { shareAction(it.toByteArray(), fileName) } },
+                        onDownload = { built?.let { saveAction(it.toByteArray(), fileName) } },
+                        showSearch = built != null && built.textRuns.isNotEmpty(),
+                        showShare = built != null,
+                        showDownload = built != null,
+                    )
+                }
             }
         },
     ) { padding ->
@@ -144,6 +190,8 @@ private fun SampleApp() {
         } else {
             SamplePreview(
                 document = built,
+                searchHighlights = highlights,
+                activeSearchHighlightIndex = activeMatchIndex,
                 modifier = Modifier.padding(padding),
             )
         }
@@ -176,6 +224,8 @@ private fun SampleList(onPick: (SampleEntry) -> Unit, modifier: Modifier = Modif
 @Composable
 private fun SamplePreview(
     document: PdfDocument?,
+    searchHighlights: List<com.conamobile.pdfkmp.viewer.PdfSearchHighlight>,
+    activeSearchHighlightIndex: Int,
     modifier: Modifier = Modifier,
 ) {
     if (document == null) {
@@ -189,6 +239,8 @@ private fun SamplePreview(
             document = document,
             modifier = modifier,
             showShareButton = false,
+            searchHighlights = searchHighlights,
+            activeSearchHighlightIndex = activeSearchHighlightIndex,
         )
     }
 }
