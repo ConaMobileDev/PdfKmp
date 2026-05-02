@@ -6,6 +6,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.size
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -241,9 +244,23 @@ private val SAMPLE_CATEGORIES = listOf(
 )
 
 // ─────────────────────────────────────────────────────────────────────
-// Top-level navigator. Owns the selected entry, asynchronously builds
-// the document for the detail screen, and routes between list /
-// loading / KmpPdfViewer.
+// Top-level navigator — both viewer entry points side by side for
+// hands-on comparison:
+//
+//   • Single tap → builds the document, sets `selected`, navigates
+//     into [DetailScreen] which mounts `KmpPdfViewer(...)`. This is
+//     the *composable* entry — integrates with the host's Compose
+//     navigation graph, theme, back stack.
+//
+//   • Long press → builds the document on a coroutine and calls
+//     `KmpPdfLauncher.open(document, …)` directly. This is the
+//     *imperative* entry — useful from any non-composable scope
+//     (click handlers, suspend funcs, notification taps). The
+//     launcher hosts the viewer in its own Activity / VC; back
+//     from there returns to this list automatically.
+//
+// Both flows render the same screen — only the navigation owner
+// differs (host vs library).
 // ─────────────────────────────────────────────────────────────────────
 
 @Composable
@@ -251,6 +268,8 @@ private fun SampleApp() {
     var selected by remember { mutableStateOf<SampleEntry?>(null) }
     var document by remember(selected) { mutableStateOf<PdfDocument?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var launching by remember { mutableStateOf(false) }
 
     LaunchedEffect(selected) {
         val current = selected ?: return@LaunchedEffect
@@ -264,7 +283,36 @@ private fun SampleApp() {
     val built = document
 
     when {
-        entry == null -> ListScreen(onPick = { selected = it })
+        entry == null -> ListScreen(
+            onPick = { selected = it },
+            onLongPress = { picked ->
+                // Imperative entry — fires the launcher's Activity.
+                // No composable scope juggling required; this works
+                // just as well from a worker coroutine, a
+                // notification tap, or any other non-composable
+                // call site.
+                if (launching) return@ListScreen
+                launching = true
+                scope.launch {
+                    try {
+                        val assets = SampleAssets(
+                            sampleImagePng = context.assets
+                                .open("sample.png")
+                                .use { it.readBytes() },
+                        )
+                        val doc = picked.build(assets)
+                        com.conamobile.pdfkmp.viewer.KmpPdfLauncher.open(
+                            document = doc,
+                            title = picked.title,
+                            fileName = "${picked.id}.pdf",
+                        )
+                    } finally {
+                        launching = false
+                    }
+                }
+            },
+            launching = launching,
+        )
         built == null -> LoadingScreen(entry = entry, onBack = { selected = null })
         else -> DetailScreen(
             entry = entry,
@@ -280,7 +328,11 @@ private fun SampleApp() {
 // ─────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun ListScreen(onPick: (SampleEntry) -> Unit) {
+private fun ListScreen(
+    onPick: (SampleEntry) -> Unit,
+    onLongPress: (SampleEntry) -> Unit,
+    launching: Boolean,
+) {
     Scaffold(
         topBar = {
             PdfViewerTopBar(
@@ -291,23 +343,97 @@ private fun ListScreen(onPick: (SampleEntry) -> Unit) {
             )
         },
     ) { padding ->
-        LazyColumn(
+        androidx.compose.foundation.layout.Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            SAMPLE_CATEGORIES.forEachIndexed { index, category ->
-                item(key = "header-${category.name}") {
-                    CategoryHeader(name = category.name, isFirst = index == 0)
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                item(key = "viewer-hint") {
+                    ApiHintBanner()
                 }
-                items(category.entries, key = { "${category.name}-${it.id}" }) { entry ->
-                    SampleRow(entry = entry, onClick = { onPick(entry) })
-                    HorizontalDivider(
-                        modifier = Modifier.padding(start = 16.dp),
-                        thickness = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                    )
+                SAMPLE_CATEGORIES.forEachIndexed { index, category ->
+                    item(key = "header-${category.name}") {
+                        CategoryHeader(name = category.name, isFirst = index == 0)
+                    }
+                    items(category.entries, key = { "${category.name}-${it.id}" }) { entry ->
+                        SampleRow(
+                            entry = entry,
+                            onClick = { onPick(entry) },
+                            onLongClick = { onLongPress(entry) },
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(start = 16.dp),
+                            thickness = 0.5.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                        )
+                    }
                 }
+            }
+
+            if (launching) {
+                BuildingOverlay()
+            }
+        }
+    }
+}
+
+/**
+ * Banner pinned above the categorised list explaining the two
+ * gestures so the imperative path is discoverable without hiding it
+ * behind documentation.
+ */
+@Composable
+private fun ApiHintBanner() {
+    androidx.compose.material3.Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Text(
+                text = "Two ways to open the viewer",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "• Tap → KmpPdfViewer { … } composable\n" +
+                    "• Long-press → KmpPdfLauncher.open(…) imperative",
+                fontSize = 12.sp,
+                lineHeight = 18.sp,
+            )
+        }
+    }
+}
+
+/** Translucent overlay shown while the launcher path is building the PDF. */
+@Composable
+private fun BuildingOverlay() {
+    androidx.compose.foundation.layout.Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        androidx.compose.material3.Surface(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 8.dp,
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                androidx.compose.material3.CircularProgressIndicator(
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(20.dp),
+                )
+                Text("Building PDF…")
             }
         }
     }
@@ -332,13 +458,18 @@ private fun CategoryHeader(name: String, isFirst: Boolean) {
     )
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun SampleRow(entry: SampleEntry, onClick: () -> Unit) {
+private fun SampleRow(
+    entry: SampleEntry,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Text(
