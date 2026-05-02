@@ -48,31 +48,45 @@ The viewer pulls in Compose Multiplatform 1.10+ (`compose.foundation`, `compose.
 
 ## Quick start
 
+**One call, complete screen.** `KmpPdfViewer.open(...)` is the recommended entry point — it owns the topbar, search bar morph, share / save / hyperlink launchers, page indicator, and gesture model. The host configures *what* is exposed and *what happens on back*; nothing else.
+
 ```kotlin
-@Composable
-fun InvoiceScreen() {
-    val document = remember {
-        pdf {
-            page {
-                text("Hello, world!") { fontSize = 18.sp; bold = true }
-                link(url = "https://example.com") {
-                    text("Visit our site") { fontSize = 14.sp; color = PdfColor.Blue }
-                }
+// Open a remote PDF
+KmpPdfViewer.open(
+    uri = "https://example.com/invoice.pdf",
+    title = "Invoice 2026 Q1",
+    onBack = { navController.popBackStack() },
+)
+
+// Open a PdfKmp document — text selection + hyperlinks light up automatically
+val document = remember {
+    pdf {
+        page {
+            text("Hello, world!") { fontSize = 18.sp; bold = true }
+            link(url = "https://example.com") {
+                text("Visit our site") { fontSize = 14.sp; color = PdfColor.Blue }
             }
         }
     }
-
-    PdfViewer(document = document)            // selectable text + clickable links + share FAB
 }
+KmpPdfViewer.open(
+    document = document,
+    title = "Hello",
+    fileName = "hello.pdf",
+    onBack = { navController.popBackStack() },
+)
 ```
 
-`PdfViewer` accepts three input shapes:
+`KmpPdfViewer.open` accepts four input shapes:
 
 | Overload | Use when | Selection / hyperlinks |
 |---|---|---|
-| `PdfViewer(document: PdfDocument, …)` | document came from PdfKmp's `pdf { }` DSL | **enabled** |
-| `PdfViewer(source: PdfSource, …)` | you constructed a `PdfSource.Document(bytes, runs, links)` yourself | **enabled** when `source` is `Document` |
-| `PdfViewer(bytes: ByteArray, …)` | raw `%PDF-…` from disk / network / file picker | **disabled** — the bytes don't carry text positions |
+| `open(uri: String, …)` | `content://`, `file://`, `http(s)://`, asset / bundle paths | **disabled** — opaque bytes |
+| `open(document: PdfDocument, …)` | document came from PdfKmp's `pdf { }` DSL | **enabled** |
+| `open(bytes: ByteArray, …)` | raw `%PDF-…` from disk / network / file picker | **disabled** |
+| `open(source: PdfSource, …)` | you constructed a `PdfSource.Document(bytes, runs, links)` yourself | **enabled** when `source` is `Document` |
+
+> Need finer control (custom topbar, multi-FAB layouts, bottom-sheet share)? The lower-level composables — [`PdfViewer`](#public-api-surface), `PdfViewerTopBar`, `PdfSearchBar`, plus the `rememberPdfShareAction` / `rememberPdfSaveAction` / `rememberPdfUrlLauncher` action factories — stay public. `KmpPdfViewer.open` is the opinionated default; the building blocks remain available.
 
 ## Features
 
@@ -248,7 +262,8 @@ PdfViewer(
 
 | Composable / function | Purpose |
 |---|---|
-| `PdfViewer(source / document / bytes, …)` | Three overloads of the main viewer |
+| **`KmpPdfViewer.open(uri / document / bytes / source, …)`** | **All-in-one viewer screen — recommended entry point** |
+| `PdfViewer(source / document / bytes, …)` | Lower-level viewer (no topbar / search) — for advanced layouts |
 | `PdfSource.Bytes(bytes)` / `PdfSource.Document(bytes, runs, links)` | Sealed input shape |
 | `PdfSource.of(document)` / `PdfSource.of(bytes)` | Convenience factories |
 | `rememberPdfShareAction()` | Action that triggers the system share sheet |
