@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -91,7 +92,11 @@ public fun PdfSearchBar(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(SearchBarBackground),
+            // Background extends behind the status bar so the morph
+            // from PdfViewerTopBar reads as a swap, not as the safe
+            // area suddenly turning white.
+            .background(SearchBarBackground)
+            .statusBarsPadding(),
     ) {
         Row(
             modifier = Modifier
