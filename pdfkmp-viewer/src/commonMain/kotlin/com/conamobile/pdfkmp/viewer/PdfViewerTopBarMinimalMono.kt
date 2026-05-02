@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
@@ -88,7 +89,13 @@ public fun PdfViewerTopBarMinimalMono(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(MinimalMonoBackground),
+            // Background applied BEFORE statusBarsPadding so the white
+            // surface extends behind the status bar — content (chips,
+            // title) sits in the safe area beneath it. Matches the
+            // way Material 3 `TopAppBar` consumes
+            // `WindowInsets.statusBars` by default.
+            .background(MinimalMonoBackground)
+            .statusBarsPadding(),
     ) {
         Row(
             modifier = Modifier
