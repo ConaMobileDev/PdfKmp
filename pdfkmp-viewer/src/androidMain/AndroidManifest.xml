@@ -28,13 +28,21 @@
           consumer app's package name so two apps that both depend on
           `pdfkmp-viewer` cannot collide. The path mapping lives in
           res/xml/pdfkmp_viewer_file_paths.xml.
+
+          IMPORTANT: a dedicated subclass of `FileProvider` is used as
+          `android:name` instead of `androidx.core.content.FileProvider`
+          so the Android manifest merger does not collapse this entry
+          into the host app's own FileProvider declaration (merger uses
+          `android:name` as the merge key for `<provider>`). Without
+          this, the host's higher-priority manifest would win and the
+          library's authority + path meta-data would silently disappear
+          from the merged manifest, breaking the share sheet at runtime.
         -->
         <provider
-            android:name="androidx.core.content.FileProvider"
+            android:name="com.conamobile.pdfkmp.viewer.internal.PdfKmpViewerFileProvider"
             android:authorities="${applicationId}.pdfkmp.viewer.fileprovider"
             android:exported="false"
-            android:grantUriPermissions="true"
-            tools:replace="android:authorities">
+            android:grantUriPermissions="true">
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/pdfkmp_viewer_file_paths" />
