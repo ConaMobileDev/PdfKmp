@@ -38,4 +38,5 @@ jobs:
           ./gradlew \
             :pdfkmp:publishAndReleaseToMavenCentral \
             :pdfkmp-compose-resources:publishAndReleaseToMavenCentral \
+            :pdfkmp-viewer:publishAndReleaseToMavenCentral \
             --no-configuration-cache --stacktrace
