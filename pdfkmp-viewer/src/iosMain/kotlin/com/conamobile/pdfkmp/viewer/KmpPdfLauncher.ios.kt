@@ -3,7 +3,6 @@
 package com.conamobile.pdfkmp.viewer
 
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.window.ComposeUIViewController
 import com.conamobile.pdfkmp.PdfDocument
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -28,29 +27,114 @@ import platform.UIKit.UIWindow
  */
 public actual object KmpPdfLauncher {
 
-    public actual fun open(uri: String, title: String, fileName: String) {
+    public actual fun open(
+        uri: String,
+        title: String,
+        fileName: String,
+        backLabel: String?,
+        showSearch: Boolean,
+        showShare: Boolean,
+        showDownload: Boolean,
+        showPageIndicator: Boolean,
+        zoomEnabled: Boolean,
+        doubleTapToZoom: Boolean,
+        textSelectable: Boolean,
+        hyperlinksEnabled: Boolean,
+        renderDensity: Float,
+        maxZoom: Float,
+    ) {
+        val options = buildOptions(
+            title, fileName, backLabel,
+            showSearch, showShare, showDownload, showPageIndicator,
+            zoomEnabled, doubleTapToZoom, textSelectable, hyperlinksEnabled,
+            renderDensity, maxZoom,
+        )
         present { dismiss ->
             KmpPdfViewer(
                 uri = uri,
-                title = title,
-                fileName = fileName,
+                title = options.title,
+                fileName = options.fileName,
                 onBack = dismiss,
+                backLabel = options.backLabel,
+                showSearch = options.showSearch,
+                showShare = options.showShare,
+                showDownload = options.showDownload,
+                showPageIndicator = options.showPageIndicator,
+                zoomEnabled = options.zoomEnabled,
+                doubleTapToZoom = options.doubleTapToZoom,
+                textSelectable = options.textSelectable,
+                hyperlinksEnabled = options.hyperlinksEnabled,
+                renderDensity = options.renderDensity,
+                maxZoom = options.maxZoom,
             )
         }
     }
 
-    public actual fun open(bytes: ByteArray, title: String, fileName: String) {
+    public actual fun open(
+        bytes: ByteArray,
+        title: String,
+        fileName: String,
+        backLabel: String?,
+        showSearch: Boolean,
+        showShare: Boolean,
+        showDownload: Boolean,
+        showPageIndicator: Boolean,
+        zoomEnabled: Boolean,
+        doubleTapToZoom: Boolean,
+        textSelectable: Boolean,
+        hyperlinksEnabled: Boolean,
+        renderDensity: Float,
+        maxZoom: Float,
+    ) {
+        val options = buildOptions(
+            title, fileName, backLabel,
+            showSearch, showShare, showDownload, showPageIndicator,
+            zoomEnabled, doubleTapToZoom, textSelectable, hyperlinksEnabled,
+            renderDensity, maxZoom,
+        )
         present { dismiss ->
             KmpPdfViewer(
                 bytes = bytes,
-                title = title,
-                fileName = fileName,
+                title = options.title,
+                fileName = options.fileName,
                 onBack = dismiss,
+                backLabel = options.backLabel,
+                showSearch = options.showSearch,
+                showShare = options.showShare,
+                showDownload = options.showDownload,
+                showPageIndicator = options.showPageIndicator,
+                zoomEnabled = options.zoomEnabled,
+                doubleTapToZoom = options.doubleTapToZoom,
+                textSelectable = options.textSelectable,
+                hyperlinksEnabled = options.hyperlinksEnabled,
+                renderDensity = options.renderDensity,
+                maxZoom = options.maxZoom,
             )
         }
     }
 
-    public actual fun open(document: PdfDocument, title: String, fileName: String) {
+    public actual fun open(
+        document: PdfDocument,
+        title: String,
+        fileName: String,
+        backLabel: String?,
+        showSearch: Boolean,
+        showShare: Boolean,
+        showDownload: Boolean,
+        showPageIndicator: Boolean,
+        zoomEnabled: Boolean,
+        doubleTapToZoom: Boolean,
+        textSelectable: Boolean,
+        hyperlinksEnabled: Boolean,
+        renderDensity: Float,
+        maxZoom: Float,
+    ) {
+        val options = buildOptions(
+            title, fileName, backLabel,
+            showSearch, showShare, showDownload, showPageIndicator,
+            zoomEnabled, doubleTapToZoom, textSelectable, hyperlinksEnabled,
+            renderDensity, maxZoom,
+        )
         // Snapshot the source on the calling thread so the
         // composition reads the same captured text runs / hyperlinks
         // even if the caller mutates the document afterwards.
@@ -58,12 +142,53 @@ public actual object KmpPdfLauncher {
         present { dismiss ->
             KmpPdfViewer(
                 source = source,
-                title = title,
-                fileName = fileName,
+                title = options.title,
+                fileName = options.fileName,
                 onBack = dismiss,
+                backLabel = options.backLabel,
+                showSearch = options.showSearch,
+                showShare = options.showShare,
+                showDownload = options.showDownload,
+                showPageIndicator = options.showPageIndicator,
+                zoomEnabled = options.zoomEnabled,
+                doubleTapToZoom = options.doubleTapToZoom,
+                textSelectable = options.textSelectable,
+                hyperlinksEnabled = options.hyperlinksEnabled,
+                renderDensity = options.renderDensity,
+                maxZoom = options.maxZoom,
             )
         }
     }
+
+    private fun buildOptions(
+        title: String,
+        fileName: String,
+        backLabel: String?,
+        showSearch: Boolean,
+        showShare: Boolean,
+        showDownload: Boolean,
+        showPageIndicator: Boolean,
+        zoomEnabled: Boolean,
+        doubleTapToZoom: Boolean,
+        textSelectable: Boolean,
+        hyperlinksEnabled: Boolean,
+        renderDensity: Float,
+        maxZoom: Float,
+    ): KmpPdfLaunchOptions = KmpPdfLaunchOptions(
+        title = title,
+        fileName = fileName,
+        backLabel = backLabel,
+        showSearch = showSearch,
+        showShare = showShare,
+        showDownload = showDownload,
+        showPageIndicator = showPageIndicator,
+        zoomEnabled = zoomEnabled,
+        doubleTapToZoom = doubleTapToZoom,
+        textSelectable = textSelectable,
+        hyperlinksEnabled = hyperlinksEnabled,
+        renderDensity = renderDensity,
+        maxZoom = maxZoom,
+    )
 
     private inline fun present(
         crossinline content: @androidx.compose.runtime.Composable (dismiss: () -> Unit) -> Unit,
