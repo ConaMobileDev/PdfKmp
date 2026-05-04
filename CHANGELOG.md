@@ -6,7 +6,7 @@ versions follow [Semantic Versioning](https://semver.org). Pre-1.0
 minor versions may break public API; alpha / beta / rc tags signal
 an actively settling surface.
 
-## [0.2.0-rc01] — 2026-05-02
+## [1.0.0] — 2026-05-04
 
 ### Added — `pdfkmp-viewer` (new optional module)
 
