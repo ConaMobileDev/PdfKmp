@@ -108,7 +108,16 @@ public class TableRowScope internal constructor(
     ) {
         val cellScope = TableCellContentScope(parentTextStyle).apply(block)
         cells += TableCellNode(
-            content = ColumnNode(cellScope.children.toList()),
+            // Forward [horizontalAlignment] to the inner column so that
+            // text/rich-text descendants with their own [TextAlign] are
+            // dedup-aligned by the column (see [LayoutEngine.measureColumn]
+            // and `effectiveCrossWidth`). Without this hop the cell's
+            // alignment offset would stack on top of the text's internal
+            // shift and the line would overflow past the cell's right edge.
+            content = ColumnNode(
+                children = cellScope.children.toList(),
+                horizontalAlignment = horizontalAlignment,
+            ),
             style = TableCellStyle(
                 padding = padding ?: defaultCellPadding,
                 verticalAlignment = verticalAlignment,

@@ -22,6 +22,7 @@ import com.conamobile.pdfkmp.node.VectorNode
 import com.conamobile.pdfkmp.node.WeightNode
 import com.conamobile.pdfkmp.render.FontMetrics
 import com.conamobile.pdfkmp.style.TableColumn
+import com.conamobile.pdfkmp.style.TextAlign
 
 /**
  * Recursive layout pass that turns a [PdfNode] tree into a [MeasuredNode]
@@ -146,11 +147,21 @@ private fun measureBox(
     val interiorHeight = (finalHeight - verticalInset).coerceAtLeast(0f)
 
     val placed = measuredChildren.map { (childMeasured, alignment) ->
+        // For non-Start x alignment we let text/rich-text declare the
+        // box's interior width as their effective extent — see
+        // [effectiveCrossWidth] for the rationale. Without this, the box
+        // shifts the text by `interiorWidth - intrinsic` and the text's
+        // own align shifts again by the same amount, doubling the offset.
+        val effectiveWidth = if (alignment.isStartAlignedX()) {
+            childMeasured.size.width
+        } else {
+            minOf(effectiveCrossWidth(childMeasured), interiorWidth)
+        }
         val (offsetX, offsetY) = boxAlignmentOffset(
             alignment = alignment,
             interiorWidth = interiorWidth,
             interiorHeight = interiorHeight,
-            childWidth = childMeasured.size.width,
+            childWidth = effectiveWidth,
             childHeight = childMeasured.size.height,
         )
         PlacedChild(
@@ -165,6 +176,18 @@ private fun measureBox(
         size = Size(width = finalWidth, height = finalHeight),
         decoration = node.decoration,
     )
+}
+
+/**
+ * `true` when [BoxAlignment] anchors the child to the box's leading edge —
+ * the cases where the alignment offset on the x axis is zero and there is
+ * therefore nothing to dedup against an internal text alignment. See
+ * [effectiveCrossWidth] for context.
+ */
+private fun BoxAlignment.isStartAlignedX(): Boolean = when (this) {
+    BoxAlignment.TopStart, BoxAlignment.CenterStart, BoxAlignment.BottomStart -> true
+    BoxAlignment.TopCenter, BoxAlignment.Center, BoxAlignment.BottomCenter,
+    BoxAlignment.TopEnd, BoxAlignment.CenterEnd, BoxAlignment.BottomEnd -> false
 }
 
 /**
@@ -374,8 +397,16 @@ private fun measureTableRow(
         val padding = cellNode.style.padding
         val contentBoxHeight = (rowHeight - padding.top.value - padding.bottom.value).coerceAtLeast(0f)
         val contentBoxWidth = (placed.width - padding.left.value - padding.right.value).coerceAtLeast(0f)
+        // Same dedup as columns/boxes: a non-Start cell alignment must not
+        // stack on top of a non-Start TextAlign that already shifts glyphs
+        // across the cell's content width.
+        val effectiveContentWidth = if (cellNode.style.horizontalAlignment == HorizontalAlignment.Start) {
+            placed.content.size.width
+        } else {
+            minOf(effectiveCrossWidth(placed.content), contentBoxWidth)
+        }
         val crossX = horizontalAlignmentOffset(
-            childWidth = placed.content.size.width,
+            childWidth = effectiveContentWidth,
             containerWidth = contentBoxWidth,
             alignment = cellNode.style.horizontalAlignment,
         )
@@ -555,7 +586,21 @@ private fun measureColumn(
         }
     }
 
-    val widest = measured.maxOfOrNull { it.size.width } ?: 0f
+    // When the column has a non-Start cross-axis alignment, treat each
+    // child's horizontal extent as `effectiveCrossWidth(...)` rather than
+    // its raw `size.width`. This lets text/rich-text children — whose
+    // internal `TextAlign` already shifts glyphs across the parent's slot
+    // — declare the slot as their effective width, so the column does not
+    // add a second shift on top. With the default `Start` alignment the
+    // offset is zero anyway, so we keep using intrinsic widths to preserve
+    // hug-content sizing for `row { column { ... } sibling }` layouts.
+    val crossAlignment = node.horizontalAlignment.toCrossAlignment()
+    val crossWidths = if (crossAlignment == CrossAlignment.Start) {
+        measured.map { it.size.width }
+    } else {
+        measured.map { effectiveCrossWidth(it) }
+    }
+    val widest = crossWidths.maxOrNull() ?: 0f
     val rawHeight = measured.sumOf { it.size.height.toDouble() }.toFloat() + totalSpacing
     val finalHeight = if (containerHeight == Float.POSITIVE_INFINITY) rawHeight else maxOf(rawHeight, 0f)
 
@@ -568,9 +613,9 @@ private fun measureColumn(
     )
     val placed = measured.mapIndexed { i, child ->
         val crossOffset = crossAxisOffset(
-            childExtent = child.size.width,
+            childExtent = crossWidths[i],
             containerExtent = widest,
-            alignment = node.horizontalAlignment.toCrossAlignment(),
+            alignment = crossAlignment,
         )
         PlacedChild(
             node = child,
@@ -768,6 +813,38 @@ private fun sequentialOffsets(
         if (index != sizes.lastIndex) cursor += spacing
     }
     return out
+}
+
+/**
+ * Cross-axis horizontal extent claimed by [child] when an aligning parent
+ * (column with non-Start [com.conamobile.pdfkmp.layout.HorizontalAlignment],
+ * box with a non-Start [com.conamobile.pdfkmp.layout.BoxAlignment], or table
+ * cell with non-Start horizontal alignment) decides where to put it.
+ *
+ * For most nodes this is just [MeasuredNode.size.width]. For text nodes the
+ * picture is subtler: their reported `size.width` is the *intrinsic* width
+ * (longest wrapped line), but their internal text alignment shifts glyphs
+ * across the full [MeasuredText.paragraphWidth] / [MeasuredRichText.paragraphWidth]
+ * slot the layout engine handed them. If the parent then adds another shift
+ * based on the intrinsic width, the two stack and the text overflows past
+ * its parent. Reporting `paragraphWidth` here makes the parent treat the
+ * text as already filling the slot — its own [crossAxisOffset] collapses to
+ * zero and the text's internal alignment is the only one that runs.
+ *
+ * [LinkNode] wrappers are unwrapped so a `link { text(...) }` participates
+ * in this dedup the same way a bare `text(...)` does.
+ */
+private fun effectiveCrossWidth(child: MeasuredNode): Float {
+    val target = if (child is MeasuredLink) child.child else child
+    return when (target) {
+        is MeasuredText ->
+            if (target.style.align != TextAlign.Start) maxOf(target.size.width, target.paragraphWidth)
+            else target.size.width
+        is MeasuredRichText ->
+            if (target.align != TextAlign.Start) maxOf(target.size.width, target.paragraphWidth)
+            else target.size.width
+        else -> child.size.width
+    }
 }
 
 /**

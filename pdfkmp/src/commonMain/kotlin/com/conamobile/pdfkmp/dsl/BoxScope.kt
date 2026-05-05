@@ -1,6 +1,7 @@
 package com.conamobile.pdfkmp.dsl
 
 import com.conamobile.pdfkmp.layout.BoxAlignment
+import com.conamobile.pdfkmp.layout.HorizontalAlignment
 import com.conamobile.pdfkmp.node.BoxChild
 import com.conamobile.pdfkmp.node.ColumnNode
 import com.conamobile.pdfkmp.style.TextStyle
@@ -47,11 +48,30 @@ public class BoxScope internal constructor(textStyle: TextStyle) : ContainerScop
      */
     public fun aligned(alignment: BoxAlignment, block: ColumnScope.() -> Unit) {
         val inner = ColumnScope(textStyle).apply(block)
-        children += ColumnNode(children = inner.children.toList())
+        // Forward the box anchor's x component to the wrapping column so
+        // text/rich-text children with their own [TextAlign] get dedup-
+        // aligned (see [LayoutEngine.effectiveCrossWidth]). Without this,
+        // the box's alignment offset would stack on top of the text's
+        // internal shift and the line would overflow past the box edge.
+        children += ColumnNode(
+            children = inner.children.toList(),
+            horizontalAlignment = alignment.toHorizontalAlignment(),
+        )
         alignments[children.lastIndex] = alignment
     }
 
     internal fun build(): List<BoxChild> = children.mapIndexed { index, node ->
         BoxChild(node = node, alignment = alignments[index] ?: BoxAlignment.TopStart)
     }
+}
+
+/**
+ * Maps a [BoxAlignment]'s horizontal component onto a plain
+ * [HorizontalAlignment] so the inner wrapping column inherits the same
+ * x-axis intent as the box anchor.
+ */
+private fun BoxAlignment.toHorizontalAlignment(): HorizontalAlignment = when (this) {
+    BoxAlignment.TopStart, BoxAlignment.CenterStart, BoxAlignment.BottomStart -> HorizontalAlignment.Start
+    BoxAlignment.TopCenter, BoxAlignment.Center, BoxAlignment.BottomCenter -> HorizontalAlignment.Center
+    BoxAlignment.TopEnd, BoxAlignment.CenterEnd, BoxAlignment.BottomEnd -> HorizontalAlignment.End
 }

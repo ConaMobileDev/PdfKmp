@@ -154,6 +154,12 @@ private val SAMPLE_CATEGORIES = listOf(
                 description = "Different padding values per node — outer + inner.",
                 build = { Samples.customPadding() },
             ),
+            SampleEntry(
+                id = "alignment",
+                title = "Alignment dedup",
+                description = "End/Center alignment must not stack with TextAlign — every line ends at the red rule.",
+                build = { Samples.alignmentShowcase() },
+            ),
         ),
     ),
     SampleCategory(

@@ -27,6 +27,9 @@ class SamplesSmokeTest {
     fun columnSpaceBetween_producesValidPdf() = assertSamplePdf(Samples.columnSpaceBetween().toByteArray())
 
     @Test
+    fun alignmentShowcase_producesValidPdf() = assertSamplePdf(Samples.alignmentShowcase().toByteArray())
+
+    @Test
     fun tableShowcase_producesValidPdf() = assertSamplePdf(Samples.tableShowcase().toByteArray())
 
     @Test

@@ -830,6 +830,128 @@ public object Samples {
     }
 
     /**
+     * Visually verifies cross-axis alignment dedup across containers — the
+     * scenario that used to overflow when a parent's non-Start alignment
+     * stacked on top of a child's non-Start [TextAlign].
+     *
+     * Every section below pins its right edge with a thin red rule. If the
+     * fix holds, every aligned text inside lands flush against that rule.
+     * Pre-fix, the narrower lines overshot the rule by `widest - intrinsic`
+     * PDF points — useful as a quick visual diff when bumping the library
+     * version inside a host app.
+     */
+    public fun alignmentShowcase(): PdfDocument = pdf {
+        metadata { title = "PdfKmp – Alignment Showcase" }
+        page {
+            spacing = 18.dp
+
+            text("Alignment dedup — every aligned text must end at the red rule") {
+                fontSize = 16.sp; bold = true
+            }
+
+            // 1. column(End) at page level — the simplest reproduction.
+            text("column(End) + text(End) — varying widths") {
+                fontSize = 11.sp; color = PdfColor.Gray
+            }
+            column(
+                horizontalAlignment = HorizontalAlignment.End,
+                border = BorderStroke(0.5.dp, PdfColor.Red),
+            ) {
+                text("LONG TITLE HEADER GOES HERE") {
+                    fontSize = 15.sp; bold = true; align = TextAlign.End
+                }
+                text("Order #: 12345") { align = TextAlign.End; color = PdfColor.Gray }
+                text("Date: 2026-05-05") { align = TextAlign.End; color = PdfColor.Gray }
+            }
+
+            // 2. column(End) inside a weighted row — the original bug repro.
+            text("weighted(1f) { column(End) { text(End) } } — order-receipt header") {
+                fontSize = 11.sp; color = PdfColor.Gray
+            }
+            row(verticalAlignment = VerticalAlignment.Center) {
+                box(
+                    width = 56.dp,
+                    height = 56.dp,
+                    border = BorderStroke(1.dp, PdfColor.Black),
+                ) {}
+                spacer(width = 12.dp)
+                weighted(1f) {
+                    column(
+                        horizontalAlignment = HorizontalAlignment.End,
+                        border = BorderStroke(0.5.dp, PdfColor.Red),
+                    ) {
+                        text("Order Receipt") {
+                            fontSize = 15.sp; bold = true; align = TextAlign.End
+                        }
+                        text("Order #: 12345") { align = TextAlign.End; color = PdfColor.Gray }
+                        text("Date: 2026-05-05") { align = TextAlign.End; color = PdfColor.Gray }
+                    }
+                }
+            }
+
+            // 3. column(Center) — same fix on the Center axis.
+            text("column(Center) + text(Center) — must center, not double-shift") {
+                fontSize = 11.sp; color = PdfColor.Gray
+            }
+            column(
+                horizontalAlignment = HorizontalAlignment.Center,
+                border = BorderStroke(0.5.dp, PdfColor.Red),
+            ) {
+                text("CENTERED LONG HEADING") {
+                    fontSize = 14.sp; bold = true; align = TextAlign.Center
+                }
+                text("centered subtitle") { align = TextAlign.Center; color = PdfColor.Gray }
+                text("c") { align = TextAlign.Center; color = PdfColor.Gray }
+            }
+
+            // 4. box with CenterEnd anchor + text(End).
+            text("box(CenterEnd) + text(End)") {
+                fontSize = 11.sp; color = PdfColor.Gray
+            }
+            box(
+                width = 360.dp,
+                height = 40.dp,
+                border = BorderStroke(0.5.dp, PdfColor.Red),
+            ) {
+                aligned(BoxAlignment.CenterEnd) {
+                    text("anchored bottom-right") { align = TextAlign.End }
+                }
+            }
+
+            // 5. table cell with horizontalAlignment = End + text(End).
+            text("table { cell(End) { text(End) } }") {
+                fontSize = 11.sp; color = PdfColor.Gray
+            }
+            table(
+                columns = listOf(TableColumn.Fixed(120.dp), TableColumn.Weight(1f)),
+                border = TableBorder(color = PdfColor.Red, width = 0.5.dp),
+                cellPadding = Padding.all(6.dp),
+            ) {
+                row {
+                    cell("Status") { fontSize = 11.sp; color = PdfColor.Gray }
+                    cell(horizontalAlignment = HorizontalAlignment.End) {
+                        text("PAID") {
+                            fontSize = 13.sp; bold = true; align = TextAlign.End
+                        }
+                    }
+                }
+                row {
+                    cell("Total amount") { fontSize = 11.sp; color = PdfColor.Gray }
+                    cell(horizontalAlignment = HorizontalAlignment.End) {
+                        text("$1,234.56") { align = TextAlign.End; bold = true }
+                    }
+                }
+                row {
+                    cell("Reference") { fontSize = 11.sp; color = PdfColor.Gray }
+                    cell(horizontalAlignment = HorizontalAlignment.End) {
+                        text("#REF-2026-05-05-0001") { align = TextAlign.End }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * Demonstrates [VerticalArrangement.SpaceBetween] on a column: header
      * pinned to the top, footer pinned to the bottom of the page.
      */
