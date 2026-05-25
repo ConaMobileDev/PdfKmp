@@ -152,14 +152,15 @@ internal class IosPdfCanvas(
             color.blue.toDouble(),
             color.alpha.toDouble(),
         )
+        val radius = clampCornerRadius(cornerRadius, width, height)
         val path = CGPathCreateMutable() ?: return
         try {
             CGPathAddRoundedRect(
                 path = path,
                 transform = null,
                 rect = CGRectMake(x.toDouble(), y.toDouble(), width.toDouble(), height.toDouble()),
-                cornerWidth = cornerRadius.toDouble(),
-                cornerHeight = cornerRadius.toDouble(),
+                cornerWidth = radius.toDouble(),
+                cornerHeight = radius.toDouble(),
             )
             CGContextAddPath(ctx, path)
             CGContextFillPath(ctx)
@@ -207,14 +208,15 @@ internal class IosPdfCanvas(
             color.alpha.toDouble(),
         )
         CGContextSetLineWidth(ctx, thickness.toDouble())
+        val radius = clampCornerRadius(cornerRadius, width, height)
         val path = CGPathCreateMutable() ?: return
         try {
             CGPathAddRoundedRect(
                 path = path,
                 transform = null,
                 rect = CGRectMake(x.toDouble(), y.toDouble(), width.toDouble(), height.toDouble()),
-                cornerWidth = cornerRadius.toDouble(),
-                cornerHeight = cornerRadius.toDouble(),
+                cornerWidth = radius.toDouble(),
+                cornerHeight = radius.toDouble(),
             )
             CGContextAddPath(ctx, path)
             CGContextStrokePath(ctx)
@@ -245,14 +247,15 @@ internal class IosPdfCanvas(
         height: Float,
         cornerRadius: Float,
     ) {
+        val radius = clampCornerRadius(cornerRadius, width, height)
         val path = CGPathCreateMutable() ?: return
         try {
             CGPathAddRoundedRect(
                 path = path,
                 transform = null,
                 rect = CGRectMake(x.toDouble(), y.toDouble(), width.toDouble(), height.toDouble()),
-                cornerWidth = cornerRadius.toDouble(),
-                cornerHeight = cornerRadius.toDouble(),
+                cornerWidth = radius.toDouble(),
+                cornerHeight = radius.toDouble(),
             )
             CGContextAddPath(ctx, path)
             CGContextClip(ctx)
@@ -749,4 +752,22 @@ private fun cropImageToFill(
         CGRectMake(0.0, padding, srcWidth, targetHeight)
     }
     return CGImageCreateWithImageInRect(source, cropRect)
+}
+
+/**
+ * Clamps [radius] to half of the rectangle's shorter side so that
+ * [CGPathAddRoundedRect] never triggers its `2 * cornerWidth <= width`
+ * assertion. The assertion is enforced on real iOS devices but is silently
+ * tolerated by some simulators, which masked the issue during local testing.
+ *
+ * Mirrors the behavior of Android's `Canvas.drawRoundRect`, which clamps
+ * the radius internally, and of [buildRoundedRectPath], so a `pill`-style
+ * `cornerRadius = 100.dp` collapses to a fully-rounded ellipse on every
+ * platform instead of crashing on iOS hardware.
+ */
+private fun clampCornerRadius(radius: Float, width: Float, height: Float): Float {
+    if (radius <= 0f) return 0f
+    val maxRadius = minOf(width, height) / 2f
+    if (maxRadius <= 0f) return 0f
+    return if (radius > maxRadius) maxRadius else radius
 }
