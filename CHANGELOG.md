@@ -6,7 +6,24 @@ versions follow [Semantic Versioning](https://semver.org). Pre-1.0
 minor versions may break public API; alpha / beta / rc tags signal
 an actively settling surface.
 
-## [Unreleased]
+## [1.0.2] — 2026-05-25
+
+### Fixed — `pdfkmp`
+
+- **iOS rounded-rect crash on real devices.** Containers with a
+  `cornerRadius` larger than half of the measured rect (e.g. a pill-
+  style badge with `cornerRadius = 100.dp` on a 40 pt-wide box) now
+  render correctly on iOS hardware. Earlier builds passed the radius
+  straight to `CGPathAddRoundedRect`, which asserts
+  `2 × cornerWidth ≤ rect.width` on real devices but silently
+  tolerated the violation in some simulators — masking the bug
+  during local testing. The iOS canvas now clamps the radius to
+  `min(width, height) / 2` across `drawRoundedRect` /
+  `strokeRoundedRect` / `clipRoundedRect`, matching the existing
+  clamping in `buildRoundedRectPath` (per-corner path) and Android's
+  `Canvas.drawRoundRect`, so cross-platform output stays identical
+  and "pill" radii collapse to a fully-rounded ellipse instead of
+  crashing.
 
 ### Added — `pdfkmp-viewer`
 
