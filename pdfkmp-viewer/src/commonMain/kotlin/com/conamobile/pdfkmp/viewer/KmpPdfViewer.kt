@@ -41,17 +41,17 @@ import com.conamobile.pdfkmp.PdfDocument
  *
  * ```kotlin
  * KmpPdfViewer(
- *     uri = "https://example.com/invoice.pdf",
+ *     source = PdfSource.Remote("https://example.com/invoice.pdf"),
  *     title = "Invoice",
  *     onBack = { navController.popBackStack() },
  * )
  * ```
  *
- * Four overloads cover every realistic input: a [PdfSource], a
- * [PdfDocument] built through the PdfKmp DSL, a raw `ByteArray`, or a
- * URI string ([loadPdfBytesFromUri] resolves `content://`,
- * `file://`, `http(s)://`, asset / bundle paths, and bare filesystem
- * paths). The URI overload renders an inline progress indicator
+ * Three overloads cover every realistic input: a [PdfSource]
+ * (recommended — covers remote URLs, local files, content URIs,
+ * bundled assets, raw bytes and PdfKmp documents through one sealed
+ * type), a [PdfDocument] built through the PdfKmp DSL, or a raw
+ * `ByteArray`. Async sources render an inline progress indicator
  * while loading and an error message on failure — back navigation
  * still works in both states.
  *
@@ -70,8 +70,8 @@ import com.conamobile.pdfkmp.PdfDocument
  * advanced layouts.
  *
  * @param source PDF payload. `PdfSource.of(document)` keeps text
- *   selection + hyperlinks alive; `PdfSource.of(bytes)` is a
- *   plain bitmap experience.
+ *   selection + hyperlinks alive; async variants stream bytes from
+ *   the platform's native loader.
  * @param modifier applied to the outer [Column].
  * @param title shown in the topbar's centered title (Classic iOS)
  *   / bold first line (Minimal Mono).
@@ -81,6 +81,14 @@ import com.conamobile.pdfkmp.PdfDocument
  *   removes the back affordance entirely.
  * @param backLabel iOS-only previous-screen label rendered next to
  *   the chevron (e.g. `"Files"`). Ignored on Android.
+ * @param showTopBar master switch for the entire chrome (topbar +
+ *   search bar). `false` hides both unconditionally — yields a "poor
+ *   viewer" surface that is just pages, indicator, and gestures.
+ *   When `false`, [showBack], [showSearch], [showShare],
+ *   [showDownload] all become no-ops because there is no bar to
+ *   surface them on. Host apps that hide the topbar typically wire
+ *   their own back navigation and share / download affordances via
+ *   the platform's system UI.
  * @param showBack hide / show the back affordance independently of
  *   [onBack]. Defaults to `true` when [onBack] is provided.
  * @param showSearch hide / show the search affordance. Auto-
@@ -108,6 +116,11 @@ import com.conamobile.pdfkmp.PdfDocument
  * @param renderDensity baseline scaling factor applied during
  *   rasterisation.
  * @param maxZoom upper bound for the pinch gesture.
+ * @param cacheStrategy controls how far ahead and behind the
+ *   visible page the renderer keeps rasterised bitmaps. See
+ *   [PdfPageCacheStrategy] for the trade-offs; defaults to
+ *   [PdfPageCacheStrategy.Auto] which picks a window based on
+ *   available RAM and never crashes.
  */
 @Composable
 public fun KmpPdfViewer(
@@ -117,6 +130,7 @@ public fun KmpPdfViewer(
     fileName: String = "document.pdf",
     onBack: (() -> Unit)? = null,
     backLabel: String? = null,
+    showTopBar: Boolean = true,
     showBack: Boolean = onBack != null,
     showSearch: Boolean = true,
     showShare: Boolean = true,
@@ -132,8 +146,25 @@ public fun KmpPdfViewer(
     pageSpacing: Dp = 4.dp,
     renderDensity: Float = 2f,
     maxZoom: Float = 5f,
+    cacheStrategy: PdfPageCacheStrategy = PdfPageCacheStrategy.Auto,
 ) {
-    val bytes = remember(source) { source.bytes() }
+    // Resolve async sources here once so the topbar's share + save
+    // bindings (which need the bytes in hand) and the embedded
+    // PdfViewer don't both kick off duplicate platform loads.
+    val initialBytes = remember(source) { source.inMemoryBytesOrNull() }
+    var bytes by remember(source) { mutableStateOf(initialBytes) }
+    var loadError by remember(source) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(source) {
+        if (bytes != null || loadError != null) return@LaunchedEffect
+        try {
+            bytes = source.loadBytes()
+        } catch (t: Throwable) {
+            loadError = t.message ?: t::class.simpleName ?: "Unknown error"
+        }
+    }
+
+    val resolvedBytes = bytes
     val textRuns = remember(source) { source.textRuns() }
 
     val shareAction = if (showShare) rememberPdfShareAction() else null
@@ -154,74 +185,121 @@ public fun KmpPdfViewer(
         activeMatchIndex = if (highlights.isEmpty()) -1 else 0
     }
 
-    val subtitle = remember(bytes.size) { "PDF · ${formatFileSize(bytes.size)}" }
+    val subtitle = remember(resolvedBytes?.size) {
+        resolvedBytes?.let { "PDF · ${formatFileSize(it.size)}" } ?: "PDF · loading"
+    }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(backgroundColor),
     ) {
-        if (searchOpen) {
-            PdfSearchBar(
-                query = searchQuery,
-                onQueryChange = { searchQuery = it },
-                matchCount = highlights.size,
-                activeIndex = activeMatchIndex,
-                onPrevious = {
-                    if (highlights.isNotEmpty()) {
-                        activeMatchIndex =
-                            (activeMatchIndex - 1 + highlights.size) % highlights.size
-                    }
-                },
-                onNext = {
-                    if (highlights.isNotEmpty()) {
-                        activeMatchIndex = (activeMatchIndex + 1) % highlights.size
-                    }
-                },
-                onClose = {
-                    searchOpen = false
-                    searchQuery = ""
-                    activeMatchIndex = -1
-                },
-            )
-        } else {
-            PdfViewerTopBar(
-                title = title,
-                subtitle = subtitle,
-                backLabel = backLabel,
-                onBack = onBack ?: {},
-                onSearch = { searchOpen = true },
-                onShare = { shareAction?.invoke(bytes, fileName) },
-                onDownload = { saveAction?.invoke(bytes, fileName) },
-                showBack = showBack,
-                // Auto-suppress the search affordance when the
-                // source can't produce matches.
-                showSearch = showSearch && textRuns.isNotEmpty(),
-                showShare = showShare,
-                showDownload = showDownload,
-            )
+        if (showTopBar) {
+            if (searchOpen) {
+                PdfSearchBar(
+                    query = searchQuery,
+                    onQueryChange = { searchQuery = it },
+                    matchCount = highlights.size,
+                    activeIndex = activeMatchIndex,
+                    onPrevious = {
+                        if (highlights.isNotEmpty()) {
+                            activeMatchIndex =
+                                (activeMatchIndex - 1 + highlights.size) % highlights.size
+                        }
+                    },
+                    onNext = {
+                        if (highlights.isNotEmpty()) {
+                            activeMatchIndex = (activeMatchIndex + 1) % highlights.size
+                        }
+                    },
+                    onClose = {
+                        searchOpen = false
+                        searchQuery = ""
+                        activeMatchIndex = -1
+                    },
+                )
+            } else {
+                PdfViewerTopBar(
+                    title = title,
+                    subtitle = subtitle,
+                    backLabel = backLabel,
+                    onBack = onBack ?: {},
+                    onSearch = { searchOpen = true },
+                    onShare = {
+                        val ready = resolvedBytes
+                        if (ready != null) shareAction?.invoke(ready, fileName)
+                    },
+                    onDownload = {
+                        val ready = resolvedBytes
+                        if (ready != null) saveAction?.invoke(ready, fileName)
+                    },
+                    showBack = showBack,
+                    // Auto-suppress the search affordance when the
+                    // source can't produce matches.
+                    showSearch = showSearch && textRuns.isNotEmpty(),
+                    showShare = showShare,
+                    showDownload = showDownload,
+                )
+            }
         }
 
-        PdfViewer(
-            source = source,
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            showShareButton = false,
-            backgroundColor = backgroundColor,
-            pageBackgroundColor = pageBackgroundColor,
-            contentPadding = contentPadding,
-            pageSpacing = pageSpacing,
-            renderDensity = renderDensity,
-            maxZoom = maxZoom,
-            zoomEnabled = zoomEnabled,
-            doubleTapToZoom = doubleTapToZoom,
-            textSelectable = textSelectable,
-            hyperlinksEnabled = hyperlinksEnabled,
-            showPageIndicator = showPageIndicator,
-            searchHighlights = highlights,
-            activeSearchHighlightIndex = activeMatchIndex,
-        )
+        when {
+            loadError != null -> Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "Could not open PDF\n$loadError",
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+
+            resolvedBytes == null -> Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator()
+            }
+
+            else -> {
+                // Hand a Bytes-wrapped source down so PdfViewer's
+                // internal LaunchedEffect short-circuits the (already
+                // completed) async load. For Document sources we
+                // pass the original through to preserve the text
+                // runs / hyperlinks the document captured.
+                val downstream = when (source) {
+                    is PdfSource.Document -> source
+                    else -> PdfSource.Bytes(resolvedBytes)
+                }
+                PdfViewer(
+                    source = downstream,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    showShareButton = false,
+                    backgroundColor = backgroundColor,
+                    pageBackgroundColor = pageBackgroundColor,
+                    contentPadding = contentPadding,
+                    pageSpacing = pageSpacing,
+                    renderDensity = renderDensity,
+                    maxZoom = maxZoom,
+                    zoomEnabled = zoomEnabled,
+                    doubleTapToZoom = doubleTapToZoom,
+                    textSelectable = textSelectable,
+                    hyperlinksEnabled = hyperlinksEnabled,
+                    showPageIndicator = showPageIndicator,
+                    cacheStrategy = cacheStrategy,
+                    searchHighlights = highlights,
+                    activeSearchHighlightIndex = activeMatchIndex,
+                )
+            }
+        }
     }
 }
 
@@ -239,6 +317,7 @@ public fun KmpPdfViewer(
     fileName: String = "document.pdf",
     onBack: (() -> Unit)? = null,
     backLabel: String? = null,
+    showTopBar: Boolean = true,
     showBack: Boolean = onBack != null,
     showSearch: Boolean = true,
     showShare: Boolean = true,
@@ -254,6 +333,7 @@ public fun KmpPdfViewer(
     pageSpacing: Dp = 4.dp,
     renderDensity: Float = 2f,
     maxZoom: Float = 5f,
+    cacheStrategy: PdfPageCacheStrategy = PdfPageCacheStrategy.Auto,
 ) {
     KmpPdfViewer(
         source = remember(document) { PdfSource.of(document) },
@@ -262,6 +342,7 @@ public fun KmpPdfViewer(
         fileName = fileName,
         onBack = onBack,
         backLabel = backLabel,
+        showTopBar = showTopBar,
         showBack = showBack,
         showSearch = showSearch,
         showShare = showShare,
@@ -277,6 +358,7 @@ public fun KmpPdfViewer(
         pageSpacing = pageSpacing,
         renderDensity = renderDensity,
         maxZoom = maxZoom,
+        cacheStrategy = cacheStrategy,
     )
 }
 
@@ -295,6 +377,7 @@ public fun KmpPdfViewer(
     fileName: String = "document.pdf",
     onBack: (() -> Unit)? = null,
     backLabel: String? = null,
+    showTopBar: Boolean = true,
     showBack: Boolean = onBack != null,
     showSearch: Boolean = true,
     showShare: Boolean = true,
@@ -310,6 +393,7 @@ public fun KmpPdfViewer(
     pageSpacing: Dp = 4.dp,
     renderDensity: Float = 2f,
     maxZoom: Float = 5f,
+    cacheStrategy: PdfPageCacheStrategy = PdfPageCacheStrategy.Auto,
 ) {
     KmpPdfViewer(
         source = remember(bytes) { PdfSource.Bytes(bytes) },
@@ -318,6 +402,7 @@ public fun KmpPdfViewer(
         fileName = fileName,
         onBack = onBack,
         backLabel = backLabel,
+        showTopBar = showTopBar,
         showBack = showBack,
         showSearch = showSearch,
         showShare = showShare,
@@ -333,18 +418,36 @@ public fun KmpPdfViewer(
         pageSpacing = pageSpacing,
         renderDensity = renderDensity,
         maxZoom = maxZoom,
+        cacheStrategy = cacheStrategy,
     )
 }
 
 /**
- * URI overload — loads the bytes asynchronously via the platform's
- * native resolution machinery (Android `ContentResolver` for
- * `content://`, `URL.openStream` for HTTPS, etc. — see
- * [loadPdfBytesFromUri] for the full list). While the load is in
- * flight the topbar renders with a [CircularProgressIndicator] in
- * place of the page area; on failure the screen surfaces an inline
- * error message so the host can still navigate back via [onBack].
+ * String-URI overload, **deprecated in favour of [PdfSource.auto]**.
+ *
+ * The string form hid which transport was being used and offered no
+ * place to attach per-shape configuration (HTTP headers, timeouts,
+ * etc.). Migrate to an explicit [PdfSource] variant — call
+ * [PdfSource.auto] if you genuinely don't know the scheme at call
+ * site, or pick a constructor directly when you do.
  */
+@Deprecated(
+    message = "Use KmpPdfViewer(source = PdfSource.auto(uri), …) — strings hide " +
+        "what transport is being used and can't carry headers / timeouts.",
+    replaceWith = ReplaceWith(
+        "KmpPdfViewer(source = PdfSource.auto(uri), modifier = modifier, " +
+            "title = title, fileName = fileName, onBack = onBack, backLabel = backLabel, " +
+            "showTopBar = showTopBar, showBack = showBack, showSearch = showSearch, " +
+            "showShare = showShare, showDownload = showDownload, " +
+            "showPageIndicator = showPageIndicator, zoomEnabled = zoomEnabled, " +
+            "doubleTapToZoom = doubleTapToZoom, textSelectable = textSelectable, " +
+            "hyperlinksEnabled = hyperlinksEnabled, backgroundColor = backgroundColor, " +
+            "pageBackgroundColor = pageBackgroundColor, contentPadding = contentPadding, " +
+            "pageSpacing = pageSpacing, renderDensity = renderDensity, maxZoom = maxZoom, " +
+            "cacheStrategy = cacheStrategy)",
+        "com.conamobile.pdfkmp.viewer.PdfSource",
+    ),
+)
 @Composable
 public fun KmpPdfViewer(
     uri: String,
@@ -353,6 +456,7 @@ public fun KmpPdfViewer(
     fileName: String = "document.pdf",
     onBack: (() -> Unit)? = null,
     backLabel: String? = null,
+    showTopBar: Boolean = true,
     showBack: Boolean = onBack != null,
     showSearch: Boolean = true,
     showShare: Boolean = true,
@@ -368,79 +472,33 @@ public fun KmpPdfViewer(
     pageSpacing: Dp = 4.dp,
     renderDensity: Float = 2f,
     maxZoom: Float = 5f,
+    cacheStrategy: PdfPageCacheStrategy = PdfPageCacheStrategy.Auto,
 ) {
-    var loaded by remember(uri) { mutableStateOf<ByteArray?>(null) }
-    var error by remember(uri) { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(uri) {
-        try {
-            loaded = loadPdfBytesFromUri(uri)
-        } catch (t: Throwable) {
-            error = t.message ?: t::class.simpleName ?: "Unknown error"
-        }
-    }
-
-    val bytes = loaded
-    when {
-        bytes != null -> KmpPdfViewer(
-            bytes = bytes,
-            modifier = modifier,
-            title = title,
-            fileName = fileName,
-            onBack = onBack,
-            backLabel = backLabel,
-            showBack = showBack,
-            showSearch = showSearch,
-            showShare = showShare,
-            showDownload = showDownload,
-            showPageIndicator = showPageIndicator,
-            zoomEnabled = zoomEnabled,
-            doubleTapToZoom = doubleTapToZoom,
-            textSelectable = textSelectable,
-            hyperlinksEnabled = hyperlinksEnabled,
-            backgroundColor = backgroundColor,
-            pageBackgroundColor = pageBackgroundColor,
-            contentPadding = contentPadding,
-            pageSpacing = pageSpacing,
-            renderDensity = renderDensity,
-            maxZoom = maxZoom,
-        )
-
-        else -> Column(
-            modifier = modifier
-                .fillMaxSize()
-                .background(backgroundColor),
-        ) {
-            // Show the topbar even while loading / on error so
-            // the host can still navigate back.
-            PdfViewerTopBar(
-                title = title,
-                backLabel = backLabel,
-                onBack = onBack ?: {},
-                showBack = showBack,
-                showSearch = false,
-                showShare = false,
-                showDownload = false,
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(24.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                val message = error
-                if (message != null) {
-                    Text(
-                        text = "Could not open PDF\n$message",
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                } else {
-                    CircularProgressIndicator()
-                }
-            }
-        }
-    }
+    KmpPdfViewer(
+        source = remember(uri) { PdfSource.auto(uri) },
+        modifier = modifier,
+        title = title,
+        fileName = fileName,
+        onBack = onBack,
+        backLabel = backLabel,
+        showTopBar = showTopBar,
+        showBack = showBack,
+        showSearch = showSearch,
+        showShare = showShare,
+        showDownload = showDownload,
+        showPageIndicator = showPageIndicator,
+        zoomEnabled = zoomEnabled,
+        doubleTapToZoom = doubleTapToZoom,
+        textSelectable = textSelectable,
+        hyperlinksEnabled = hyperlinksEnabled,
+        backgroundColor = backgroundColor,
+        pageBackgroundColor = pageBackgroundColor,
+        contentPadding = contentPadding,
+        pageSpacing = pageSpacing,
+        renderDensity = renderDensity,
+        maxZoom = maxZoom,
+        cacheStrategy = cacheStrategy,
+    )
 }
 
 /** Compact "PDF · 2.4 MB" string used as the Minimal Mono subtitle. */

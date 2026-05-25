@@ -78,6 +78,7 @@ import com.conamobile.pdfkmp.text.PdfHyperlink
 import com.conamobile.pdfkmp.text.PdfTextRun
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /** Hard-coded ceiling for pinch zoom. 5× matches iOS PDFKit's default. */
@@ -205,8 +206,23 @@ public fun PdfViewer(
     shareButtonPadding: PaddingValues = PaddingValues(16.dp),
     searchHighlights: List<PdfSearchHighlight> = emptyList(),
     activeSearchHighlightIndex: Int = -1,
+    cacheStrategy: PdfPageCacheStrategy = PdfPageCacheStrategy.Auto,
 ) {
-    val bytes = remember(source) { source.bytes() }
+    // Stage 1 — bytes. In-memory variants resolve synchronously via
+    // `inMemoryBytesOrNull()`; async variants stay null until the
+    // platform loader returns (LaunchedEffect below).
+    var bytes by remember(source) { mutableStateOf(source.inMemoryBytesOrNull()) }
+    var loadError by remember(source) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(source) {
+        if (bytes != null || loadError != null) return@LaunchedEffect
+        try {
+            bytes = source.loadBytes()
+        } catch (t: Throwable) {
+            loadError = t.message ?: t::class.simpleName ?: "Unknown error"
+        }
+    }
+
     val textRunsByPage = remember(source, textSelectable) {
         if (textSelectable) source.textRuns().groupBy { it.pageIndex } else emptyMap()
     }
@@ -214,16 +230,28 @@ public fun PdfViewer(
         if (hyperlinksEnabled) source.hyperlinks().groupBy { it.pageIndex } else emptyMap()
     }
     val urlLauncher = if (hyperlinksEnabled) rememberPdfUrlLauncher() else null
-    var renderer by remember(bytes) { mutableStateOf<PdfPageRenderer?>(null) }
-    var loading by remember(bytes) { mutableStateOf(true) }
-    var error by remember(bytes) { mutableStateOf(false) }
+
+    // Stage 2 — renderer. Re-opens whenever the resolved bytes change.
+    val currentBytes = bytes
+    var renderer by remember(currentBytes) { mutableStateOf<PdfPageRenderer?>(null) }
+    var loading by remember(currentBytes) { mutableStateOf(currentBytes != null) }
+    var error by remember(currentBytes) { mutableStateOf(false) }
+
+    // Bitmap cache survives LazyColumn item recomposition, which is
+    // the whole point: scroll-back to a previously viewed page is a
+    // memory hit instead of a fresh rasterisation. The cache is keyed
+    // on `currentBytes` so a new document gets a fresh cache.
+    val cache = remember(currentBytes) {
+        PdfBitmapCache(budgetBytes = bitmapCacheBudgetBytes())
+    }
 
     val scope = rememberCoroutineScope()
 
-    DisposableEffect(bytes) {
+    DisposableEffect(currentBytes) {
+        if (currentBytes == null) return@DisposableEffect onDispose { }
         var openedRenderer: PdfPageRenderer? = null
         val job = scope.launch {
-            val opened = openPdfRenderer(bytes)
+            val opened = openPdfRenderer(currentBytes)
             openedRenderer = opened
             renderer = opened
             error = opened == null || opened.pageCount == 0
@@ -233,6 +261,12 @@ public fun PdfViewer(
             job.cancel()
             openedRenderer?.close()
             renderer = null
+            // Best-effort cache flush — `clear` is suspending, so we
+            // can't await it from `onDispose`. Launching on the
+            // (already-disposed) scope is safe because cache state
+            // is independent of the renderer; in the worst case the
+            // bitmaps stay reachable for one extra GC cycle.
+            scope.launch { cache.clear() }
         }
     }
 
@@ -280,15 +314,19 @@ public fun PdfViewer(
 
     Box(modifier = modifier.fillMaxSize().background(backgroundColor)) {
         when {
-            loading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+            loadError != null || error || (currentBytes != null && current == null && !loading) ->
+                PdfViewerErrorState(
+                    modifier = Modifier.align(Alignment.Center),
+                )
 
-            error || current == null -> PdfViewerErrorState(
-                modifier = Modifier.align(Alignment.Center),
-            )
+            currentBytes == null || loading ->
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
 
             else -> {
                 PdfPagesContent(
-                    renderer = current,
+                    renderer = current!!,
+                    cache = cache,
+                    cacheStrategy = cacheStrategy,
                     listState = listState,
                     horizontalScrollState = horizontalScrollState,
                     zoom = zoom,
@@ -318,9 +356,9 @@ public fun PdfViewer(
             }
         }
 
-        if (shareAction != null && current != null && !error) {
+        if (shareAction != null && current != null && currentBytes != null && !error) {
             FloatingActionButton(
-                onClick = { shareAction(bytes, shareFileName) },
+                onClick = { shareAction(currentBytes, shareFileName) },
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 elevation = FloatingActionButtonDefaults.elevation(),
@@ -363,6 +401,7 @@ public fun PdfViewer(
     shareButtonPadding: PaddingValues = PaddingValues(16.dp),
     searchHighlights: List<PdfSearchHighlight> = emptyList(),
     activeSearchHighlightIndex: Int = -1,
+    cacheStrategy: PdfPageCacheStrategy = PdfPageCacheStrategy.Auto,
 ) {
     PdfViewer(
         source = remember(document) { PdfSource.of(document) },
@@ -384,6 +423,7 @@ public fun PdfViewer(
         shareButtonPadding = shareButtonPadding,
         searchHighlights = searchHighlights,
         activeSearchHighlightIndex = activeSearchHighlightIndex,
+        cacheStrategy = cacheStrategy,
     )
 }
 
@@ -411,6 +451,7 @@ public fun PdfViewer(
     shareButtonPadding: PaddingValues = PaddingValues(16.dp),
     searchHighlights: List<PdfSearchHighlight> = emptyList(),
     activeSearchHighlightIndex: Int = -1,
+    cacheStrategy: PdfPageCacheStrategy = PdfPageCacheStrategy.Auto,
 ) {
     PdfViewer(
         source = remember(bytes) { PdfSource.Bytes(bytes) },
@@ -430,6 +471,7 @@ public fun PdfViewer(
         shareButtonPadding = shareButtonPadding,
         searchHighlights = searchHighlights,
         activeSearchHighlightIndex = activeSearchHighlightIndex,
+        cacheStrategy = cacheStrategy,
     )
 }
 
@@ -456,6 +498,8 @@ public fun PdfViewer(
 @Composable
 private fun PdfPagesContent(
     renderer: PdfPageRenderer,
+    cache: PdfBitmapCache,
+    cacheStrategy: PdfPageCacheStrategy,
     listState: LazyListState,
     horizontalScrollState: ScrollState,
     zoom: Animatable<Float, *>,
@@ -473,6 +517,26 @@ private fun PdfPagesContent(
     activeSearchHighlight: PdfSearchHighlight?,
     scope: CoroutineScope,
 ) {
+    // Prefetch loop — keeps the requested window around the currently
+    // visible page warm so the user never sees a fresh-rasterisation
+    // delay when scrolling within the window. `collectLatest` cancels
+    // the prior pass on every scroll, so a fast flick doesn't queue
+    // up renders for pages the user is already past.
+    LaunchedEffect(renderer, cache, cacheStrategy, effectiveDensity) {
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .collectLatest { visible ->
+                val (before, after) = cacheStrategy.window(renderer.pageCount)
+                val start = (visible - before).coerceAtLeast(0)
+                val end = (visible + after).coerceAtMost(renderer.pageCount - 1)
+                // Visible page first so it always wins the render
+                // mutex, then expanding outward — neighbours that
+                // miss the window simply queue behind.
+                val order = buildPrefetchOrder(visible, start, end)
+                for (index in order) {
+                    renderAndCache(renderer, cache, index, effectiveDensity)
+                }
+            }
+    }
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val viewportWidth = maxWidth
         val contentWidth = viewportWidth * zoom.value
@@ -596,6 +660,7 @@ private fun PdfPagesContent(
                     ) { index ->
                         PdfPageItem(
                             renderer = renderer,
+                            cache = cache,
                             index = index,
                             pageSize = renderer.pageSizes.getOrNull(index)
                                 ?: PageSize(widthPoints = 1f, heightPoints = 1f),
@@ -618,6 +683,7 @@ private fun PdfPagesContent(
 @Composable
 private fun PdfPageItem(
     renderer: PdfPageRenderer,
+    cache: PdfBitmapCache,
     index: Int,
     pageSize: PageSize,
     pageBackgroundColor: Color,
@@ -635,8 +701,13 @@ private fun PdfPageItem(
         mutableStateOf<ImageBitmap?>(null)
     }
 
-    LaunchedEffect(renderer, index, renderDensity) {
-        val rendered = renderer.renderPage(index, renderDensity)
+    // Cache lookup is the fast path — when the user has already
+    // visited this page (within the current document) the bitmap is
+    // resident in `cache` and `renderAndCache` returns synchronously
+    // after a single mutex round-trip. Only the first visit (or a
+    // visit after the page has been evicted) actually rasterises.
+    LaunchedEffect(renderer, cache, index, renderDensity) {
+        val rendered = renderAndCache(renderer, cache, index, renderDensity)
         if (rendered != null) {
             bitmap = rendered
         }
@@ -993,4 +1064,30 @@ private fun PdfViewerErrorState(modifier: Modifier = Modifier) {
         color = MaterialTheme.colorScheme.onSurface,
         fontSize = 14.sp,
     )
+}
+
+/**
+ * Visits every page in `[start, end]` starting from [visible] and
+ * walking outward — the page the user is currently looking at goes
+ * first, then its neighbours in widening rings. Sequential ordering
+ * matters because the render mutex serialises calls; visible first
+ * means a fresh scroll target lands on screen quickly even when an
+ * earlier prefetch is mid-flight.
+ */
+internal fun buildPrefetchOrder(visible: Int, start: Int, end: Int): List<Int> {
+    if (end < start) return emptyList()
+    val anchor = visible.coerceIn(start, end)
+    val order = ArrayList<Int>(end - start + 1)
+    order += anchor
+    var offset = 1
+    while (true) {
+        val below = anchor + offset
+        val above = anchor - offset
+        val any = below <= end || above >= start
+        if (!any) break
+        if (below <= end) order += below
+        if (above >= start) order += above
+        offset += 1
+    }
+    return order
 }

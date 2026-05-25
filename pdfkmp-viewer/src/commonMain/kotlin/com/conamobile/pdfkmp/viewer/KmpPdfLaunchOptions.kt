@@ -20,6 +20,7 @@ internal data class KmpPdfLaunchOptions(
     val title: String = "Document",
     val fileName: String = "document.pdf",
     val backLabel: String? = null,
+    val showTopBar: Boolean = true,
     val showSearch: Boolean = true,
     val showShare: Boolean = true,
     val showDownload: Boolean = true,
@@ -30,4 +31,5 @@ internal data class KmpPdfLaunchOptions(
     val hyperlinksEnabled: Boolean = true,
     val renderDensity: Float = 2f,
     val maxZoom: Float = 5f,
+    val cacheStrategy: PdfPageCacheStrategy = PdfPageCacheStrategy.Auto,
 )

@@ -6,6 +6,45 @@ versions follow [Semantic Versioning](https://semver.org). Pre-1.0
 minor versions may break public API; alpha / beta / rc tags signal
 an actively settling surface.
 
+## [Unreleased]
+
+### Added — `pdfkmp-viewer`
+
+- **`showTopBar: Boolean`** master switch on `KmpPdfViewer` and
+  `KmpPdfLauncher.open`. `false` hides both the topbar and the
+  morphed search bar, leaving a "poor viewer" surface with just
+  pages, indicator, and gestures — for hosts that wire their own
+  navigation and share affordances.
+- **`PdfPageCacheStrategy` + memory-budgeted bitmap LRU.** Pages
+  rendered while scrolling are now retained in a per-document
+  bitmap cache so scrolling back to a previously visited page is
+  an instant memory hit rather than a fresh rasterisation. Three
+  presets — `Auto` (default — modest prefetch window, RAM-bounded),
+  `Window(pagesBefore, pagesAfter)` (explicit warm window), and
+  `All` (try to keep every page warm, still RAM-bounded). The cache
+  is always capped to a per-platform memory budget (Android — 25 %
+  of `Runtime.maxMemory()`, iOS — 200 MB) and evicts the oldest
+  entries first, so over-eager windows can never crash the process.
+  Wider prefetch is best-effort: the cache keeps as much as fits.
+- **Unified `PdfSource` shape**: in addition to the existing `Bytes`
+  / `Document` variants, the sealed type now carries
+  `FilePath` / `Remote(url, headers, timeoutMillis)` / `ContentUri`
+  (Android-only) / `Asset` (resolved through `Context.assets` on
+  Android, `NSBundle` on iOS), plus a `PdfSource.auto(uri)` factory
+  for callers that only have an opaque string. `KmpPdfViewer` and
+  `KmpPdfLauncher` now resolve any variant through a single async
+  loader instead of branching on URI prefixes inside an opaque
+  `String`. `Remote.headers` / `timeoutMillis` are honoured on
+  Android; the iOS resolver falls back to `NSData(contentsOfURL:)`
+  and ignores both (documented).
+
+### Deprecated — `pdfkmp-viewer`
+
+- **`KmpPdfViewer(uri: String, …)`** — replaced by
+  `KmpPdfViewer(source = PdfSource.auto(uri), …)` (or the matching
+  explicit variant). String inputs hide which transport is in use
+  and can't carry per-shape configuration like HTTP headers.
+
 ## [1.0.0] — 2026-05-04
 
 ### Added — `pdfkmp-viewer` (new optional module)

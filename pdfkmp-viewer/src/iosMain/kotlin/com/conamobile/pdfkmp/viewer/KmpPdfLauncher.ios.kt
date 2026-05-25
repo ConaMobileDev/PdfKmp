@@ -21,9 +21,10 @@ import platform.UIKit.UIWindow
  * the user taps back (`onBack` calls `dismissViewControllerAnimated:`).
  *
  * Payload routing mirrors the Android launcher: URI strings travel
- * by value, raw bytes / `PdfDocument`s bigger than a primitive go
- * through [KmpPdfLauncherRegistry] so the content survives the
- * Compose-controller boundary intact.
+ * by value (resolved to a [PdfSource.auto]), raw bytes wrap to
+ * [PdfSource.Bytes], and `PdfDocument`s wrap to [PdfSource.of] so
+ * captured text runs / hyperlinks survive the Compose-controller
+ * boundary intact.
  */
 public actual object KmpPdfLauncher {
 
@@ -32,6 +33,7 @@ public actual object KmpPdfLauncher {
         title: String,
         fileName: String,
         backLabel: String?,
+        showTopBar: Boolean,
         showSearch: Boolean,
         showShare: Boolean,
         showDownload: Boolean,
@@ -42,32 +44,16 @@ public actual object KmpPdfLauncher {
         hyperlinksEnabled: Boolean,
         renderDensity: Float,
         maxZoom: Float,
+        cacheStrategy: PdfPageCacheStrategy,
     ) {
         val options = buildOptions(
             title, fileName, backLabel,
-            showSearch, showShare, showDownload, showPageIndicator,
+            showTopBar, showSearch, showShare, showDownload, showPageIndicator,
             zoomEnabled, doubleTapToZoom, textSelectable, hyperlinksEnabled,
-            renderDensity, maxZoom,
+            renderDensity, maxZoom, cacheStrategy,
         )
-        present { dismiss ->
-            KmpPdfViewer(
-                uri = uri,
-                title = options.title,
-                fileName = options.fileName,
-                onBack = dismiss,
-                backLabel = options.backLabel,
-                showSearch = options.showSearch,
-                showShare = options.showShare,
-                showDownload = options.showDownload,
-                showPageIndicator = options.showPageIndicator,
-                zoomEnabled = options.zoomEnabled,
-                doubleTapToZoom = options.doubleTapToZoom,
-                textSelectable = options.textSelectable,
-                hyperlinksEnabled = options.hyperlinksEnabled,
-                renderDensity = options.renderDensity,
-                maxZoom = options.maxZoom,
-            )
-        }
+        val source = PdfSource.auto(uri)
+        present { dismiss -> KmpPdfViewerWithOptions(source, options, dismiss) }
     }
 
     public actual fun open(
@@ -75,6 +61,7 @@ public actual object KmpPdfLauncher {
         title: String,
         fileName: String,
         backLabel: String?,
+        showTopBar: Boolean,
         showSearch: Boolean,
         showShare: Boolean,
         showDownload: Boolean,
@@ -85,32 +72,16 @@ public actual object KmpPdfLauncher {
         hyperlinksEnabled: Boolean,
         renderDensity: Float,
         maxZoom: Float,
+        cacheStrategy: PdfPageCacheStrategy,
     ) {
         val options = buildOptions(
             title, fileName, backLabel,
-            showSearch, showShare, showDownload, showPageIndicator,
+            showTopBar, showSearch, showShare, showDownload, showPageIndicator,
             zoomEnabled, doubleTapToZoom, textSelectable, hyperlinksEnabled,
-            renderDensity, maxZoom,
+            renderDensity, maxZoom, cacheStrategy,
         )
-        present { dismiss ->
-            KmpPdfViewer(
-                bytes = bytes,
-                title = options.title,
-                fileName = options.fileName,
-                onBack = dismiss,
-                backLabel = options.backLabel,
-                showSearch = options.showSearch,
-                showShare = options.showShare,
-                showDownload = options.showDownload,
-                showPageIndicator = options.showPageIndicator,
-                zoomEnabled = options.zoomEnabled,
-                doubleTapToZoom = options.doubleTapToZoom,
-                textSelectable = options.textSelectable,
-                hyperlinksEnabled = options.hyperlinksEnabled,
-                renderDensity = options.renderDensity,
-                maxZoom = options.maxZoom,
-            )
-        }
+        val source = PdfSource.Bytes(bytes)
+        present { dismiss -> KmpPdfViewerWithOptions(source, options, dismiss) }
     }
 
     public actual fun open(
@@ -118,6 +89,7 @@ public actual object KmpPdfLauncher {
         title: String,
         fileName: String,
         backLabel: String?,
+        showTopBar: Boolean,
         showSearch: Boolean,
         showShare: Boolean,
         showDownload: Boolean,
@@ -128,42 +100,26 @@ public actual object KmpPdfLauncher {
         hyperlinksEnabled: Boolean,
         renderDensity: Float,
         maxZoom: Float,
+        cacheStrategy: PdfPageCacheStrategy,
     ) {
         val options = buildOptions(
             title, fileName, backLabel,
-            showSearch, showShare, showDownload, showPageIndicator,
+            showTopBar, showSearch, showShare, showDownload, showPageIndicator,
             zoomEnabled, doubleTapToZoom, textSelectable, hyperlinksEnabled,
-            renderDensity, maxZoom,
+            renderDensity, maxZoom, cacheStrategy,
         )
         // Snapshot the source on the calling thread so the
         // composition reads the same captured text runs / hyperlinks
         // even if the caller mutates the document afterwards.
         val source = PdfSource.of(document)
-        present { dismiss ->
-            KmpPdfViewer(
-                source = source,
-                title = options.title,
-                fileName = options.fileName,
-                onBack = dismiss,
-                backLabel = options.backLabel,
-                showSearch = options.showSearch,
-                showShare = options.showShare,
-                showDownload = options.showDownload,
-                showPageIndicator = options.showPageIndicator,
-                zoomEnabled = options.zoomEnabled,
-                doubleTapToZoom = options.doubleTapToZoom,
-                textSelectable = options.textSelectable,
-                hyperlinksEnabled = options.hyperlinksEnabled,
-                renderDensity = options.renderDensity,
-                maxZoom = options.maxZoom,
-            )
-        }
+        present { dismiss -> KmpPdfViewerWithOptions(source, options, dismiss) }
     }
 
     private fun buildOptions(
         title: String,
         fileName: String,
         backLabel: String?,
+        showTopBar: Boolean,
         showSearch: Boolean,
         showShare: Boolean,
         showDownload: Boolean,
@@ -174,10 +130,12 @@ public actual object KmpPdfLauncher {
         hyperlinksEnabled: Boolean,
         renderDensity: Float,
         maxZoom: Float,
+        cacheStrategy: PdfPageCacheStrategy,
     ): KmpPdfLaunchOptions = KmpPdfLaunchOptions(
         title = title,
         fileName = fileName,
         backLabel = backLabel,
+        showTopBar = showTopBar,
         showSearch = showSearch,
         showShare = showShare,
         showDownload = showDownload,
@@ -188,6 +146,7 @@ public actual object KmpPdfLauncher {
         hyperlinksEnabled = hyperlinksEnabled,
         renderDensity = renderDensity,
         maxZoom = maxZoom,
+        cacheStrategy = cacheStrategy,
     )
 
     private inline fun present(
@@ -212,6 +171,33 @@ public actual object KmpPdfLauncher {
         val presenter = topMostViewController() ?: return
         presenter.presentViewController(viewController, animated = true, completion = null)
     }
+}
+
+@androidx.compose.runtime.Composable
+private fun KmpPdfViewerWithOptions(
+    source: PdfSource,
+    options: KmpPdfLaunchOptions,
+    dismiss: () -> Unit,
+) {
+    KmpPdfViewer(
+        source = source,
+        title = options.title,
+        fileName = options.fileName,
+        onBack = dismiss,
+        backLabel = options.backLabel,
+        showTopBar = options.showTopBar,
+        showSearch = options.showSearch,
+        showShare = options.showShare,
+        showDownload = options.showDownload,
+        showPageIndicator = options.showPageIndicator,
+        zoomEnabled = options.zoomEnabled,
+        doubleTapToZoom = options.doubleTapToZoom,
+        textSelectable = options.textSelectable,
+        hyperlinksEnabled = options.hyperlinksEnabled,
+        renderDensity = options.renderDensity,
+        maxZoom = options.maxZoom,
+        cacheStrategy = options.cacheStrategy,
+    )
 }
 
 /** Walks from the key window's root through any presented view-controllers. */

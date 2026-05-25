@@ -37,6 +37,7 @@ public actual object KmpPdfLauncher {
     internal const val EXTRA_TITLE: String = "kmp.pdf.title"
     internal const val EXTRA_FILE_NAME: String = "kmp.pdf.fileName"
     internal const val EXTRA_BACK_LABEL: String = "kmp.pdf.backLabel"
+    internal const val EXTRA_SHOW_TOP_BAR: String = "kmp.pdf.showTopBar"
     internal const val EXTRA_SHOW_SEARCH: String = "kmp.pdf.showSearch"
     internal const val EXTRA_SHOW_SHARE: String = "kmp.pdf.showShare"
     internal const val EXTRA_SHOW_DOWNLOAD: String = "kmp.pdf.showDownload"
@@ -48,6 +49,18 @@ public actual object KmpPdfLauncher {
     internal const val EXTRA_RENDER_DENSITY: String = "kmp.pdf.renderDensity"
     internal const val EXTRA_MAX_ZOOM: String = "kmp.pdf.maxZoom"
 
+    /**
+     * Cache strategy travels as a tag + two ints: tag = `auto` /
+     * `window` / `all`, ints carry the window's before / after for
+     * the `window` variant. Auto / All ignore the ints.
+     */
+    internal const val EXTRA_CACHE_KIND: String = "kmp.pdf.cacheKind"
+    internal const val EXTRA_CACHE_PAGES_BEFORE: String = "kmp.pdf.cachePagesBefore"
+    internal const val EXTRA_CACHE_PAGES_AFTER: String = "kmp.pdf.cachePagesAfter"
+    internal const val CACHE_KIND_AUTO: String = "auto"
+    internal const val CACHE_KIND_WINDOW: String = "window"
+    internal const val CACHE_KIND_ALL: String = "all"
+
     /** Cap on inline byte payloads — Bundle parcelling fails near the 1 MiB mark. */
     private const val INLINE_BYTES_LIMIT: Int = 512 * 1024
 
@@ -56,6 +69,7 @@ public actual object KmpPdfLauncher {
         title: String,
         fileName: String,
         backLabel: String?,
+        showTopBar: Boolean,
         showSearch: Boolean,
         showShare: Boolean,
         showDownload: Boolean,
@@ -66,12 +80,13 @@ public actual object KmpPdfLauncher {
         hyperlinksEnabled: Boolean,
         renderDensity: Float,
         maxZoom: Float,
+        cacheStrategy: PdfPageCacheStrategy,
     ) {
         val options = buildOptions(
             title, fileName, backLabel,
-            showSearch, showShare, showDownload, showPageIndicator,
+            showTopBar, showSearch, showShare, showDownload, showPageIndicator,
             zoomEnabled, doubleTapToZoom, textSelectable, hyperlinksEnabled,
-            renderDensity, maxZoom,
+            renderDensity, maxZoom, cacheStrategy,
         )
         launch { putExtra(EXTRA_URI, uri).putOptions(options) }
     }
@@ -81,6 +96,7 @@ public actual object KmpPdfLauncher {
         title: String,
         fileName: String,
         backLabel: String?,
+        showTopBar: Boolean,
         showSearch: Boolean,
         showShare: Boolean,
         showDownload: Boolean,
@@ -91,12 +107,13 @@ public actual object KmpPdfLauncher {
         hyperlinksEnabled: Boolean,
         renderDensity: Float,
         maxZoom: Float,
+        cacheStrategy: PdfPageCacheStrategy,
     ) {
         val options = buildOptions(
             title, fileName, backLabel,
-            showSearch, showShare, showDownload, showPageIndicator,
+            showTopBar, showSearch, showShare, showDownload, showPageIndicator,
             zoomEnabled, doubleTapToZoom, textSelectable, hyperlinksEnabled,
-            renderDensity, maxZoom,
+            renderDensity, maxZoom, cacheStrategy,
         )
         if (bytes.size < INLINE_BYTES_LIMIT) {
             launch { putExtra(EXTRA_BYTES, bytes).putOptions(options) }
@@ -111,6 +128,7 @@ public actual object KmpPdfLauncher {
         title: String,
         fileName: String,
         backLabel: String?,
+        showTopBar: Boolean,
         showSearch: Boolean,
         showShare: Boolean,
         showDownload: Boolean,
@@ -121,12 +139,13 @@ public actual object KmpPdfLauncher {
         hyperlinksEnabled: Boolean,
         renderDensity: Float,
         maxZoom: Float,
+        cacheStrategy: PdfPageCacheStrategy,
     ) {
         val options = buildOptions(
             title, fileName, backLabel,
-            showSearch, showShare, showDownload, showPageIndicator,
+            showTopBar, showSearch, showShare, showDownload, showPageIndicator,
             zoomEnabled, doubleTapToZoom, textSelectable, hyperlinksEnabled,
-            renderDensity, maxZoom,
+            renderDensity, maxZoom, cacheStrategy,
         )
         // Always go through the registry so we can carry the
         // captured text runs + hyperlinks — primitives can't hold
@@ -139,6 +158,7 @@ public actual object KmpPdfLauncher {
         title: String,
         fileName: String,
         backLabel: String?,
+        showTopBar: Boolean,
         showSearch: Boolean,
         showShare: Boolean,
         showDownload: Boolean,
@@ -149,10 +169,12 @@ public actual object KmpPdfLauncher {
         hyperlinksEnabled: Boolean,
         renderDensity: Float,
         maxZoom: Float,
+        cacheStrategy: PdfPageCacheStrategy,
     ): KmpPdfLaunchOptions = KmpPdfLaunchOptions(
         title = title,
         fileName = fileName,
         backLabel = backLabel,
+        showTopBar = showTopBar,
         showSearch = showSearch,
         showShare = showShare,
         showDownload = showDownload,
@@ -163,6 +185,7 @@ public actual object KmpPdfLauncher {
         hyperlinksEnabled = hyperlinksEnabled,
         renderDensity = renderDensity,
         maxZoom = maxZoom,
+        cacheStrategy = cacheStrategy,
     )
 
     private inline fun launch(crossinline configure: Intent.() -> Intent) {
@@ -184,6 +207,7 @@ private fun Intent.putOptions(options: KmpPdfLaunchOptions): Intent {
     putExtra(KmpPdfLauncher.EXTRA_TITLE, options.title)
     putExtra(KmpPdfLauncher.EXTRA_FILE_NAME, options.fileName)
     options.backLabel?.let { putExtra(KmpPdfLauncher.EXTRA_BACK_LABEL, it) }
+    putExtra(KmpPdfLauncher.EXTRA_SHOW_TOP_BAR, options.showTopBar)
     putExtra(KmpPdfLauncher.EXTRA_SHOW_SEARCH, options.showSearch)
     putExtra(KmpPdfLauncher.EXTRA_SHOW_SHARE, options.showShare)
     putExtra(KmpPdfLauncher.EXTRA_SHOW_DOWNLOAD, options.showDownload)
@@ -194,16 +218,42 @@ private fun Intent.putOptions(options: KmpPdfLaunchOptions): Intent {
     putExtra(KmpPdfLauncher.EXTRA_HYPERLINKS_ENABLED, options.hyperlinksEnabled)
     putExtra(KmpPdfLauncher.EXTRA_RENDER_DENSITY, options.renderDensity)
     putExtra(KmpPdfLauncher.EXTRA_MAX_ZOOM, options.maxZoom)
+    when (val strategy = options.cacheStrategy) {
+        PdfPageCacheStrategy.Auto ->
+            putExtra(KmpPdfLauncher.EXTRA_CACHE_KIND, KmpPdfLauncher.CACHE_KIND_AUTO)
+        PdfPageCacheStrategy.All ->
+            putExtra(KmpPdfLauncher.EXTRA_CACHE_KIND, KmpPdfLauncher.CACHE_KIND_ALL)
+        is PdfPageCacheStrategy.Window -> {
+            putExtra(KmpPdfLauncher.EXTRA_CACHE_KIND, KmpPdfLauncher.CACHE_KIND_WINDOW)
+            putExtra(KmpPdfLauncher.EXTRA_CACHE_PAGES_BEFORE, strategy.pagesBefore)
+            putExtra(KmpPdfLauncher.EXTRA_CACHE_PAGES_AFTER, strategy.pagesAfter)
+        }
+    }
     return this
 }
 
 /** Reverse of [putOptions]; defaults to [KmpPdfLaunchOptions]'s own defaults. */
 private fun Intent.readOptions(): KmpPdfLaunchOptions {
     val defaults = KmpPdfLaunchOptions()
+    val strategy = when (getStringExtra(KmpPdfLauncher.EXTRA_CACHE_KIND)) {
+        KmpPdfLauncher.CACHE_KIND_ALL -> PdfPageCacheStrategy.All
+        KmpPdfLauncher.CACHE_KIND_WINDOW -> PdfPageCacheStrategy.Window(
+            pagesBefore = getIntExtra(
+                KmpPdfLauncher.EXTRA_CACHE_PAGES_BEFORE,
+                PdfPageCacheStrategy.DEFAULT_PAGES_BEFORE,
+            ),
+            pagesAfter = getIntExtra(
+                KmpPdfLauncher.EXTRA_CACHE_PAGES_AFTER,
+                PdfPageCacheStrategy.DEFAULT_PAGES_AFTER,
+            ),
+        )
+        else -> PdfPageCacheStrategy.Auto
+    }
     return KmpPdfLaunchOptions(
         title = getStringExtra(KmpPdfLauncher.EXTRA_TITLE) ?: defaults.title,
         fileName = getStringExtra(KmpPdfLauncher.EXTRA_FILE_NAME) ?: defaults.fileName,
         backLabel = getStringExtra(KmpPdfLauncher.EXTRA_BACK_LABEL),
+        showTopBar = getBooleanExtra(KmpPdfLauncher.EXTRA_SHOW_TOP_BAR, defaults.showTopBar),
         showSearch = getBooleanExtra(KmpPdfLauncher.EXTRA_SHOW_SEARCH, defaults.showSearch),
         showShare = getBooleanExtra(KmpPdfLauncher.EXTRA_SHOW_SHARE, defaults.showShare),
         showDownload = getBooleanExtra(KmpPdfLauncher.EXTRA_SHOW_DOWNLOAD, defaults.showDownload),
@@ -214,6 +264,7 @@ private fun Intent.readOptions(): KmpPdfLaunchOptions {
         hyperlinksEnabled = getBooleanExtra(KmpPdfLauncher.EXTRA_HYPERLINKS_ENABLED, defaults.hyperlinksEnabled),
         renderDensity = getFloatExtra(KmpPdfLauncher.EXTRA_RENDER_DENSITY, defaults.renderDensity),
         maxZoom = getFloatExtra(KmpPdfLauncher.EXTRA_MAX_ZOOM, defaults.maxZoom),
+        cacheStrategy = strategy,
     )
 }
 
@@ -237,72 +288,40 @@ internal class KmpPdfViewerHostActivity : ComponentActivity() {
 
         setContent {
             MaterialTheme {
-                when {
-                    uri != null -> KmpPdfViewer(
-                        uri = uri,
-                        title = options.title,
-                        fileName = options.fileName,
-                        onBack = { finish() },
-                        backLabel = options.backLabel,
-                        showSearch = options.showSearch,
-                        showShare = options.showShare,
-                        showDownload = options.showDownload,
-                        showPageIndicator = options.showPageIndicator,
-                        zoomEnabled = options.zoomEnabled,
-                        doubleTapToZoom = options.doubleTapToZoom,
-                        textSelectable = options.textSelectable,
-                        hyperlinksEnabled = options.hyperlinksEnabled,
-                        renderDensity = options.renderDensity,
-                        maxZoom = options.maxZoom,
-                    )
-
-                    bytes != null -> KmpPdfViewer(
-                        bytes = bytes,
-                        title = options.title,
-                        fileName = options.fileName,
-                        onBack = { finish() },
-                        backLabel = options.backLabel,
-                        showSearch = options.showSearch,
-                        showShare = options.showShare,
-                        showDownload = options.showDownload,
-                        showPageIndicator = options.showPageIndicator,
-                        zoomEnabled = options.zoomEnabled,
-                        doubleTapToZoom = options.doubleTapToZoom,
-                        textSelectable = options.textSelectable,
-                        hyperlinksEnabled = options.hyperlinksEnabled,
-                        renderDensity = options.renderDensity,
-                        maxZoom = options.maxZoom,
-                    )
-
-                    token != null -> {
-                        val source = remember(token) { KmpPdfLauncherRegistry.take(token) }
-                        if (source != null) {
-                            KmpPdfViewer(
-                                source = source,
-                                title = options.title,
-                                fileName = options.fileName,
-                                onBack = { finish() },
-                                backLabel = options.backLabel,
-                                showSearch = options.showSearch,
-                                showShare = options.showShare,
-                                showDownload = options.showDownload,
-                                showPageIndicator = options.showPageIndicator,
-                                zoomEnabled = options.zoomEnabled,
-                                doubleTapToZoom = options.doubleTapToZoom,
-                                textSelectable = options.textSelectable,
-                                hyperlinksEnabled = options.hyperlinksEnabled,
-                                renderDensity = options.renderDensity,
-                                maxZoom = options.maxZoom,
-                            )
-                        } else {
-                            // Stale token (process restart, double launch).
-                            // Dismiss immediately so the user isn't
-                            // staring at a blank screen.
-                            LaunchedEffect(Unit) { finish() }
-                        }
+                val source = remember(uri, bytes, token) {
+                    when {
+                        uri != null -> PdfSource.auto(uri)
+                        bytes != null -> PdfSource.Bytes(bytes)
+                        token != null -> KmpPdfLauncherRegistry.take(token)
+                        else -> null
                     }
+                }
 
-                    else -> LaunchedEffect(Unit) { finish() }
+                if (source == null) {
+                    // Stale token (process restart, double launch).
+                    // Dismiss immediately so the user isn't staring
+                    // at a blank screen.
+                    LaunchedEffect(Unit) { finish() }
+                } else {
+                    KmpPdfViewer(
+                        source = source,
+                        title = options.title,
+                        fileName = options.fileName,
+                        onBack = { finish() },
+                        backLabel = options.backLabel,
+                        showTopBar = options.showTopBar,
+                        showSearch = options.showSearch,
+                        showShare = options.showShare,
+                        showDownload = options.showDownload,
+                        showPageIndicator = options.showPageIndicator,
+                        zoomEnabled = options.zoomEnabled,
+                        doubleTapToZoom = options.doubleTapToZoom,
+                        textSelectable = options.textSelectable,
+                        hyperlinksEnabled = options.hyperlinksEnabled,
+                        renderDensity = options.renderDensity,
+                        maxZoom = options.maxZoom,
+                        cacheStrategy = options.cacheStrategy,
+                    )
                 }
             }
         }

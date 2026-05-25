@@ -32,13 +32,12 @@ import com.conamobile.pdfkmp.PdfDocument
  * ```
  *
  * Every overload accepts the same configuration knobs that
- * [KmpPdfViewer] does — visibility toggles for search / share /
- * download / page indicator, zoom and gesture switches, the
- * iOS-only [backLabel] string next to the chevron, and the
- * `renderDensity` / `maxZoom` numerics. Compose-typed parameters
- * (background colour, padding, page spacing) are intentionally not
- * exposed here; reach for the [KmpPdfViewer] composable when you
- * need that level of theming control.
+ * [KmpPdfViewer] does — visibility toggles, zoom and gesture
+ * switches, the iOS-only [backLabel] string next to the chevron,
+ * and the numeric `renderDensity` / `maxZoom`. Compose-typed
+ * parameters (background colour, padding, page spacing) are
+ * intentionally not exposed here; reach for the [KmpPdfViewer]
+ * composable when you need that level of theming control.
  *
  * **When to prefer the composable [KmpPdfViewer]** — when you're
  * already inside a Compose-based navigation graph
@@ -46,41 +45,27 @@ import com.conamobile.pdfkmp.PdfDocument
  * with the host's back stack and theming directly, no Intent /
  * `presentViewController` ceremony.
  *
- * @param title shown in the topbar's centered title (Classic iOS) /
- *   bold first line (Minimal Mono).
- * @param fileName user-visible filename surfaced to the share sheet
- *   and the "Saved to Downloads" entry. Must include `.pdf`.
- * @param backLabel iOS-only previous-screen label rendered next to
- *   the chevron (e.g. `"Files"`). Ignored on Android.
- * @param showSearch hide / show the search affordance. Auto-
- *   suppressed when the source carries no text runs.
- * @param showShare hide / show the share affordance.
- * @param showDownload hide / show the download affordance.
- * @param showPageIndicator hide / show the bottom-centre page chip.
- * @param zoomEnabled master switch for pinch + double-tap zoom.
- * @param doubleTapToZoom independent toggle for the double-tap
- *   shortcut.
- * @param textSelectable toggles the invisible selectable text
- *   overlay. Only effective on documents loaded from a [PdfDocument].
- * @param hyperlinksEnabled toggles the invisible clickable layer that
- *   opens hyperlink annotations in the system browser. Same
- *   `PdfDocument`-only caveat as [textSelectable].
- * @param renderDensity baseline scaling factor applied during
- *   rasterisation.
- * @param maxZoom upper bound for the pinch gesture.
+ * The per-function parameter docs on the individual `open(...)`
+ * overloads spell out the meaning of each flag — they mirror the
+ * companion options on [KmpPdfViewer] one-to-one.
  */
 public expect object KmpPdfLauncher {
 
     /**
      * Opens [uri] in a hosted viewer screen. Bytes are fetched on a
-     * background dispatcher via [loadPdfBytesFromUri], so the call
-     * site itself returns immediately.
+     * background dispatcher via the platform's native loader, so the
+     * call site itself returns immediately.
+     *
+     * Prefer [open] with an explicit [PdfSource] when you know the
+     * transport — strings hide the scheme and can't carry HTTP
+     * headers / timeouts.
      */
     public fun open(
         uri: String,
         title: String = "Document",
         fileName: String = "document.pdf",
         backLabel: String? = null,
+        showTopBar: Boolean = true,
         showSearch: Boolean = true,
         showShare: Boolean = true,
         showDownload: Boolean = true,
@@ -91,6 +76,7 @@ public expect object KmpPdfLauncher {
         hyperlinksEnabled: Boolean = true,
         renderDensity: Float = 2f,
         maxZoom: Float = 5f,
+        cacheStrategy: PdfPageCacheStrategy = PdfPageCacheStrategy.Auto,
     )
 
     /** Opens raw [bytes] in a hosted viewer screen. */
@@ -99,6 +85,7 @@ public expect object KmpPdfLauncher {
         title: String = "Document",
         fileName: String = "document.pdf",
         backLabel: String? = null,
+        showTopBar: Boolean = true,
         showSearch: Boolean = true,
         showShare: Boolean = true,
         showDownload: Boolean = true,
@@ -109,6 +96,7 @@ public expect object KmpPdfLauncher {
         hyperlinksEnabled: Boolean = true,
         renderDensity: Float = 2f,
         maxZoom: Float = 5f,
+        cacheStrategy: PdfPageCacheStrategy = PdfPageCacheStrategy.Auto,
     )
 
     /**
@@ -122,6 +110,7 @@ public expect object KmpPdfLauncher {
         title: String = "Document",
         fileName: String = "document.pdf",
         backLabel: String? = null,
+        showTopBar: Boolean = true,
         showSearch: Boolean = true,
         showShare: Boolean = true,
         showDownload: Boolean = true,
@@ -132,5 +121,6 @@ public expect object KmpPdfLauncher {
         hyperlinksEnabled: Boolean = true,
         renderDensity: Float = 2f,
         maxZoom: Float = 5f,
+        cacheStrategy: PdfPageCacheStrategy = PdfPageCacheStrategy.Auto,
     )
 }
