@@ -1209,7 +1209,7 @@ Set the document-wide default via `defaultPageBreakStrategy`, override per page 
 | `Samples.slicedImage(imageBytes)` | Tall image sliced across multiple physical pages |
 | `Samples.showcase()` | Every v1 feature in a single PDF |
 
-Three samples (`withImage`, `slicedImage`, `customDesigns`) take a `ByteArray` so the demo media stays in the consumer app's assets rather than the library jar — see `:sample/src/androidMain/assets/sample.png` for the bytes used by the bundled apps.
+Three samples (`withImage`, `slicedImage`, `customDesigns`) take a `ByteArray` so the demo media stays in the consumer app's assets rather than the library jar — see `:sample/src/main/assets/sample.png` for the bytes used by the bundled apps.
 
 ---
 
@@ -1217,7 +1217,7 @@ Three samples (`withImage`, `slicedImage`, `customDesigns`) take a `ByteArray` s
 
 The repo ships three sample apps that mirror each other feature-for-feature:
 
-- `:sample` — Compose Android app, structured as a single-target KMP module (`androidTarget()` only) so it can pull resources from `commonMain/composeResources/` for the `pdfAsync { drawable(Res.drawable.X) }` showcase. Detail screen drops straight into `KmpPdfViewer(...)` — five lines for a complete viewer with topbar, search, share, save, hyperlinks, and gestures. Run with `./gradlew :sample:installDebug`.
+- `:sample` — Compose Android app (a plain `com.android.application` module). The Compose-Resources showcase (`pdfAsync { drawable(Res.drawable.X) }`) lives in a companion KMP library, `:sample-shared`, that the app depends on — AGP 9 no longer allows the Kotlin Multiplatform plugin and `com.android.application` in one module. The detail screen drops straight into `KmpPdfViewer(...)` — five lines for a complete viewer with topbar, search, share, save, hyperlinks, and gestures. Run with `./gradlew :sample:installDebug`.
 - `iosApp/iosApp.xcodeproj` — SwiftUI iOS app. Detail view follows the Classic iOS Native handoff with chevron + label, centered title, and three iOS-blue trailing icons; PDFKit handles rendering. Open in Xcode and Run; the build phase calls `:pdfkmp:embedAndSignAppleFrameworkForXcode` automatically.
 - `:sample-desktop` — Compose for Desktop (JVM) app. A master/detail window: a scrollable list of every `Samples.*` document (plus a **Compose-Resources** demo that builds a PDF from a `Res.drawable.*` asset via `pdfAsync { drawable(...) }`); click one to open it in `KmpPdfViewer` (pages rasterised via PdfBox `PDFRenderer`) with macOS trackpad-pinch / Ctrl-wheel / ＋−-button zoom. Run with `./gradlew :sample-desktop:run` on macOS / Windows / Linux.
 

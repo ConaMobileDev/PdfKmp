@@ -17,8 +17,11 @@ import com.conamobile.pdfkmp.sample.generated.resources.star_icon
  * without an upfront suspend load. The auto-detect picks vector vs raster
  * from the file's leading bytes during the preflight pass that
  * [pdfAsync] runs before layout.
+ *
+ * Public because it now lives in the `:sample-shared` KMP library and is
+ * called across the module boundary by the `:sample` Android app.
  */
-internal object ComposeResourcesDemo {
+public object ComposeResourcesDemo {
 
     /**
      * `build` is `suspend` because [pdfAsync] runs the resource preflight

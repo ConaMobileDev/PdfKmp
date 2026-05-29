@@ -36,5 +36,6 @@ dependencyResolutionManagement {
 include(":pdfkmp")
 include(":pdfkmp-compose-resources")
 include(":pdfkmp-viewer")
+include(":sample-shared")
 include(":sample")
 include(":sample-desktop")

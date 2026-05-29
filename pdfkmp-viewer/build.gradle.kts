@@ -16,7 +16,7 @@ kotlin {
 
     explicitApi()
 
-    androidLibrary {
+    android {
         namespace = "com.conamobile.pdfkmp.viewer"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
