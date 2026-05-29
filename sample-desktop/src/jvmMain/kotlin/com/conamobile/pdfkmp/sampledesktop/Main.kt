@@ -26,6 +26,7 @@ import androidx.compose.ui.window.application
 import com.conamobile.pdfkmp.PdfDocument
 import com.conamobile.pdfkmp.samples.Samples
 import com.conamobile.pdfkmp.viewer.KmpPdfViewer
+import kotlinx.coroutines.runBlocking
 import java.awt.Color
 import java.awt.GradientPaint
 import java.awt.image.BufferedImage
@@ -78,6 +79,9 @@ private fun samples(): List<DesktopSample> {
         DesktopSample("Sliced Image", "sliced-image.pdf", "Tall image split across pages.") { Samples.slicedImage(image) },
         DesktopSample("Image Downscale", "image-downscale.pdf", "Down-sampling at 200 DPI.") { Samples.imageDownscale(image) },
         DesktopSample("Custom Designs", "custom-designs.pdf", "Cards, gradients, badges, images.") { Samples.customDesigns(image) },
+        DesktopSample("Compose Resource", "compose-resource.pdf", "Res.drawable.* → vector PDF (Compose MP Resources).") {
+            runBlocking { composeResourceDoc() }
+        },
     )
 }
 
@@ -87,6 +91,15 @@ fun main() {
     // backend works (visible in the console before the window appears).
     val first = all.first().build()
     println("PdfKmp Desktop sample — JVM/PdfBox backend OK: '${all.first().label}' = ${first.size} bytes")
+
+    // Verify the Compose Multiplatform Resources → PDF path on Desktop up front
+    // (prints to the console before the window opens; no GUI interaction needed).
+    runCatching { runBlocking { composeResourceDoc() } }
+        .onSuccess { doc ->
+            val header = doc.toByteArray().take(5).map { it.toInt().toChar() }.joinToString("")
+            println("PdfKmp Desktop — Res.drawable.* → PDF OK=${header.startsWith("%PDF-")} (${doc.size} bytes)")
+        }
+        .onFailure { println("PdfKmp Desktop — Res.drawable.* FAILED: $it") }
 
     application {
         Window(

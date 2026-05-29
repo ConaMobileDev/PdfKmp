@@ -1,0 +1,17 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <!-- Indigo rounded card background. -->
+    <path
+        android:fillColor="#4F46E5"
+        android:pathData="M4,6 L44,6 L44,42 L4,42 Z" />
+    <!-- White 'P' mark (rects only — exercises the resource→VectorImage path). -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M14,13 L28,13 L28,26 L20,26 L20,35 L14,35 Z" />
+    <path
+        android:fillColor="#4F46E5"
+        android:pathData="M20,18 L24,18 L24,21 L20,21 Z" />
+</vector>

@@ -15,6 +15,9 @@ kotlin {
         jvmMain.dependencies {
             implementation(project(":pdfkmp"))
             implementation(project(":pdfkmp-viewer"))
+            // Demonstrates (and verifies) the Compose Multiplatform Resources
+            // → PDF path on Desktop: `drawable(Res.drawable.*)` inside pdfAsync.
+            implementation(project(":pdfkmp-compose-resources"))
 
             // Compose for Desktop — pulls in the Skiko native libs for the
             // current OS plus the runtime/foundation/ui/material3 desktop
@@ -28,6 +31,12 @@ kotlin {
             implementation(libs.coroutines.core)
         }
     }
+}
+
+compose.resources {
+    publicResClass = true
+    packageOfResClass = "com.conamobile.pdfkmp.sampledesktop.resources"
+    generateResClass = always
 }
 
 compose.desktop {
