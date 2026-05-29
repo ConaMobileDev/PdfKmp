@@ -38,8 +38,9 @@ an actively settling surface.
 - **Desktop-native viewer zoom & actions.** Zoom on Desktop works via:
   a **macOS trackpad pinch** (wired through Apple's
   `com.apple.eawt.event.MagnificationListener` — reflection-only, no
-  native code; needs `--add-opens java.desktop/com.apple.eawt.event=ALL-UNNAMED`
-  on the consuming app), **Ctrl/⌘ + mouse-wheel** anchored under the
+  native code; the internal package is opened at runtime so **no launch
+  flag is required** — works from an IDE run, Gradle, or a packaged app),
+  **Ctrl/⌘ + mouse-wheel** anchored under the
   cursor, **double-click** to toggle, and an optional on-screen **＋ / −
   pill** (`showZoomControls` flag, default `true`, Desktop-only —
   the cross-OS fallback, since Windows/Linux trackpads don't deliver a

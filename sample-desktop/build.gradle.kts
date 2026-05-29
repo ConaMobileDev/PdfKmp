@@ -34,12 +34,6 @@ compose.desktop {
     application {
         mainClass = "com.conamobile.pdfkmp.sampledesktop.MainKt"
 
-        // Opens Apple's internal trackpad-gesture package so PdfKmp's viewer
-        // can reflectively attach a macOS pinch-to-zoom (magnify) listener.
-        // Harmless on Windows/Linux. Consuming desktop apps that want trackpad
-        // pinch must pass the same flag.
-        jvmArgs += listOf("--add-opens", "java.desktop/com.apple.eawt.event=ALL-UNNAMED")
-
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "PdfKmpDesktopSample"

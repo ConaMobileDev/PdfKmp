@@ -4,6 +4,8 @@ import java.awt.Component
 import java.awt.Container
 import java.awt.KeyboardFocusManager
 import java.awt.Window
+import java.lang.invoke.MethodHandles
+import java.lang.invoke.MethodType
 import java.lang.reflect.Proxy
 import javax.swing.JComponent
 import javax.swing.RootPaneContainer
@@ -19,15 +21,16 @@ private const val PINCH_DEBUG: Boolean = false
  * gesture, NOT a scroll/wheel event, so it never reaches Compose's pointer
  * pipeline. The only hook in a plain JDK is Apple's
  * `com.apple.eawt.event.MagnificationListener`, reached here purely through
- * reflection so this file still compiles on non-mac JDKs. At runtime the host
- * must open the package:
+ * reflection so this file still compiles on non-mac JDKs. The internal
+ * package is normally closed, but [openEawtEventPackage] opens it at runtime
+ * (no `--add-opens` launch flag required), so pinch works however the app is
+ * started — IDE "run", Gradle, or a packaged distributable. Passing
+ * `--add-opens java.desktop/com.apple.eawt.event=ALL-UNNAMED` is only an
+ * optional fallback for a future JDK that blocks the runtime open.
  *
- * ```
- * --add-opens java.desktop/com.apple.eawt.event=ALL-UNNAMED
- * ```
- *
- * Without that flag (or on a non-mac OS / a JDK lacking the package) the whole
- * thing degrades to a no-op via the surrounding `runCatching`.
+ * On a non-mac OS, a JDK lacking the package, or if both the runtime open and
+ * the flag fail, the whole thing degrades to a no-op via the surrounding
+ * `runCatching` (and the on-screen ＋/− zoom controls remain available).
  *
  * Each callback delivers a small signed magnification delta (~±0.0x) which the
  * caller accumulates onto its existing zoom state.
@@ -53,6 +56,13 @@ private fun attachMagnify(onPinchDelta: (Float) -> Unit): () -> Unit {
         if (PINCH_DEBUG) println("PdfKmp pinch: no active window to attach to")
         return {}
     }
+    // `com.apple.eawt.event` is an internal, non-open package of java.desktop.
+    // Reflective access normally needs `--add-opens` on the command line — but
+    // that breaks any launch that doesn't set it (IDE "run main()" gutter,
+    // a consumer app that forgot the flag, …). Open it at runtime instead so
+    // pinch "just works" regardless of how the app was started. Falls back to
+    // requiring the flag if this bootstrap is ever blocked (future JDK).
+    openEawtEventPackage()
     val cl = window.javaClass.classLoader
     val magIface = Class.forName("com.apple.eawt.event.MagnificationListener", true, cl)
     val gestIface = Class.forName("com.apple.eawt.event.GestureListener", true, cl)
@@ -88,6 +98,47 @@ private fun attachMagnify(onPinchDelta: (Float) -> Unit): () -> Unit {
     addTo.invoke(null, target, proxy)
     return { runCatching { removeFrom.invoke(null, target, proxy) } }
 }
+
+/**
+ * Opens `java.desktop/com.apple.eawt.event` to all unnamed modules at runtime
+ * so the gesture reflection works WITHOUT a `--add-opens` launch flag.
+ *
+ * Uses the trusted `MethodHandles.Lookup` (the same bootstrap ByteBuddy /
+ * Lombok use) to invoke the package-private
+ * `Module.implAddOpensToAllUnnamed`. Best-effort: if a future JDK blocks the
+ * `sun.misc.Unsafe` field grab the whole thing is swallowed and pinch simply
+ * falls back to needing the command-line flag (the ＋/− buttons still work).
+ */
+private fun openEawtEventPackage() {
+    runCatching {
+        val javaDesktop = java.awt.Window::class.java.module
+        if (javaDesktop.isOpen("com.apple.eawt.event", TrackpadMagnifyMarker::class.java.module)) {
+            return // already open (flag was passed, or a prior call opened it)
+        }
+        val unsafeClass = Class.forName("sun.misc.Unsafe")
+        val unsafe = unsafeClass.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null)
+        val implLookupField = MethodHandles.Lookup::class.java.getDeclaredField("IMPL_LOOKUP")
+        val base = unsafeClass.getMethod("staticFieldBase", java.lang.reflect.Field::class.java)
+            .invoke(unsafe, implLookupField)
+        val offset = unsafeClass.getMethod("staticFieldOffset", java.lang.reflect.Field::class.java)
+            .invoke(unsafe, implLookupField) as Long
+        val trusted = unsafeClass.getMethod("getObject", Any::class.java, java.lang.Long.TYPE)
+            .invoke(unsafe, base, offset) as MethodHandles.Lookup
+        val moduleClass = Class.forName("java.lang.Module")
+        val implAddOpensToAllUnnamed = trusted.findVirtual(
+            moduleClass,
+            "implAddOpensToAllUnnamed",
+            MethodType.methodType(Void.TYPE, String::class.java),
+        )
+        implAddOpensToAllUnnamed.invoke(javaDesktop, "com.apple.eawt.event")
+        if (PINCH_DEBUG) println("PdfKmp pinch: opened com.apple.eawt.event at runtime")
+    }.onFailure {
+        if (PINCH_DEBUG) println("PdfKmp pinch: runtime open failed ($it) — needs --add-opens")
+    }
+}
+
+/** Marker type used only to obtain this code's (unnamed) module. */
+private class TrackpadMagnifyMarker
 
 /** The currently active/focused window, falling back to any shown window. */
 private fun activeComposeWindow(): Window? {
