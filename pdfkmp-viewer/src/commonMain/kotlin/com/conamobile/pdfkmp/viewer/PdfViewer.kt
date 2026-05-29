@@ -60,6 +60,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isCtrlPressed
+import androidx.compose.ui.input.pointer.isMetaPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -86,6 +89,14 @@ private const val DEFAULT_MAX_ZOOM: Float = 5f
 
 /** Step zoom triggered by a double tap, between `1×` and [DEFAULT_MAX_ZOOM]. */
 private const val DOUBLE_TAP_ZOOM: Float = 2.5f
+
+/**
+ * Multiplicative zoom step applied per mouse-wheel / two-finger-scroll
+ * notch while Ctrl (or ⌘ on macOS) is held — the Desktop zoom gesture.
+ * Touch platforms never deliver a Ctrl-modified scroll, so the handler
+ * that uses this is inert there and pinch-to-zoom stays the mobile path.
+ */
+private const val DESKTOP_SCROLL_ZOOM_STEP: Float = 1.12f
 
 /**
  * Cap the multiplier applied to [PdfViewer]'s `renderDensity` when the
@@ -121,8 +132,11 @@ private const val DENSITY_REFRESH_DELAY_MS: Long = 250L
  * - **Single-finger drag** scrolls vertically through the document.
  *   Once the user has zoomed in, drags also pan the horizontally
  *   scrolling viewport.
- * - **Double tap** toggles between `1×` and a comfortable reading zoom
- *   (`2.5×`).
+ * - **Double tap** (double click on Desktop) toggles between `1×` and a
+ *   comfortable reading zoom (`2.5×`).
+ * - **Desktop:** Ctrl + scroll wheel (⌘ + scroll on macOS, or a
+ *   Ctrl-held two-finger trackpad scroll) zooms anchored under the
+ *   cursor; a plain scroll wheel scrolls through pages as usual.
  *
  * Sharpness on zoom is handled automatically — the viewer re-rasterises
  * each visible page at `renderDensity * stableZoom` (capped at
@@ -642,6 +656,55 @@ private fun PdfPagesContent(
                             }
                         },
                     )
+                }
+                .pointerInput(zoomEnabled, maxZoom) {
+                    if (!zoomEnabled) return@pointerInput
+                    // Desktop zoom: Ctrl/⌘ + scroll wheel (or two-finger
+                    // trackpad scroll) zooms, anchored under the cursor.
+                    // A plain scroll is left untouched so the LazyColumn
+                    // keeps driving page-to-page wheel scrolling. Touch
+                    // platforms never send a Ctrl-modified scroll, so this
+                    // block is a no-op there and pinch remains their path.
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            if (event.type != PointerEventType.Scroll) continue
+                            val mods = event.keyboardModifiers
+                            if (!mods.isCtrlPressed && !mods.isMetaPressed) continue
+                            val change = event.changes.firstOrNull() ?: continue
+                            val scrollY = change.scrollDelta.y
+                            if (scrollY == 0f) {
+                                change.consume()
+                                continue
+                            }
+                            val previous = zoom.value
+                            // Wheel up reports a negative delta → zoom in.
+                            val step = if (scrollY < 0f) {
+                                DESKTOP_SCROLL_ZOOM_STEP
+                            } else {
+                                1f / DESKTOP_SCROLL_ZOOM_STEP
+                            }
+                            val target = (previous * step).coerceIn(1f, maxZoom)
+                            change.consume()
+                            if (target == previous) continue
+
+                            val factor = target / previous
+                            val focus = change.position
+                            val anchoredScrollX =
+                                (focus.x + horizontalScrollState.value) * factor - focus.x
+                            val targetScrollX = anchoredScrollX.toInt().coerceAtLeast(0)
+                            val firstOffsetBefore =
+                                listState.firstVisibleItemScrollOffset.toFloat()
+                            val deltaY = (firstOffsetBefore + focus.y) * (factor - 1f)
+                            scope.launch {
+                                zoom.snapTo(target)
+                                listState.scrollBy(deltaY)
+                            }
+                            scope.launch {
+                                horizontalScrollState.scrollTo(targetScrollX)
+                            }
+                        }
+                    }
                 },
         ) {
             Box(modifier = Modifier.horizontalScroll(horizontalScrollState)) {

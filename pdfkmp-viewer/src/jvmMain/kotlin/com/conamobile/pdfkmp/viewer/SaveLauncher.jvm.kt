@@ -2,22 +2,34 @@ package com.conamobile.pdfkmp.viewer
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import java.awt.FileDialog
+import java.awt.Frame
 import java.io.File
 
 /**
- * Desktop "Save" — writes the PDF to the user's `~/Downloads` folder, the
- * closest desktop analogue of Android's `Downloads` MediaStore entry. The
- * folder is created if missing and an existing file of the same name is
- * overwritten. Failures (read-only home, disk full) are swallowed so a save
- * tap never crashes the viewer.
+ * Desktop "Save" — pops the OS-native **Save As** dialog (`java.awt.FileDialog`
+ * in `SAVE` mode), pre-filled with the suggested file name and defaulting to
+ * the user's `~/Downloads` folder. This is the desktop analogue of Android's
+ * `MediaStore` + Toast and iOS's document picker: the dialog itself is the
+ * visible confirmation, and the user controls exactly where the file lands.
+ *
+ * Returns silently if the user cancels. Failures (read-only target, disk
+ * full) are swallowed so a save tap never crashes the viewer.
  */
 @Composable
 public actual fun rememberPdfSaveAction(): PdfSaveAction = remember {
     PdfSaveAction { bytes, fileName ->
         runCatching {
             val downloads = File(System.getProperty("user.home") ?: ".", "Downloads")
-            if (!downloads.exists()) downloads.mkdirs()
-            File(downloads, fileName).writeBytes(bytes)
+            val dialog = FileDialog(null as Frame?, "Save PDF", FileDialog.SAVE)
+            dialog.file = fileName
+            if (downloads.isDirectory) dialog.directory = downloads.absolutePath
+            dialog.isVisible = true
+
+            // dialog.file is null when the user cancels.
+            val chosenName = dialog.file ?: return@runCatching
+            val chosenDir = dialog.directory ?: downloads.absolutePath
+            File(chosenDir, chosenName).writeBytes(bytes)
         }
     }
 }

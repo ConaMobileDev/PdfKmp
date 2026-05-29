@@ -53,6 +53,41 @@ class JvmBackendTest {
     }
 
     @Test
+    fun imageBackedSamplesRenderWithRealPng() {
+        // A genuine multi-pixel PNG (not the 1×1 fixture) exercises the
+        // decode → slice → downscale → embed path the Desktop sample hits
+        // when you open the image-backed samples.
+        val png = generatePng(640, 480)
+        val documents = listOf(
+            "withImage" to Samples.withImage(png),
+            "slicedImage" to Samples.slicedImage(png),
+            "imageDownscale" to Samples.imageDownscale(png),
+            "customDesigns" to Samples.customDesigns(png),
+        )
+        for ((name, doc) in documents) {
+            Loader.loadPDF(doc.toByteArray()).use { loaded ->
+                assertTrue(loaded.numberOfPages >= 1, "$name produced no pages")
+                val image = PDFRenderer(loaded).renderImageWithDPI(0, 72f)
+                assertTrue(image.width > 0 && image.height > 0, "$name rendered empty")
+            }
+        }
+    }
+
+    private fun generatePng(width: Int, height: Int): ByteArray {
+        val image = java.awt.image.BufferedImage(width, height, java.awt.image.BufferedImage.TYPE_INT_RGB)
+        val g = image.createGraphics()
+        g.paint = java.awt.GradientPaint(
+            0f, 0f, java.awt.Color(0x4F46E5),
+            width.toFloat(), height.toFloat(), java.awt.Color(0xEC4899),
+        )
+        g.fillRect(0, 0, width, height)
+        g.dispose()
+        val out = java.io.ByteArrayOutputStream()
+        javax.imageio.ImageIO.write(image, "png", out)
+        return out.toByteArray()
+    }
+
+    @Test
     fun metadataIsWritten() {
         val doc = com.conamobile.pdfkmp.pdf {
             metadata {

@@ -34,9 +34,19 @@ an actively settling surface.
 - **`pdfkmp-viewer` on Desktop.** `KmpPdfViewer` and the imperative
   `KmpPdfLauncher` work on Desktop — pages rasterise through PDFBox's
   `PDFRenderer`, the launcher hosts the viewer in a Compose for
-  Desktop window, "Save" writes to `~/Downloads`, "Share" opens the
-  OS default handler via `java.awt.Desktop`, and hyperlinks open in
-  the default browser.
+  Desktop window, and hyperlinks open in the default browser.
+- **Desktop-native viewer gestures & actions.** The viewer adapts to
+  mouse/trackpad input: **Ctrl + scroll wheel** (⌘ + scroll on macOS,
+  or a Ctrl-held two-finger trackpad scroll) zooms anchored under the
+  cursor, while a plain wheel scrolls pages and double-click toggles
+  zoom. The **download** button opens a native **Save As** dialog
+  (`java.awt.FileDialog`, defaulting to `~/Downloads`) so the user
+  chooses where the file lands, and **share** opens the PDF in the OS
+  default handler. Touch platforms are unchanged — pinch-to-zoom stays
+  their path.
+- **`:sample-desktop`** Compose-for-Desktop app: a master list of every
+  bundled `Samples.*` document; click one to open it in `KmpPdfViewer`.
+  Run with `./gradlew :sample-desktop:run`.
 
 ### Changed
 
