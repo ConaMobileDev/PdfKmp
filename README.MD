@@ -1213,12 +1213,13 @@ Three samples (`withImage`, `slicedImage`, `customDesigns`) take a `ByteArray` s
 
 ## Sample apps
 
-The repo ships two sample apps that mirror each other feature-for-feature:
+The repo ships three sample apps that mirror each other feature-for-feature:
 
 - `:sample` — Compose Android app, structured as a single-target KMP module (`androidTarget()` only) so it can pull resources from `commonMain/composeResources/` for the `pdfAsync { drawable(Res.drawable.X) }` showcase. Detail screen drops straight into `KmpPdfViewer(...)` — five lines for a complete viewer with topbar, search, share, save, hyperlinks, and gestures. Run with `./gradlew :sample:installDebug`.
 - `iosApp/iosApp.xcodeproj` — SwiftUI iOS app. Detail view follows the Classic iOS Native handoff with chevron + label, centered title, and three iOS-blue trailing icons; PDFKit handles rendering. Open in Xcode and Run; the build phase calls `:pdfkmp:embedAndSignAppleFrameworkForXcode` automatically.
+- `:sample-desktop` — Compose for Desktop (JVM) app. A window with sample-picker chips that builds each `Samples.*` document through the JVM / PdfBox backend and shows it in `KmpPdfViewer` (pages rasterised via PdfBox `PDFRenderer`). Run with `./gradlew :sample-desktop:run` on macOS / Windows / Linux.
 
-Both apps surface every demo from `Samples` (in `:pdfkmp/src/commonMain/kotlin/.../samples/Samples.kt`) plus `ComposeResourcesDemo` (Android sample only — iOS demo coming with the next iOS sample refresh) so you can eyeball each feature on real devices.
+All three apps surface demos from `Samples` (in `:pdfkmp/src/commonMain/kotlin/.../samples/Samples.kt`) plus `ComposeResourcesDemo` (Android sample only — iOS demo coming with the next iOS sample refresh) so you can eyeball each feature on real devices.
 
 ---
 
