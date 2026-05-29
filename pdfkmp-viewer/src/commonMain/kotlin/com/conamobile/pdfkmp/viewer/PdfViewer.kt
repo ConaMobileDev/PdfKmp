@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -66,6 +67,7 @@ import androidx.compose.ui.input.pointer.isMetaPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -97,6 +99,9 @@ private const val DOUBLE_TAP_ZOOM: Float = 2.5f
  * that uses this is inert there and pinch-to-zoom stays the mobile path.
  */
 private const val DESKTOP_SCROLL_ZOOM_STEP: Float = 1.12f
+
+/** Multiplicative zoom step per click of the Desktop on-screen ＋ / － buttons. */
+private const val DESKTOP_BUTTON_ZOOM_STEP: Float = 1.4f
 
 /**
  * Cap the multiplier applied to [PdfViewer]'s `renderDensity` when the
@@ -509,6 +514,7 @@ public fun PdfViewer(
  * zoomed in, and the gestures are read from the outer container so they
  * compose with both scrollables instead of fighting them.
  */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 private fun PdfPagesContent(
     renderer: PdfPageRenderer,
@@ -551,9 +557,38 @@ private fun PdfPagesContent(
                 }
             }
     }
+    // Desktop modifier-key state. Scroll PointerEvents don't reliably carry
+    // keyboardModifiers across platforms, so we also consult the window-level
+    // snapshot when deciding whether a scroll is a zoom request.
+    val windowInfo = LocalWindowInfo.current
+
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val viewportWidth = maxWidth
         val contentWidth = viewportWidth * zoom.value
+
+        // Anchored zoom shared by the Ctrl+scroll handler (focus = cursor)
+        // and the Desktop on-screen ＋ / － buttons (focus = viewport centre).
+        // The horizontal scroll + LazyColumn offset are nudged so the focal
+        // point stays put as the content grows/shrinks.
+        val viewportCenterX = constraints.maxWidth / 2f
+        val viewportCenterY = constraints.maxHeight / 2f
+        fun applyZoom(targetZoom: Float, focusX: Float, focusY: Float) {
+            val previous = zoom.value
+            val target = targetZoom.coerceIn(1f, maxZoom)
+            if (target == previous) return
+            val factor = target / previous
+            val anchoredScrollX = (focusX + horizontalScrollState.value) * factor - focusX
+            val targetScrollX = anchoredScrollX.toInt().coerceAtLeast(0)
+            val firstOffsetBefore = listState.firstVisibleItemScrollOffset.toFloat()
+            val deltaY = (firstOffsetBefore + focusY) * (factor - 1f)
+            scope.launch {
+                zoom.snapTo(target)
+                listState.scrollBy(deltaY)
+            }
+            scope.launch {
+                horizontalScrollState.scrollTo(targetScrollX)
+            }
+        }
 
         Box(
             modifier = Modifier
@@ -659,50 +694,37 @@ private fun PdfPagesContent(
                 }
                 .pointerInput(zoomEnabled, maxZoom) {
                     if (!zoomEnabled) return@pointerInput
-                    // Desktop zoom: Ctrl/⌘ + scroll wheel (or two-finger
-                    // trackpad scroll) zooms, anchored under the cursor.
-                    // A plain scroll is left untouched so the LazyColumn
-                    // keeps driving page-to-page wheel scrolling. Touch
-                    // platforms never send a Ctrl-modified scroll, so this
-                    // block is a no-op there and pinch remains their path.
+                    // Desktop zoom: Ctrl/⌘ + scroll wheel (or a Ctrl-held
+                    // two-finger trackpad scroll) zooms, anchored under the
+                    // cursor. Handled in the Initial pass and consumed so the
+                    // LazyColumn doesn't ALSO scroll; a plain (unmodified)
+                    // scroll is left untouched so wheel/two-finger scrolling
+                    // still drives page-to-page navigation. Touch platforms
+                    // never send a Ctrl-modified scroll, so this is a no-op
+                    // there and pinch stays their path.
                     awaitPointerEventScope {
                         while (true) {
-                            val event = awaitPointerEvent()
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
                             if (event.type != PointerEventType.Scroll) continue
-                            val mods = event.keyboardModifiers
-                            if (!mods.isCtrlPressed && !mods.isMetaPressed) continue
                             val change = event.changes.firstOrNull() ?: continue
+
+                            val eventMods = event.keyboardModifiers
+                            val winMods = windowInfo.keyboardModifiers
+                            val zoomModifier =
+                                eventMods.isCtrlPressed || eventMods.isMetaPressed ||
+                                    winMods.isCtrlPressed || winMods.isMetaPressed
+                            if (!zoomModifier) continue // plain scroll → scrollables handle it
+
                             val scrollY = change.scrollDelta.y
-                            if (scrollY == 0f) {
-                                change.consume()
-                                continue
-                            }
-                            val previous = zoom.value
+                            change.consume()
+                            if (scrollY == 0f) continue
                             // Wheel up reports a negative delta → zoom in.
                             val step = if (scrollY < 0f) {
                                 DESKTOP_SCROLL_ZOOM_STEP
                             } else {
                                 1f / DESKTOP_SCROLL_ZOOM_STEP
                             }
-                            val target = (previous * step).coerceIn(1f, maxZoom)
-                            change.consume()
-                            if (target == previous) continue
-
-                            val factor = target / previous
-                            val focus = change.position
-                            val anchoredScrollX =
-                                (focus.x + horizontalScrollState.value) * factor - focus.x
-                            val targetScrollX = anchoredScrollX.toInt().coerceAtLeast(0)
-                            val firstOffsetBefore =
-                                listState.firstVisibleItemScrollOffset.toFloat()
-                            val deltaY = (firstOffsetBefore + focus.y) * (factor - 1f)
-                            scope.launch {
-                                zoom.snapTo(target)
-                                listState.scrollBy(deltaY)
-                            }
-                            scope.launch {
-                                horizontalScrollState.scrollTo(targetScrollX)
-                            }
+                            applyZoom(zoom.value * step, change.position.x, change.position.y)
                         }
                     }
                 },
@@ -740,6 +762,45 @@ private fun PdfPagesContent(
                 }
             }
         }
+
+        // Desktop zoom controls — trackpads don't deliver pinch (and macOS
+        // sends Ctrl-modified scroll without the modifier flag), so an
+        // explicit ＋ / − / reset pill is the reliable zoom affordance. The
+        // cursor-anchored Ctrl+scroll path above still works for mice that
+        // do report modifiers. Hidden on touch platforms (pinch is native).
+        if (zoomEnabled && pdfViewerIsDesktop) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(16.dp),
+                shape = RoundedCornerShape(50),
+                color = Color(0xC7141416),
+                contentColor = Color.White,
+                shadowElevation = 4.dp,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    ZoomControlButton("+") {
+                        applyZoom(zoom.value * DESKTOP_BUTTON_ZOOM_STEP, viewportCenterX, viewportCenterY)
+                    }
+                    ZoomControlButton("−") { // U+2212 minus sign
+                        applyZoom(zoom.value / DESKTOP_BUTTON_ZOOM_STEP, viewportCenterX, viewportCenterY)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** One round cell in the Desktop zoom-control pill. */
+@Composable
+private fun ZoomControlButton(label: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text = label, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
