@@ -10,12 +10,13 @@ Repository conventions and build commands for AI agents (Claude Code, etc.) **wo
 
 ## Project
 
-`PdfKmp` is an open-source Kotlin Multiplatform PDF generator targeting Android and iOS. Published to Maven Central as `io.github.conamobiledev:pdfkmp`.
+`PdfKmp` is an open-source Kotlin Multiplatform PDF generator targeting Android, iOS, and Desktop (JVM — macOS, Windows, Linux). Published to Maven Central as `io.github.conamobiledev:pdfkmp`.
 
 The library is built around a single closed sealed `PdfNode` tree authored via a Compose-style DSL. Layout is performed in commonMain (`MeasuredNode`), and rendering is dispatched to platform-specific `PdfCanvas` implementations:
 
 - **Android backend** — `android.graphics.pdf.PdfDocument` + `Canvas` (`AndroidPdfCanvas`).
 - **iOS backend** — `UIGraphicsBeginPDFContextToData` + Core Graphics (`IosPdfCanvas`).
+- **JVM / Desktop backend** — Apache PdfBox (`JvmPdfCanvas` / `JvmPdfDriver`). Pure-Java, no native libraries; embeds subset TrueType fonts for vector text, builds axial/radial PDF shadings for gradients, and writes real link annotations + a populated info dictionary. The PdfBox dependency lives only in the `jvmMain` source set.
 - **Common test backend** — `FakePdfDriver` / `FakePdfCanvas` in `commonTest` records every draw call as a sealed `DrawCall` so the entire pipeline can be exercised end-to-end without native APIs.
 
 Every text glyph and shape is emitted as a vector path — no rasterisation. Output stays sharp at any zoom level.
@@ -23,15 +24,21 @@ Every text glyph and shape is emitted as a vector path — no rasterisation. Out
 ## Build commands
 
 ```bash
-# Canonical test surface — exercises every backend through the common-test FakePdfDriver
+# Canonical test surface — exercises common + the iOS platform layer
 ./gradlew :pdfkmp:iosSimulatorArm64Test
 
-# Library — all platform artefacts
+# JVM / Desktop test surface — exercises common + the PdfBox backend
+# end-to-end (SamplesSmokeTest re-renders every sample; JvmBackendTest
+# re-parses + rasterises the output). Fast; no simulator needed.
+./gradlew :pdfkmp:jvmTest
+
+# Library — all platform artefacts (Android aar + iOS frameworks + JVM jar)
 ./gradlew :pdfkmp:assemble
 
 # Library — single-platform builds
 ./gradlew :pdfkmp:linkDebugFrameworkIosArm64
 ./gradlew :pdfkmp:linkDebugFrameworkIosSimulatorArm64
+./gradlew :pdfkmp:jvmJar
 
 # Sample apps
 ./gradlew :sample:installDebug                     # Android, on connected device
@@ -46,9 +53,9 @@ JDK 21 recommended (`export JAVA_HOME=$(/usr/libexec/java_home -v 21)` on macOS)
 
 ## Module layout
 
-- `:pdfkmp` — KMP library, Android (`aar`) + iOS framework `PdfKmp` (static, baseName `PdfKmp`). Publishable. Compose-free.
-- `:pdfkmp-compose-resources` — opt-in KMP integration that maps Compose Multiplatform `DrawableResource` references onto the core PdfKmp DSL (`toVectorImage()`, `toBytes()`). Depends on `:pdfkmp` + `org.jetbrains.compose.components:components-resources`. Publishable as a separate artifact (`io.github.conamobiledev:pdfkmp-compose-resources`).
-- `:pdfkmp-viewer` — opt-in Compose Multiplatform `PdfViewer` composable that renders any PdfKmp document on Android (`PdfRenderer`) and iOS (`PDFKit.PDFDocument` + `thumbnailOfSize`) and surfaces an optional share sheet (`Intent.ACTION_SEND` via `FileProvider` on Android, `UIActivityViewController` on iOS). Depends on `:pdfkmp` + Compose Multiplatform runtime/foundation/ui/material3. Android resources are turned on via `androidResources { enable = true }` in the KMP library DSL because the FileProvider needs `res/xml/pdfkmp_viewer_file_paths.xml`. Publishable as `io.github.conamobiledev:pdfkmp-viewer`.
+- `:pdfkmp` — KMP library, Android (`aar`) + iOS framework `PdfKmp` (static, baseName `PdfKmp`) + JVM/Desktop (`jar`, depends on Apache PdfBox in `jvmMain` only). Publishable. Compose-free.
+- `:pdfkmp-compose-resources` — opt-in KMP integration that maps Compose Multiplatform `DrawableResource` references onto the core PdfKmp DSL (`toVectorImage()`, `toBytes()`). Pure common, so the `jvm` target needs no platform code. Depends on `:pdfkmp` + `org.jetbrains.compose.components:components-resources`. Publishable as a separate artifact (`io.github.conamobiledev:pdfkmp-compose-resources`).
+- `:pdfkmp-viewer` — opt-in Compose Multiplatform `PdfViewer` composable that renders any PdfKmp document on Android (`PdfRenderer`), iOS (`PDFKit.PDFDocument` + `thumbnailOfSize`), and Desktop (PdfBox `PDFRenderer`), and surfaces an optional share affordance (`Intent.ACTION_SEND` via `FileProvider` on Android, `UIActivityViewController` on iOS, `java.awt.Desktop.open` on Desktop). The Desktop `KmpPdfLauncher` hosts the viewer in a Swing `JFrame` + Compose `ComposePanel`. Depends on `:pdfkmp` + Compose Multiplatform runtime/foundation/ui/material3. Android resources are turned on via `androidResources { enable = true }` in the KMP library DSL because the FileProvider needs `res/xml/pdfkmp_viewer_file_paths.xml`. Publishable as `io.github.conamobiledev:pdfkmp-viewer`.
 - `:sample` — Compose Android sample app, structured as a **single-target KMP module** (`androidTarget()` only) so Compose Multiplatform Resources can be loaded from `commonMain/composeResources/`. The Activity and other Android-specific code live in `src/androidMain/kotlin/`, the resource-driven demo lives in `src/commonMain/kotlin/`. Depends on `:pdfkmp`, `:pdfkmp-compose-resources`, and `:pdfkmp-viewer`. Requires the `android.newDsl=false` + `android.builtInKotlin=false` shims in root `gradle.properties` for AGP 9 compatibility — see the comment in that file.
 - `iosApp/` — SwiftUI / PDFKit sample app. Build phase calls `:pdfkmp:embedAndSignAppleFrameworkForXcode`.
 
@@ -60,7 +67,7 @@ JDK 21 recommended (`export JAVA_HOME=$(/usr/libexec/java_home -v 21)` on macOS)
 | Sealed node hierarchy (`PdfNode`, `TextNode`, `ColumnNode`, …) | `:pdfkmp/src/commonMain/.../node/` |
 | Layout engine (`measure(...)` → `MeasuredNode`) | `:pdfkmp/src/commonMain/.../layout/LayoutEngine.kt` |
 | Renderer / page placement | `:pdfkmp/src/commonMain/.../render/DocumentRenderer.kt` |
-| Platform canvas implementations | `:pdfkmp/src/androidMain/.../render/AndroidPdfCanvas.kt`, `:pdfkmp/src/iosMain/.../render/IosPdfCanvas.kt` |
+| Platform canvas implementations | `:pdfkmp/src/androidMain/.../render/AndroidPdfCanvas.kt`, `:pdfkmp/src/iosMain/.../render/IosPdfCanvas.kt`, `:pdfkmp/src/jvmMain/.../render/JvmPdfCanvas.kt` (+ `JvmPdfDriver`, `JvmFontRegistry`, `JvmFontMetrics`, `JvmShading`) |
 | Test backend | `:pdfkmp/src/commonTest/kotlin/.../test/FakePdfBackend.kt` |
 | Worked-example documents | `:pdfkmp/src/commonMain/.../samples/Samples.kt` |
 | Smoke tests for samples | `:pdfkmp/src/commonTest/.../samples/SamplesSmokeTest.kt` |
@@ -73,7 +80,7 @@ A feature normally touches **all four** layers, in this order:
 2. **Node** — add a sealed `PdfNode` variant in `node/`.
 3. **Layout** — extend `LayoutEngine.measure(...)` and add a `MeasuredNode` variant.
 4. **Render** — extend `DocumentRenderer.place(...)` and add a draw method on `PdfCanvas`.
-5. **Platforms** — implement on `AndroidPdfCanvas`, `IosPdfCanvas`, and `FakePdfCanvas`.
+5. **Platforms** — implement on `AndroidPdfCanvas`, `IosPdfCanvas`, `JvmPdfCanvas`, and `FakePdfCanvas`.
 6. **Sample** — add or extend a function in `Samples.kt`.
 7. **Test** — add to `SamplesSmokeTest.kt` so the new path runs end-to-end on iOS Simulator.
 

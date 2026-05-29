@@ -39,6 +39,11 @@ kotlin {
         }
     }
 
+    // JVM / Desktop target (macOS, Windows, Linux). Compose for Desktop
+    // hosts the viewer UI; PdfBox's PDFRenderer rasterises pages for the
+    // on-screen preview, mirroring Android's PdfRenderer and iOS's PDFKit.
+    jvm()
+
     listOf(
         iosX64(),
         iosArm64(),
@@ -70,6 +75,11 @@ kotlin {
             // `setContent` extension and edge-to-edge helpers.
             implementation(libs.androidx.activityCompose)
             implementation(libs.coroutines.android)
+        }
+
+        jvmMain.dependencies {
+            // Rasterises PDF pages to BufferedImage for the Desktop preview.
+            implementation(libs.pdfbox)
         }
 
         commonTest.dependencies {

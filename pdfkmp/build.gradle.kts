@@ -122,6 +122,11 @@ kotlin {
         }
     }
 
+    // JVM / Desktop target (macOS, Windows, Linux). The backend builds on
+    // Apache PdfBox, a pure-Java PDF engine, so the same artifact runs on
+    // every desktop OS without bundling native libraries.
+    jvm()
+
     listOf(
         iosX64(),
         iosArm64(),
@@ -148,6 +153,10 @@ kotlin {
             implementation(libs.androidx.startup.runtime)
         }
 
+        jvmMain.dependencies {
+            implementation(libs.pdfbox)
+        }
+
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
@@ -163,6 +172,13 @@ kotlin {
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask<*>>().configureEach {
     dependsOn(generateBundledFonts)
     dependsOn(generatePdfKmpVersion)
+}
+
+// PdfBox image embedding goes through java.awt (BufferedImage / ImageIO),
+// which must run in headless mode on CI and to avoid spawning a Dock/taskbar
+// icon during the JVM test run.
+tasks.withType<Test>().configureEach {
+    systemProperty("java.awt.headless", "true")
 }
 
 // Maven Central publishing via Vanniktech's plugin — handles sources and

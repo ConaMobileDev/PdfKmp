@@ -3,9 +3,9 @@
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.conamobiledev/pdfkmp.svg?label=Maven%20Central&color=blue)](https://central.sonatype.com/artifact/io.github.conamobiledev/pdfkmp)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Kotlin](https://img.shields.io/badge/kotlin-2.3-blue.svg?logo=kotlin)](https://kotlinlang.org)
-[![Platforms](https://img.shields.io/badge/platform-Android%20%7C%20iOS-lightgrey.svg)](#installation)
+[![Platforms](https://img.shields.io/badge/platform-Android%20%7C%20iOS%20%7C%20Desktop-lightgrey.svg)](#installation)
 
-> Kotlin Multiplatform PDF generator for Android and iOS — vector-first, type-safe, DSL-driven.
+> Kotlin Multiplatform PDF generator for Android, iOS & Desktop (JVM) — vector-first, type-safe, DSL-driven.
 
 <table align="center">
   <tr>
@@ -22,16 +22,17 @@
   <em>The same <code>Samples.brochure()</code> document rendered on Android and iOS — pixel-identical vector output. Try it: <code>Samples.brochure().toByteArray()</code>.</em>
 </p>
 
-PdfKmp lets you build PDF documents from a Compose-style DSL that runs identically on Android and iOS. Text becomes glyph paths, shapes become path operators — every page stays sharp at any zoom level. The library ships the **Inter** font for cross-platform Latin parity and exposes opt-in references to system CJK / Arabic / Persian fonts so non-Latin scripts render natively.
+PdfKmp lets you build PDF documents from a Compose-style DSL that runs identically on Android, iOS, and Desktop (JVM — macOS, Windows, Linux). Text becomes glyph paths, shapes become path operators — every page stays sharp at any zoom level. The library ships the **Inter** font for cross-platform Latin parity and exposes opt-in references to system CJK / Arabic / Persian fonts so non-Latin scripts render natively.
 
-**Under the hood — native PDF stacks, no third-party engines:**
+**Under the hood — native / pure-Java PDF stacks per platform:**
 
 | Platform | Backend |
 |---|---|
 | Android | [`android.graphics.pdf.PdfDocument`](https://developer.android.com/reference/android/graphics/pdf/PdfDocument) + `android.graphics.Canvas` |
 | iOS | [`UIGraphicsBeginPDFContextToData`](https://developer.apple.com/documentation/uikit/uigraphicsbeginpdfcontexttodata) + Core Graphics (`CGContext`) |
+| Desktop (JVM) | [Apache PDFBox](https://pdfbox.apache.org/) — pure-Java, runs on macOS / Windows / Linux with no native libraries |
 
-Every DSL node funnels into these system PDF APIs, so the resulting bytes are real, native, vector PDFs — readable in Preview, Adobe Reader, Chrome, and any spec-compliant viewer.
+Every DSL node funnels into these PDF backends, so the resulting bytes are real, vector PDFs — readable in Preview, Adobe Reader, Chrome, and any spec-compliant viewer. On Desktop the embedded TrueType fonts are subsetted to only the glyphs you draw, so text stays vector and the file stays small.
 
 ---
 
@@ -71,6 +72,7 @@ Every DSL node funnels into these system PDF APIs, so the resulting bytes are re
 PdfKmp is published to **Maven Central**. The library exposes:
 - an Android `aar` (`io.github.conamobiledev:pdfkmp-android`),
 - an iOS framework named `PdfKmp` for arm64, x64, and simulator-arm64,
+- a Desktop / JVM `jar` (`io.github.conamobiledev:pdfkmp-jvm`) for macOS, Windows, and Linux,
 - common Kotlin metadata (`io.github.conamobiledev:pdfkmp`),
 - an optional Compose Multiplatform Resources companion (`io.github.conamobiledev:pdfkmp-compose-resources`),
 - an optional Compose Multiplatform PDF viewer screen (`io.github.conamobiledev:pdfkmp-viewer`).
@@ -86,7 +88,7 @@ dependencyResolutionManagement {
 }
 ```
 
-Pick the section that matches your project. The two paths are mutually exclusive — KMP projects depend on `pdfkmp` only (Gradle resolves the right platform variant automatically, **including for Android targets**), while plain Android projects depend on `pdfkmp-android` instead. Inside each path, use whichever dependency style your project already uses; the `libs.versions.toml` form is recommended for new projects.
+Pick the section that matches your project. The paths are mutually exclusive — KMP projects depend on `pdfkmp` only (Gradle resolves the right platform variant automatically, **including for Android and Desktop targets**), while plain Android projects depend on `pdfkmp-android` and plain JVM/Desktop projects on `pdfkmp-jvm`. Inside each path, use whichever dependency style your project already uses; the `libs.versions.toml` form is recommended for new projects.
 
 ### Kotlin Multiplatform project
 
@@ -97,7 +99,7 @@ With a version catalog:
 ```toml
 # gradle/libs.versions.toml
 [versions]
-pdfkmp = "1.0.2"
+pdfkmp = "1.1.0"
 
 [libraries]
 pdfkmp = { module = "io.github.conamobiledev:pdfkmp", version.ref = "pdfkmp" }
@@ -125,9 +127,9 @@ Without a version catalog:
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("io.github.conamobiledev:pdfkmp:1.0.2")
-            implementation("io.github.conamobiledev:pdfkmp-compose-resources:1.0.2") // optional
-            implementation("io.github.conamobiledev:pdfkmp-viewer:1.0.2")            // optional
+            implementation("io.github.conamobiledev:pdfkmp:1.1.0")
+            implementation("io.github.conamobiledev:pdfkmp-compose-resources:1.1.0") // optional
+            implementation("io.github.conamobiledev:pdfkmp-viewer:1.1.0")            // optional
         }
     }
 }
@@ -149,7 +151,7 @@ With a version catalog:
 ```toml
 # gradle/libs.versions.toml
 [versions]
-pdfkmp = "1.0.2"
+pdfkmp = "1.1.0"
 
 [libraries]
 pdfkmp-android = { module = "io.github.conamobiledev:pdfkmp-android", version.ref = "pdfkmp" }
@@ -169,18 +171,33 @@ Without a version catalog:
 ```kotlin
 // app/build.gradle.kts
 dependencies {
-    implementation("io.github.conamobiledev:pdfkmp-android:1.0.2")
-    implementation("io.github.conamobiledev:pdfkmp-viewer:1.0.2") // optional
+    implementation("io.github.conamobiledev:pdfkmp-android:1.1.0")
+    implementation("io.github.conamobiledev:pdfkmp-viewer:1.1.0") // optional
 }
 ```
 
 `pdfkmp-viewer` brings in Compose Multiplatform — skip it if your Android project still uses the legacy View system. The viewer assumes Compose hosting (a `ComponentActivity` with `setContent { … }` or an embedded `ComposeView`).
 
+### Desktop / JVM project
+
+KMP projects with a `jvm()` target need no extra setup — Gradle resolves the Desktop variant of `pdfkmp` for the JVM target automatically, exactly like it does for Android. For a **plain JVM project** (a standalone Compose for Desktop app or any non-KMP Gradle JVM module), depend on `pdfkmp-jvm` directly:
+
+```kotlin
+// build.gradle.kts
+dependencies {
+    implementation("io.github.conamobiledev:pdfkmp-jvm:1.1.0")
+    implementation("io.github.conamobiledev:pdfkmp-viewer-jvm:1.1.0") // optional — Compose for Desktop viewer
+}
+```
+
+The Desktop backend is built on [Apache PDFBox](https://pdfbox.apache.org/) (pulled in transitively) and is pure-Java, so the same artifact runs on macOS, Windows, and Linux with no native libraries to bundle. The generation API (`pdf { … }`, `document.save(...)`, `toByteArray()`) is identical across all platforms. `pdfkmp-viewer` on Desktop hosts the viewer in a Compose for Desktop window and rasterises pages with PDFBox's `PDFRenderer`.
+
 ### Requirements
 
 - JDK 17+
-- Android Gradle Plugin 8.x, `compileSdk` 34+
+- Android Gradle Plugin 8.x, `compileSdk` 34+ (Android targets)
 - Xcode 16+ when targeting iOS via Kotlin Multiplatform
+- A desktop JRE 17+ when targeting Desktop / JVM (macOS, Windows, Linux)
 
 ### R8 / ProGuard
 
@@ -687,7 +704,7 @@ link(url = "https://example.com") {
 }
 ```
 
-On iOS the rectangles produce real PDF link annotations via `UIGraphicsSetPDFContextURLForRect`. Android's `PdfDocument` does not expose annotation APIs in v1, so on Android the visual styling stands in for the click target — the rectangle is recorded but readers cannot dispatch clicks. Both behaviours are intentional and the iOS output works in any reader (Preview, Adobe Reader, Chrome's PDF viewer).
+On iOS (via `UIGraphicsSetPDFContextURLForRect`) and on Desktop (via PDFBox `PDAnnotationLink`) the rectangles produce **real, clickable PDF link annotations** that work in any reader (Preview, Adobe Reader, Chrome's PDF viewer). Android's `PdfDocument` does not expose annotation APIs, so on Android the visual styling stands in for the click target — the rectangle is recorded but readers cannot dispatch clicks. All three behaviours are intentional.
 
 ---
 
@@ -737,8 +754,8 @@ The optional `pdfkmp-compose-resources` module wires Compose Multiplatform's typ
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("io.github.conamobiledev:pdfkmp:1.0.2")
-            implementation("io.github.conamobiledev:pdfkmp-compose-resources:1.0.2")
+            implementation("io.github.conamobiledev:pdfkmp:1.1.0")
+            implementation("io.github.conamobiledev:pdfkmp-compose-resources:1.1.0")
         }
     }
 }
@@ -842,7 +859,7 @@ KmpPdfViewer(
 
 ### `KmpPdfLauncher.open(...)` — imperative (call from anywhere)
 
-For fire-and-forget launches outside a `@Composable` scope: click handlers, `LaunchedEffect`, suspend functions, notification taps, etc. The launcher hosts `KmpPdfViewer` inside an Activity (Android) / `UIViewController` (iOS) and dismisses on back.
+For fire-and-forget launches outside a `@Composable` scope: click handlers, `LaunchedEffect`, suspend functions, notification taps, etc. The launcher hosts `KmpPdfViewer` inside an Activity (Android) / `UIViewController` (iOS) / a Compose for Desktop window (JVM) and dismisses on back.
 
 ```kotlin
 import com.conamobile.pdfkmp.viewer.KmpPdfLauncher
@@ -875,10 +892,10 @@ Both APIs accept four input shapes — pick whichever matches what your code alr
 
 ### Features
 
-- **Topbar** — Material-style Minimal Mono on Android, Classic iOS Native on iOS. Picks the right variant per platform via expect/actual.
+- **Topbar** — Material-style Minimal Mono on Android & Desktop, Classic iOS Native on iOS. Picks the right variant per platform via expect/actual.
 - **Search** — long-press the search chip → topbar morphs into an inline `TextField`. Matches yellow-highlight in the page; previous / next chevrons cycle through results; auto-scrolls to the active match.
-- **Share** — Material 3 share affordance. Hands the bytes to `Intent.ACTION_SEND` (Android) / `UIActivityViewController` (iOS).
-- **Save to Downloads** — `MediaStore.Downloads` on Android (Toast on success) / `NSDocumentDirectory` on iOS (alert on success).
+- **Share** — Material 3 share affordance. Hands the bytes to `Intent.ACTION_SEND` (Android) / `UIActivityViewController` (iOS) / the OS default handler via `java.awt.Desktop.open` (Desktop).
+- **Save to Downloads** — `MediaStore.Downloads` on Android (Toast on success) / `NSDocumentDirectory` on iOS / `~/Downloads` on Desktop.
 - **Hyperlinks** — `link(url) { … }` blocks in the DSL produce real clickable hotspots. Tapping opens the URL in the system browser.
 - **Text selection** — invisible `SelectionContainer` overlay backed by the captured glyph positions. Long-press → drag handles → Copy.
 - **Gestures** — pinch zoom (1× → 5×), single-finger pan when zoomed, free 2D pan, double-tap toggle, focal-point anchoring.
@@ -952,19 +969,21 @@ val data: NSData = doc.toNSData()
 
 ### Available storage locations
 
-| Location | Android | iOS | Use case |
-|---|---|---|---|
-| `Cache` | app-internal cache | `Caches/` | temporary preview, can be cleaned by the OS |
-| `AppFiles` | app-internal files | `Library/` | persistent, app-private |
-| `AppExternalFiles` | scoped external (no permission) | falls back to `Documents/` | larger files, app-scoped |
-| `Downloads` | shared `Downloads/` via MediaStore | shared Files app `Downloads/` | user can find it from system file manager |
-| `Documents` | shared `Documents/` | iCloud `Documents/` | user-visible documents |
-| `Temp` | `cacheDir/tmp/` | `tmp/` | one-shot temp file you'll delete after sharing |
-| `Custom("/abs/path/dir")` | any writable directory | any writable directory | full control |
+| Location | Android | iOS | Desktop (JVM) | Use case |
+|---|---|---|---|---|
+| `Cache` | app-internal cache | `Caches/` | `java.io.tmpdir` | temporary preview, can be cleaned by the OS |
+| `AppFiles` | app-internal files | `Library/` | `~/.pdfkmp` | persistent, app-private |
+| `AppExternalFiles` | scoped external (no permission) | falls back to `Documents/` | `~/.pdfkmp` | larger files, app-scoped |
+| `Downloads` | shared `Downloads/` via MediaStore | shared Files app `Downloads/` | `~/Downloads` | user can find it from system file manager |
+| `Documents` | shared `Documents/` | iCloud `Documents/` | `~/Documents` | user-visible documents |
+| `Temp` | `cacheDir/tmp/` | `tmp/` | `java.io.tmpdir` | one-shot temp file you'll delete after sharing |
+| `Custom("/abs/path/dir")` | any writable directory | any writable directory | any writable directory | full control |
 
 > **Android storage permissions:** `Cache`, `AppFiles`, `AppExternalFiles`, and `Temp` need **no permission** on any Android version. `Downloads` / `Documents` use the system MediaStore on Android 10+ which also needs no permission. For `Custom` paths outside your app sandbox, you supply your own permissions / Storage Access Framework handling.
 
 > **iOS sandboxing:** Every `StorageLocation` resolves inside your app's sandbox; iCloud `Documents` requires the `iCloud Documents` capability in your Xcode project.
+
+> **Desktop:** locations resolve against the current user's home and the JVM temp directory — the full filesystem is reachable, so `Downloads` / `Documents` land in the real `~/Downloads` / `~/Documents` folders.
 
 ---
 

@@ -5,7 +5,7 @@ android-minSdk = "26"
 android-targetSdk = "37"
 
 kotlin = "2.3.21"
-agp = "9.2.0"
+agp = "9.2.1"
 mavenPublish = "0.36.0"
 
 compose-multiplatform = "1.10.3"
@@ -15,8 +15,10 @@ composeActivity = "1.13.0"
 androidx-startup = "1.2.0"
 androidx-core = "1.18.0"
 
-kotlinx-coroutines = "1.10.2"
+kotlinx-coroutines = "1.11.0"
 kotlinx-io = "0.9.0"
+
+pdfbox = "3.0.7"
 
 [libraries]
 androidx-activityCompose = { module = "androidx.activity:activity-compose", version.ref = "composeActivity" }
@@ -27,6 +29,13 @@ coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", ve
 coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinx-coroutines" }
 
 kotlinx-io-core = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version.ref = "kotlinx-io" }
+
+# JVM/Desktop PDF backend: generation (PdfBox content streams, embedded
+# TrueType fonts → vector text) and viewer-side rasterisation (PDFRenderer).
+# Pure-Java, no native libraries, so it runs identically on macOS, Windows
+# and Linux. Only ever pulled into the `jvm` source sets — Android and iOS
+# keep their platform-native backends and never see this dependency.
+pdfbox = { module = "org.apache.pdfbox:pdfbox", version.ref = "pdfbox" }
 
 compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "compose-multiplatform" }
 compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "compose-multiplatform" }

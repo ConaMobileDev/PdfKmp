@@ -28,6 +28,12 @@ kotlin {
         }
     }
 
+    // JVM / Desktop target — mirrors :pdfkmp so the same Compose
+    // `DrawableResource` → PDF mapping is available on macOS, Windows and
+    // Linux. The module is pure common Kotlin; the JVM variant of
+    // `components-resources` supplies the resource-loading APIs.
+    jvm()
+
     listOf(
         iosX64(),
         iosArm64(),

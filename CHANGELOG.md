@@ -6,6 +6,48 @@ versions follow [Semantic Versioning](https://semver.org). Pre-1.0
 minor versions may break public API; alpha / beta / rc tags signal
 an actively settling surface.
 
+## [1.1.0] — 2026-05-29
+
+### Added — Desktop / JVM support (all three modules)
+
+- **New `jvm` target on `pdfkmp`, `pdfkmp-viewer`, and
+  `pdfkmp-compose-resources`.** PdfKmp now runs on Desktop (JVM) —
+  macOS, Windows, and Linux — in addition to Android and iOS. The
+  public generation API (`pdf { … }`, `pdfAsync { … }`,
+  `document.save(...)`, `toByteArray()`) is unchanged and identical
+  across every platform. Published as `pdfkmp-jvm`,
+  `pdfkmp-viewer-jvm`, and `pdfkmp-compose-resources-jvm`; KMP
+  consumers with a `jvm()` target get the right variant automatically.
+- **Desktop PDF backend on Apache PDFBox.** A new `PdfDriver` /
+  `PdfCanvas` / `FontMetrics` implementation renders the full DSL —
+  vector text (subset-embedded TrueType fonts), shapes, rounded
+  rects, dashed/dotted lines, clipping, linear & radial gradients
+  (axial / radial PDF shadings), and images — to a real vector PDF.
+  PDFBox is pure-Java, so there are no native libraries to bundle and
+  the same artifact runs on every desktop OS. The dependency is scoped
+  to the `jvm` source set only; Android and iOS keep their native
+  backends and never pull it in.
+- **Desktop wins over Android in two places:** the document **info
+  dictionary** (title / author / subject / keywords) is written
+  (Android's `PdfDocument` can't), and **hyperlinks** become real
+  clickable `PDAnnotationLink` annotations.
+- **`pdfkmp-viewer` on Desktop.** `KmpPdfViewer` and the imperative
+  `KmpPdfLauncher` work on Desktop — pages rasterise through PDFBox's
+  `PDFRenderer`, the launcher hosts the viewer in a Compose for
+  Desktop window, "Save" writes to `~/Downloads`, "Share" opens the
+  OS default handler via `java.awt.Desktop`, and hyperlinks open in
+  the default browser.
+
+### Changed
+
+- **`kotlinx.coroutines` 1.10.2 → 1.11.0.**
+- Moved the iOS-only `BrochurePdfDump` screenshot utility from
+  `commonTest` to `iosTest` (it used Foundation APIs that don't exist
+  on the new JVM/host test source set). No public API impact.
+
+> **No breaking changes.** Every existing Android and iOS API,
+> signature, and behaviour is preserved; Desktop is purely additive.
+
 ## [1.0.2] — 2026-05-25
 
 ### Fixed — `pdfkmp`
