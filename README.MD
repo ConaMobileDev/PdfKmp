@@ -71,7 +71,7 @@ Every DSL node funnels into these PDF backends, so the resulting bytes are real,
 
 PdfKmp is published to **Maven Central**. The library exposes:
 - an Android `aar` (`io.github.conamobiledev:pdfkmp-android`),
-- an iOS framework named `PdfKmp` for arm64, x64, and simulator-arm64,
+- an iOS framework named `PdfKmp` for arm64 (device) and simulator-arm64 (Apple-Silicon simulator),
 - a Desktop / JVM `jar` (`io.github.conamobiledev:pdfkmp-jvm`) for macOS, Windows, and Linux,
 - common Kotlin metadata (`io.github.conamobiledev:pdfkmp`),
 - an optional Compose Multiplatform Resources companion (`io.github.conamobiledev:pdfkmp-compose-resources`, with `-android` / `-jvm` platform variants),

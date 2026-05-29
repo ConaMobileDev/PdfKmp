@@ -127,8 +127,10 @@ kotlin {
     // every desktop OS without bundling native libraries.
     jvm()
 
+    // iosX64 (Intel-Mac simulator) was dropped in 1.1.0: Compose Multiplatform
+    // 1.11.0 removed the target from its own modules, and Intel Macs are EOL.
+    // Apple-Silicon simulators use iosSimulatorArm64; devices use iosArm64.
     listOf(
-        iosX64(),
         iosArm64(),
         iosSimulatorArm64(),
     ).forEach {

@@ -63,13 +63,23 @@ an actively settling surface.
 
 ### Changed
 
-- **`kotlinx.coroutines` 1.10.2 → 1.11.0.**
+- **Compose Multiplatform `1.10.3` → `1.11.0`** and **`kotlinx.coroutines`
+  `1.10.2` → `1.11.0`.**
+- **Dropped the `iosX64` (Intel-Mac simulator) target** from all modules.
+  Compose Multiplatform 1.11.0 removed `iosX64` / `macosX64` from its own
+  artifacts (the Compose-dependent modules can no longer publish it), and
+  Intel Macs are end-of-life. iOS is now `iosArm64` (device) +
+  `iosSimulatorArm64` (Apple-Silicon simulator).
 - Moved the iOS-only `BrochurePdfDump` screenshot utility from
   `commonTest` to `iosTest` (it used Foundation APIs that don't exist
   on the new JVM/host test source set). No public API impact.
 
-> **No breaking changes.** Every existing Android and iOS API,
-> signature, and behaviour is preserved; Desktop is purely additive.
+> **API compatibility.** Every existing Android / iOS / source-level API,
+> signature, and behaviour is preserved — Desktop is purely additive. The
+> **one** non-additive change is the removal of the `iosX64` *artifact*:
+> projects still building for the Intel-Mac simulator must switch to an
+> Apple-Silicon simulator (`iosSimulatorArm64`). No source changes are
+> needed for `iosArm64` / `iosSimulatorArm64` consumers.
 
 ## [1.0.2] — 2026-05-25
 
