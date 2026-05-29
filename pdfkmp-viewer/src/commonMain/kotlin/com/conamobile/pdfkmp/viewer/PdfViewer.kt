@@ -183,9 +183,13 @@ private const val DENSITY_REFRESH_DELAY_MS: Long = 250L
  *   Defaults to zero for a fully edge-to-edge layout.
  * @param pageSpacing vertical gap between page previews. Defaults to a
  *   tight `4.dp` so adjacent pages read as a continuous document.
- * @param renderDensity baseline scaling factor applied during
- *   rasterisation. `2f` is sharp on retina displays without ballooning
- *   memory; bump to `3f` for very large surfaces.
+ * @param renderDensity baseline rasterisation density at `1×` zoom — the
+ *   sharpness before the user zooms at all. Defaults per platform via
+ *   [pdfViewerDefaultRenderDensity]: **3× on Desktop** (large / hi-DPI
+ *   screens, ample RAM), **2× on Android / iOS** (retina-crisp, memory-
+ *   bounded). Each unit is `72 DPI`. Bump higher (`4f`+) for very fine
+ *   print or large technical drawings, at proportionally more memory per
+ *   page. Zoom multiplies on top of this — see the sharpness note above.
  * @param maxZoom upper bound for the pinch gesture. Defaults to `5f`
  *   to match iOS PDFKit.
  * @param zoomEnabled master switch for both pinch-to-zoom and
@@ -237,7 +241,7 @@ public fun PdfViewer(
     pageBackgroundColor: Color = Color.White,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     pageSpacing: Dp = 4.dp,
-    renderDensity: Float = 2f,
+    renderDensity: Float = pdfViewerDefaultRenderDensity,
     maxZoom: Float = DEFAULT_MAX_ZOOM,
     zoomEnabled: Boolean = true,
     doubleTapToZoom: Boolean = true,
@@ -439,7 +443,7 @@ public fun PdfViewer(
     pageBackgroundColor: Color = Color.White,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     pageSpacing: Dp = 4.dp,
-    renderDensity: Float = 2f,
+    renderDensity: Float = pdfViewerDefaultRenderDensity,
     maxZoom: Float = DEFAULT_MAX_ZOOM,
     zoomEnabled: Boolean = true,
     doubleTapToZoom: Boolean = true,
@@ -493,7 +497,7 @@ public fun PdfViewer(
     pageBackgroundColor: Color = Color.White,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     pageSpacing: Dp = 4.dp,
-    renderDensity: Float = 2f,
+    renderDensity: Float = pdfViewerDefaultRenderDensity,
     maxZoom: Float = DEFAULT_MAX_ZOOM,
     zoomEnabled: Boolean = true,
     doubleTapToZoom: Boolean = true,

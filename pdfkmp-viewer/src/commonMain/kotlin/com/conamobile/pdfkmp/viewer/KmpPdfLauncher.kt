@@ -74,7 +74,7 @@ public expect object KmpPdfLauncher {
         doubleTapToZoom: Boolean = true,
         textSelectable: Boolean = true,
         hyperlinksEnabled: Boolean = true,
-        renderDensity: Float = 2f,
+        renderDensity: Float = pdfViewerDefaultRenderDensity,
         maxZoom: Float = 5f,
         cacheStrategy: PdfPageCacheStrategy = PdfPageCacheStrategy.Auto,
     )
@@ -94,7 +94,7 @@ public expect object KmpPdfLauncher {
         doubleTapToZoom: Boolean = true,
         textSelectable: Boolean = true,
         hyperlinksEnabled: Boolean = true,
-        renderDensity: Float = 2f,
+        renderDensity: Float = pdfViewerDefaultRenderDensity,
         maxZoom: Float = 5f,
         cacheStrategy: PdfPageCacheStrategy = PdfPageCacheStrategy.Auto,
     )
@@ -119,7 +119,7 @@ public expect object KmpPdfLauncher {
         doubleTapToZoom: Boolean = true,
         textSelectable: Boolean = true,
         hyperlinksEnabled: Boolean = true,
-        renderDensity: Float = 2f,
+        renderDensity: Float = pdfViewerDefaultRenderDensity,
         maxZoom: Float = 5f,
         cacheStrategy: PdfPageCacheStrategy = PdfPageCacheStrategy.Auto,
     )

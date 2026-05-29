@@ -11,6 +11,19 @@ package com.conamobile.pdfkmp.viewer
 internal expect val pdfViewerIsDesktop: Boolean
 
 /**
+ * Default base render density (the zoom-`1×` sharpness, before any zoom) for
+ * [PdfViewer] / [KmpPdfViewer] / [KmpPdfLauncher] when the caller doesn't
+ * specify one.
+ *
+ * Desktop defaults to a sharper **3×** (`216 DPI`) — desktops have ample RAM
+ * and larger / hi-DPI displays where 2× can read slightly soft — while touch
+ * platforms keep **2×** (`144 DPI`, retina-crisp) to bound memory. Callers
+ * can always override the `renderDensity` parameter explicitly.
+ */
+internal val pdfViewerDefaultRenderDensity: Float
+    get() = if (pdfViewerIsDesktop) 3f else 2f
+
+/**
  * Installs a platform trackpad pinch-to-zoom hook, forwarding each signed
  * magnification delta to [onPinchDelta]. Returns a disposer.
  *

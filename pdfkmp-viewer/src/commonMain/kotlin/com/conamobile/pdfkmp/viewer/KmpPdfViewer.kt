@@ -145,7 +145,7 @@ public fun KmpPdfViewer(
     pageBackgroundColor: Color = Color.White,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     pageSpacing: Dp = 4.dp,
-    renderDensity: Float = 2f,
+    renderDensity: Float = pdfViewerDefaultRenderDensity,
     maxZoom: Float = 5f,
     cacheStrategy: PdfPageCacheStrategy = PdfPageCacheStrategy.Auto,
 ) {
@@ -334,7 +334,7 @@ public fun KmpPdfViewer(
     pageBackgroundColor: Color = Color.White,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     pageSpacing: Dp = 4.dp,
-    renderDensity: Float = 2f,
+    renderDensity: Float = pdfViewerDefaultRenderDensity,
     maxZoom: Float = 5f,
     cacheStrategy: PdfPageCacheStrategy = PdfPageCacheStrategy.Auto,
 ) {
@@ -396,7 +396,7 @@ public fun KmpPdfViewer(
     pageBackgroundColor: Color = Color.White,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     pageSpacing: Dp = 4.dp,
-    renderDensity: Float = 2f,
+    renderDensity: Float = pdfViewerDefaultRenderDensity,
     maxZoom: Float = 5f,
     cacheStrategy: PdfPageCacheStrategy = PdfPageCacheStrategy.Auto,
 ) {
@@ -478,7 +478,7 @@ public fun KmpPdfViewer(
     pageBackgroundColor: Color = Color.White,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     pageSpacing: Dp = 4.dp,
-    renderDensity: Float = 2f,
+    renderDensity: Float = pdfViewerDefaultRenderDensity,
     maxZoom: Float = 5f,
     cacheStrategy: PdfPageCacheStrategy = PdfPageCacheStrategy.Auto,
 ) {

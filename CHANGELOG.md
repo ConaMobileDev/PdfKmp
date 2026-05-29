@@ -51,6 +51,12 @@ an actively settling surface.
   (`java.awt.FileDialog`, defaulting to `~/Downloads`), and **share**
   opens the PDF in the OS default handler. Touch platforms are
   unchanged — pinch-to-zoom stays their path and the pill is hidden.
+- **Sharper text on Desktop.** Two changes: the baseline `renderDensity`
+  now defaults to **3× on Desktop** (vs 2× on Android/iOS) for a crisper
+  view before any zoom; and the zoom re-render density tracks the full
+  zoom factor on Desktop (up to `maxZoom`, ≤ ~720 DPI) so text keeps
+  sharpening the deeper you zoom, instead of stopping at 2×. Override
+  `renderDensity` explicitly for finer control.
 - **`:sample-desktop`** Compose-for-Desktop app: a master list of every
   bundled `Samples.*` document; click one to open it in `KmpPdfViewer`.
   Run with `./gradlew :sample-desktop:run`.
