@@ -44,9 +44,14 @@ Every text glyph and shape is emitted as a vector path — no rasterisation. Out
 ./gradlew :sample:installDebug                     # Android, on connected device
 # iOS sample: open iosApp/iosApp.xcodeproj in Xcode and Run
 
-# Publishing — all three publishable modules ship together; release them in lock-step
+# Publishing — all three publishable modules ship together; release them in lock-step.
+# Maven Central releases normally go through GitHub: publishing a Release triggers the
+# publish.yml workflow, which runs the command below for you on a macOS runner. Run it by
+# hand ONLY as a local/fallback path, and NEVER for a version you also publish a GitHub
+# Release for — both call publishAndReleaseToMavenCentral, so the second fails on a
+# duplicate version. See the Publishing checklist below.
 ./gradlew :pdfkmp:publishToMavenLocal :pdfkmp-compose-resources:publishToMavenLocal :pdfkmp-viewer:publishToMavenLocal              # local install
-./gradlew :pdfkmp:publishAndReleaseToMavenCentral :pdfkmp-compose-resources:publishAndReleaseToMavenCentral :pdfkmp-viewer:publishAndReleaseToMavenCentral  # Maven Central (requires signing creds)
+./gradlew :pdfkmp:publishAndReleaseToMavenCentral :pdfkmp-compose-resources:publishAndReleaseToMavenCentral :pdfkmp-viewer:publishAndReleaseToMavenCentral  # Maven Central (fallback; CI does this on Release)
 ```
 
 JDK 21 recommended (`export JAVA_HOME=$(/usr/libexec/java_home -v 21)` on macOS).
@@ -115,11 +120,11 @@ All three publishable modules — `:pdfkmp`, `:pdfkmp-compose-resources`, `:pdfk
 
 When cutting a release:
 
-1. Update `VERSION_NAME` in `gradle.properties` (drop `-SNAPSHOT`, e.g. `0.2.0` or `0.2.0-alpha01`).
+1. Set `VERSION_NAME` in `gradle.properties` to the release version (e.g. `1.2.0` or `1.2.0-alpha01`). This project does **not** use `-SNAPSHOT` dev versions — `VERSION_NAME` stays at the last released version between releases and is only changed when cutting the next one. (Do not bump it back to a `-SNAPSHOT` afterwards.)
 2. Run the tests on both canonical surfaces — iOS Simulator AND JVM (the JVM/PdfBox backend has its own correctness gate): `./gradlew :pdfkmp:iosSimulatorArm64Test :pdfkmp-viewer:iosSimulatorArm64Test :pdfkmp:jvmTest :pdfkmp-viewer:jvmTest` and `./gradlew :pdfkmp:assemble :pdfkmp-compose-resources:assemble :pdfkmp-viewer:assemble` locally.
-3. `git tag v0.2.0 && git push --tags` (or use GitHub Releases UI).
-4. Maven Central publish: `./gradlew :pdfkmp:publishAndReleaseToMavenCentral :pdfkmp-compose-resources:publishAndReleaseToMavenCentral :pdfkmp-viewer:publishAndReleaseToMavenCentral --no-configuration-cache` (or trigger the GitHub Actions `publish.yml` workflow by publishing a Release — it ships all three modules in one run).
-5. Verify all three artifacts landed: `https://repo1.maven.org/maven2/io/github/conamobiledev/pdfkmp/<version>/`, `.../pdfkmp-compose-resources/<version>/`, and `.../pdfkmp-viewer/<version>/` should all return 200.
-6. Bump `VERSION_NAME` to the next `-SNAPSHOT` (e.g. `0.3.0-SNAPSHOT`) and commit.
+3. Add the version's section to `CHANGELOG.md`, then commit + push the `VERSION_NAME` bump and changelog.
+4. Tag the release commit and push the tag: `git tag v1.2.0 && git push origin v1.2.0`.
+5. **Publish a GitHub Release** for that tag (title + notes from the CHANGELOG). Publishing the Release triggers the `publish.yml` workflow (`on: release: published`), which runs `publishAndReleaseToMavenCentral` for all three modules on a macOS runner and ships them to Maven Central in one go — this is the **canonical** publish path. The manual `./gradlew …publishAndReleaseToMavenCentral` is a fallback only; never run it for a version you also publish a GitHub Release for, or the CI run will fail on the duplicate version.
+6. Verify all three artifacts landed (allow ~10–30 min for the Central Portal to propagate to the public mirror): `https://repo1.maven.org/maven2/io/github/conamobiledev/pdfkmp/<version>/`, `.../pdfkmp-compose-resources/<version>/`, and `.../pdfkmp-viewer/<version>/` should all return 200.
 
 Versions follow [semver](https://semver.org). Pre-1.0 minor versions may break API; alpha tags (`-alpha0N`) signal an actively settling surface.
