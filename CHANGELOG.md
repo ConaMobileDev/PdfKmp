@@ -35,15 +35,18 @@ an actively settling surface.
   `KmpPdfLauncher` work on Desktop — pages rasterise through PDFBox's
   `PDFRenderer`, the launcher hosts the viewer in a Compose for
   Desktop window, and hyperlinks open in the default browser.
-- **Desktop-native viewer gestures & actions.** The viewer adapts to
-  mouse/trackpad input: **Ctrl + scroll wheel** (⌘ + scroll on macOS,
-  or a Ctrl-held two-finger trackpad scroll) zooms anchored under the
-  cursor, while a plain wheel scrolls pages and double-click toggles
-  zoom. The **download** button opens a native **Save As** dialog
-  (`java.awt.FileDialog`, defaulting to `~/Downloads`) so the user
-  chooses where the file lands, and **share** opens the PDF in the OS
-  default handler. Touch platforms are unchanged — pinch-to-zoom stays
-  their path.
+- **Desktop-native viewer zoom & actions.** Zoom on Desktop is via an
+  optional on-screen **＋ / − pill** (new `showZoomControls` flag,
+  default `true`, Desktop-only), **double-click** to toggle, and
+  **Ctrl/⌘ + mouse-wheel** anchored under the cursor. (Note: macOS
+  trackpad pinch/magnify and Ctrl-modified trackpad scroll are **not
+  delivered to Compose Desktop** by Skiko — verified by instrumenting
+  the scroll stream — so the buttons / double-click / mouse-wheel are
+  the reachable zoom paths there.) The **download** button opens a
+  native **Save As** dialog (`java.awt.FileDialog`, defaulting to
+  `~/Downloads`), and **share** opens the PDF in the OS default
+  handler. Touch platforms are unchanged — pinch-to-zoom stays their
+  path and the pill is hidden.
 - **`:sample-desktop`** Compose-for-Desktop app: a master list of every
   bundled `Samples.*` document; click one to open it in `KmpPdfViewer`.
   Run with `./gradlew :sample-desktop:run`.

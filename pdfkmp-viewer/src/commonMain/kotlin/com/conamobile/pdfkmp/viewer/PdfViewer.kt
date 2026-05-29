@@ -180,6 +180,12 @@ private const val DENSITY_REFRESH_DELAY_MS: Long = 250L
  *   leaving pinch on while suppressing double-tap is a common
  *   accessibility preference. Has no effect when [zoomEnabled] is
  *   `false`.
+ * @param showZoomControls shows an on-screen ＋ / − zoom pill **on
+ *   Desktop only** (touch platforms have native pinch, so it never
+ *   appears there). `true` by default; set `false` to hide it — e.g.
+ *   when the host provides its own zoom UI, or to keep a clean page
+ *   view and rely on double-click + Ctrl-scroll (mouse). No effect
+ *   when [zoomEnabled] is `false`.
  * @param textSelectable toggles the invisible selectable text overlay.
  *   `true` by default. Only effective on documents loaded via
  *   [PdfSource.of] from a PdfKmp [PdfDocument] — opaque external PDFs
@@ -218,6 +224,7 @@ public fun PdfViewer(
     maxZoom: Float = DEFAULT_MAX_ZOOM,
     zoomEnabled: Boolean = true,
     doubleTapToZoom: Boolean = true,
+    showZoomControls: Boolean = true,
     textSelectable: Boolean = true,
     hyperlinksEnabled: Boolean = true,
     showPageIndicator: Boolean = true,
@@ -352,6 +359,7 @@ public fun PdfViewer(
                     maxZoom = maxZoom,
                     zoomEnabled = zoomEnabled,
                     doubleTapToZoom = doubleTapToZoom,
+                    showZoomControls = showZoomControls,
                     effectiveDensity = stableEffectiveDensity,
                     pageBackgroundColor = pageBackgroundColor,
                     contentPadding = contentPadding,
@@ -413,6 +421,7 @@ public fun PdfViewer(
     maxZoom: Float = DEFAULT_MAX_ZOOM,
     zoomEnabled: Boolean = true,
     doubleTapToZoom: Boolean = true,
+    showZoomControls: Boolean = true,
     textSelectable: Boolean = true,
     hyperlinksEnabled: Boolean = true,
     showPageIndicator: Boolean = true,
@@ -435,6 +444,7 @@ public fun PdfViewer(
         maxZoom = maxZoom,
         zoomEnabled = zoomEnabled,
         doubleTapToZoom = doubleTapToZoom,
+        showZoomControls = showZoomControls,
         textSelectable = textSelectable,
         hyperlinksEnabled = hyperlinksEnabled,
         showPageIndicator = showPageIndicator,
@@ -465,6 +475,7 @@ public fun PdfViewer(
     maxZoom: Float = DEFAULT_MAX_ZOOM,
     zoomEnabled: Boolean = true,
     doubleTapToZoom: Boolean = true,
+    showZoomControls: Boolean = true,
     showPageIndicator: Boolean = true,
     shareButtonAlignment: Alignment = Alignment.BottomEnd,
     shareButtonPadding: PaddingValues = PaddingValues(16.dp),
@@ -485,6 +496,7 @@ public fun PdfViewer(
         maxZoom = maxZoom,
         zoomEnabled = zoomEnabled,
         doubleTapToZoom = doubleTapToZoom,
+        showZoomControls = showZoomControls,
         showPageIndicator = showPageIndicator,
         shareButtonAlignment = shareButtonAlignment,
         shareButtonPadding = shareButtonPadding,
@@ -526,6 +538,7 @@ private fun PdfPagesContent(
     maxZoom: Float,
     zoomEnabled: Boolean,
     doubleTapToZoom: Boolean,
+    showZoomControls: Boolean,
     effectiveDensity: Float,
     pageBackgroundColor: Color,
     contentPadding: PaddingValues,
@@ -768,7 +781,7 @@ private fun PdfPagesContent(
         // explicit ＋ / − / reset pill is the reliable zoom affordance. The
         // cursor-anchored Ctrl+scroll path above still works for mice that
         // do report modifiers. Hidden on touch platforms (pinch is native).
-        if (zoomEnabled && pdfViewerIsDesktop) {
+        if (showZoomControls && zoomEnabled && pdfViewerIsDesktop) {
             Surface(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)

@@ -109,6 +109,10 @@ fun main() {
                         fileName = current.fileName,
                         onBack = { selected = null },
                         showSearch = true,
+                        // Desktop ＋/− zoom pill hidden — double-click and
+                        // Ctrl + mouse-wheel still zoom. Flip to `true` to
+                        // show the buttons.
+                        showZoomControls = false,
                     )
                 }
             }
