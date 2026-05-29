@@ -22,7 +22,7 @@
   <em>The same <code>Samples.brochure()</code> document rendered on Android and iOS — pixel-identical vector output. Try it: <code>Samples.brochure().toByteArray()</code>.</em>
 </p>
 
-PdfKmp lets you build PDF documents from a Compose-style DSL that runs identically on Android, iOS, and Desktop (JVM — macOS, Windows, Linux). Text becomes glyph paths, shapes become path operators — every page stays sharp at any zoom level. The library ships the **Inter** font for cross-platform Latin parity and exposes opt-in references to system CJK / Arabic / Persian fonts so non-Latin scripts render natively.
+PdfKmp lets you build PDF documents from a Compose-style DSL that runs identically on Android, iOS, and Desktop (JVM — macOS, Windows, Linux). Text becomes glyph paths, shapes become path operators — every page stays sharp at any zoom level. The library ships the **Inter** font for cross-platform Latin parity and exposes opt-in references to system CJK / Arabic / Persian fonts so non-Latin scripts render natively on Android and iOS (on Desktop, supply a custom font — see [i18n fonts](#i18n-fonts-cjk--arabic--persian-and-custom-fonts)).
 
 **Under the hood — native / pure-Java PDF stacks per platform:**
 
@@ -74,8 +74,8 @@ PdfKmp is published to **Maven Central**. The library exposes:
 - an iOS framework named `PdfKmp` for arm64, x64, and simulator-arm64,
 - a Desktop / JVM `jar` (`io.github.conamobiledev:pdfkmp-jvm`) for macOS, Windows, and Linux,
 - common Kotlin metadata (`io.github.conamobiledev:pdfkmp`),
-- an optional Compose Multiplatform Resources companion (`io.github.conamobiledev:pdfkmp-compose-resources`),
-- an optional Compose Multiplatform PDF viewer screen (`io.github.conamobiledev:pdfkmp-viewer`).
+- an optional Compose Multiplatform Resources companion (`io.github.conamobiledev:pdfkmp-compose-resources`, with `-android` / `-jvm` platform variants),
+- an optional Compose Multiplatform PDF viewer screen (`io.github.conamobiledev:pdfkmp-viewer`, with `-android` / `-jvm` platform variants).
 
 Make sure Maven Central is in your repository list:
 
@@ -710,7 +710,9 @@ On iOS (via `UIGraphicsSetPDFContextURLForRect`) and on Desktop (via PDFBox `PDA
 
 ## i18n fonts (CJK / Arabic / Persian) and custom fonts
 
-PdfKmp ships **Inter** for Latin text. For non-Latin scripts, use the cross-platform `PdfFont.System*` references — each one is a comma-separated candidate chain that resolves to whichever font the running platform has installed:
+PdfKmp ships **Inter** for Latin text. For non-Latin scripts on **Android and iOS**, use the cross-platform `PdfFont.System*` references — each one is a comma-separated candidate chain that resolves to whichever font the running platform has installed:
+
+> **Desktop (JVM) caveat:** there is no system font-registry lookup on Desktop, so `PdfFont.System*` falls back to bundled Inter and non-Latin code points are dropped from the output. On Desktop, supply a `PdfFont.Custom` with the right script coverage (see below) to render CJK / Arabic / Persian.
 
 ```kotlin
 text("漢字、ひらがな、カタカナ — 中文 / 日本語 / 한국어") {
@@ -895,10 +897,10 @@ Both APIs accept four input shapes — pick whichever matches what your code alr
 - **Topbar** — Material-style Minimal Mono on Android & Desktop, Classic iOS Native on iOS. Picks the right variant per platform via expect/actual.
 - **Search** — long-press the search chip → topbar morphs into an inline `TextField`. Matches yellow-highlight in the page; previous / next chevrons cycle through results; auto-scrolls to the active match.
 - **Share** — Material 3 share affordance. Hands the bytes to `Intent.ACTION_SEND` (Android) / `UIActivityViewController` (iOS) / the OS default handler via `java.awt.Desktop.open` (Desktop).
-- **Save to Downloads** — `MediaStore.Downloads` on Android (Toast on success) / `NSDocumentDirectory` on iOS / `~/Downloads` on Desktop.
+- **Save** — `MediaStore.Downloads` on Android (Toast on success) / `NSDocumentDirectory` on iOS / a native **Save As** dialog (default `~/Downloads`) on Desktop.
 - **Hyperlinks** — `link(url) { … }` blocks in the DSL produce real clickable hotspots. Tapping opens the URL in the system browser.
 - **Text selection** — invisible `SelectionContainer` overlay backed by the captured glyph positions. Long-press → drag handles → Copy.
-- **Gestures** — pinch zoom (1× → 5×), single-finger pan when zoomed, free 2D pan, double-tap toggle, focal-point anchoring.
+- **Gestures** — pinch zoom (1× → 5×), single-finger pan when zoomed, free 2D pan, double-tap toggle, focal-point anchoring. On **Desktop**: macOS trackpad pinch, Ctrl/⌘ + mouse-wheel, and optional on-screen ＋ / − controls (`showZoomControls`).
 - **Page indicator** — auto-fades pill that switches to the next page once it crosses the viewport midpoint.
 
 Every action button has a matching `showSearch` / `showShare` / `showDownload` / `showBack` / `showPageIndicator` Boolean — pass `false` to hide individual affordances without un-wiring callbacks. Behaviour toggles `zoomEnabled`, `doubleTapToZoom`, `textSelectable`, `hyperlinksEnabled` follow the same shape.
@@ -1217,7 +1219,7 @@ The repo ships three sample apps that mirror each other feature-for-feature:
 
 - `:sample` — Compose Android app, structured as a single-target KMP module (`androidTarget()` only) so it can pull resources from `commonMain/composeResources/` for the `pdfAsync { drawable(Res.drawable.X) }` showcase. Detail screen drops straight into `KmpPdfViewer(...)` — five lines for a complete viewer with topbar, search, share, save, hyperlinks, and gestures. Run with `./gradlew :sample:installDebug`.
 - `iosApp/iosApp.xcodeproj` — SwiftUI iOS app. Detail view follows the Classic iOS Native handoff with chevron + label, centered title, and three iOS-blue trailing icons; PDFKit handles rendering. Open in Xcode and Run; the build phase calls `:pdfkmp:embedAndSignAppleFrameworkForXcode` automatically.
-- `:sample-desktop` — Compose for Desktop (JVM) app. A window with sample-picker chips that builds each `Samples.*` document through the JVM / PdfBox backend and shows it in `KmpPdfViewer` (pages rasterised via PdfBox `PDFRenderer`). Run with `./gradlew :sample-desktop:run` on macOS / Windows / Linux.
+- `:sample-desktop` — Compose for Desktop (JVM) app. A master/detail window: a scrollable list of every `Samples.*` document; click one to open it in `KmpPdfViewer` (pages rasterised via PdfBox `PDFRenderer`) with macOS trackpad-pinch / Ctrl-wheel / ＋−-button zoom. Run with `./gradlew :sample-desktop:run` on macOS / Windows / Linux.
 
 All three apps surface demos from `Samples` (in `:pdfkmp/src/commonMain/kotlin/.../samples/Samples.kt`) plus `ComposeResourcesDemo` (Android sample only — iOS demo coming with the next iOS sample refresh) so you can eyeball each feature on real devices.
 

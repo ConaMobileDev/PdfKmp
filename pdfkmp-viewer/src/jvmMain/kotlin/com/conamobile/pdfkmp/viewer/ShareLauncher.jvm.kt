@@ -16,15 +16,23 @@ import java.io.File
 @Composable
 public actual fun rememberPdfShareAction(): PdfShareAction = remember {
     PdfShareAction { bytes, fileName ->
-        runCatching {
-            val file = File(System.getProperty("java.io.tmpdir") ?: ".", fileName)
-            file.writeBytes(bytes)
-            if (Desktop.isDesktopSupported()) {
-                val desktop = Desktop.getDesktop()
-                if (desktop.isSupported(Desktop.Action.OPEN)) {
-                    desktop.open(file)
+        // File(fileName).name strips any directory components so a caller-
+        // supplied name can't escape the temp dir; blank falls back like the
+        // Android/iOS launchers do.
+        val safeName = File(fileName).name.takeIf { it.isNotBlank() } ?: "document.pdf"
+        // Write + launch the external viewer off the Compose/AWT UI thread so
+        // the I/O and process spawn don't stutter the UI.
+        Thread {
+            runCatching {
+                val file = File(System.getProperty("java.io.tmpdir") ?: ".", safeName)
+                file.writeBytes(bytes)
+                if (Desktop.isDesktopSupported()) {
+                    val desktop = Desktop.getDesktop()
+                    if (desktop.isSupported(Desktop.Action.OPEN)) {
+                        desktop.open(file)
+                    }
                 }
             }
-        }
+        }.apply { isDaemon = true }.start()
     }
 }

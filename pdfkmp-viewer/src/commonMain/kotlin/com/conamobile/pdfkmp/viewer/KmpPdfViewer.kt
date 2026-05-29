@@ -446,7 +446,8 @@ public fun KmpPdfViewer(
             "showTopBar = showTopBar, showBack = showBack, showSearch = showSearch, " +
             "showShare = showShare, showDownload = showDownload, " +
             "showPageIndicator = showPageIndicator, zoomEnabled = zoomEnabled, " +
-            "doubleTapToZoom = doubleTapToZoom, textSelectable = textSelectable, " +
+            "doubleTapToZoom = doubleTapToZoom, showZoomControls = showZoomControls, " +
+            "textSelectable = textSelectable, " +
             "hyperlinksEnabled = hyperlinksEnabled, backgroundColor = backgroundColor, " +
             "pageBackgroundColor = pageBackgroundColor, contentPadding = contentPadding, " +
             "pageSpacing = pageSpacing, renderDensity = renderDensity, maxZoom = maxZoom, " +

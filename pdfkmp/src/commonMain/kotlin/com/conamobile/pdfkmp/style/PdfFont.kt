@@ -86,6 +86,12 @@ public sealed interface PdfFont {
      * renderer drops back to [Default] (Inter), which will tofu-render
      * non-Latin glyphs. In that situation register a [Custom] font with
      * the right script coverage.
+     *
+     * **Desktop (JVM):** there is no system font-registry lookup, so a
+     * [System] reference (including these helpers) *always* resolves to
+     * bundled Inter and any non-Latin code points are dropped from the
+     * output. On Desktop you must supply a [Custom] font to render
+     * CJK / Arabic / Persian.
      */
     public companion object {
         /** Sans-serif CJK font present on both Android and iOS. */

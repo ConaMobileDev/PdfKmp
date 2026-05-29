@@ -22,14 +22,19 @@ public actual fun rememberPdfSaveAction(): PdfSaveAction = remember {
         runCatching {
             val downloads = File(System.getProperty("user.home") ?: ".", "Downloads")
             val dialog = FileDialog(null as Frame?, "Save PDF", FileDialog.SAVE)
-            dialog.file = fileName
+            // Suggest a bare name (no directory components); blank falls back.
+            dialog.file = File(fileName).name.takeIf { it.isNotBlank() } ?: "document.pdf"
             if (downloads.isDirectory) dialog.directory = downloads.absolutePath
+            // Modal dialog must run on the EDT (it is — Compose onClick runs there).
             dialog.isVisible = true
 
             // dialog.file is null when the user cancels.
             val chosenName = dialog.file ?: return@runCatching
             val chosenDir = dialog.directory ?: downloads.absolutePath
-            File(chosenDir, chosenName).writeBytes(bytes)
+            // The disk write can be large; keep it off the UI thread.
+            Thread {
+                runCatching { File(chosenDir, chosenName).writeBytes(bytes) }
+            }.apply { isDaemon = true }.start()
         }
     }
 }

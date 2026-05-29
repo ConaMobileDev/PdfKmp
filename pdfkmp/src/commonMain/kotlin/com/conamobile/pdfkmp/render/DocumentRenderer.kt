@@ -67,10 +67,22 @@ internal object DocumentRenderer {
         val hasDecoration = spec.pages.any { it.header != null || it.footer != null }
         val totalPages = if (hasDecoration) countTotalPages(spec, metrics) else spec.pages.size
         val state = PageCounter()
-        for (page in spec.pages) {
-            renderPage(page, driver, metrics, totalPages, state)
+        try {
+            for (page in spec.pages) {
+                renderPage(page, driver, metrics, totalPages, state)
+            }
+            return driver.finish()
+        } catch (t: Throwable) {
+            // A draw call threw before finish() could release the backend's
+            // resources (e.g. PdfBox's PDDocument). Close it best-effort so we
+            // don't leak native / file handles, then rethrow the original.
+            try {
+                driver.close()
+            } catch (_: Throwable) {
+                // Ignore cleanup failures; the original exception wins.
+            }
+            throw t
         }
-        return driver.finish()
     }
 
     private fun countTotalPages(spec: DocumentSpec, metrics: FontMetrics): Int {

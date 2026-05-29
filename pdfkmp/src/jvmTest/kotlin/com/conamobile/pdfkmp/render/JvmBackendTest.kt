@@ -88,6 +88,21 @@ class JvmBackendTest {
     }
 
     @Test
+    fun textIsExtractableFromOutput() {
+        // A real content gate (not just page/raster size): the embedded
+        // subset font must round-trip to extractable Unicode text. Catches
+        // a broken cmap / encoding that still renders a valid-looking PDF.
+        Loader.loadPDF(Samples.typography().toByteArray()).use { loaded ->
+            val text = org.apache.pdfbox.text.PDFTextStripper().getText(loaded)
+            assertTrue(text.isNotBlank(), "No extractable text in typography output")
+        }
+        Loader.loadPDF(Samples.helloWorld().toByteArray()).use { loaded ->
+            val text = org.apache.pdfbox.text.PDFTextStripper().getText(loaded).trim()
+            assertTrue(text.isNotEmpty(), "No extractable text in helloWorld output")
+        }
+    }
+
+    @Test
     fun metadataIsWritten() {
         val doc = com.conamobile.pdfkmp.pdf {
             metadata {

@@ -41,9 +41,10 @@ import javax.imageio.ImageIO
  * list. Each document is built by the *same* DSL used on Android and iOS,
  * here encoded by the JVM / PdfBox backend.
  *
- * In the viewer: Ctrl/⌘ + scroll-wheel zooms (anchored at the cursor),
- * the wheel scrolls pages, the download button opens a native Save dialog,
- * and share opens the OS default PDF handler.
+ * In the viewer: a macOS trackpad **pinch** zooms (anchored at the cursor),
+ * **Ctrl/⌘ + mouse wheel** zooms with a mouse, the wheel scrolls pages, the
+ * download button opens a native Save dialog, and share opens the OS default
+ * PDF handler.
  *
  * Run with: `./gradlew :sample-desktop:run`
  */

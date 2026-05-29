@@ -209,10 +209,10 @@ internal class JvmPdfCanvas(
                 appendPath(commands)
                 cs.fill()
             }
-            is PdfPaint.LinearGradient -> drawGradientFill(commands) {
+            is PdfPaint.LinearGradient -> drawGradientFill(commands, uniformAlpha(fill.stops)) {
                 buildAxialShading(fill.startX, fy(fill.startY), fill.endX, fy(fill.endY), fill.stops)
             }
-            is PdfPaint.RadialGradient -> drawGradientFill(commands) {
+            is PdfPaint.RadialGradient -> drawGradientFill(commands, uniformAlpha(fill.stops)) {
                 buildRadialShading(fill.centerX, fy(fill.centerY), fill.radius, fill.stops)
             }
             null -> Unit
@@ -236,14 +236,28 @@ internal class JvmPdfCanvas(
      */
     private inline fun drawGradientFill(
         commands: List<PathCommand>,
+        alpha: Float,
         shading: () -> org.apache.pdfbox.pdmodel.graphics.shading.PDShading,
     ) {
         cs.saveGraphicsState()
-        applyAlpha(1f)
+        applyAlpha(alpha)
         appendPath(commands)
         cs.clip()
         cs.shadingFill(shading())
         cs.restoreGraphicsState()
+    }
+
+    /**
+     * Uniform alpha across all [stops], or `1f` if they differ. PDF axial /
+     * radial shadings carry no alpha channel; a constant non-stroking alpha
+     * reproduces a uniformly-translucent gradient (the common case, e.g.
+     * `Color.withAlpha(0.5f)` start & end). Genuinely per-stop-varying alpha
+     * would need a luminosity soft mask and is left opaque.
+     */
+    private fun uniformAlpha(stops: List<com.conamobile.pdfkmp.style.GradientStop>): Float {
+        if (stops.isEmpty()) return 1f
+        val a = stops.first().color.alpha
+        return if (stops.all { it.color.alpha == a }) a.coerceIn(0f, 1f) else 1f
     }
 
     override fun linkAnnotation(x: Float, y: Float, width: Float, height: Float, url: String) {

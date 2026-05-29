@@ -59,6 +59,17 @@ public interface PdfDriver {
      * and must not be used again.
      */
     public fun finish(): ByteArray
+
+    /**
+     * Releases any underlying resources without producing output. Called by
+     * the renderer when rendering fails partway through (so [finish] is never
+     * reached) to avoid leaking native / file handles. Must be idempotent and
+     * safe to call after [finish]. The default is a no-op — backends whose
+     * resources are already freed by [finish] (or that hold none, like the
+     * Android `PdfDocument` / iOS `CGContext` backends) need not override it;
+     * the JVM PdfBox backend overrides it to close its `PDDocument`.
+     */
+    public fun close() {}
 }
 
 /**

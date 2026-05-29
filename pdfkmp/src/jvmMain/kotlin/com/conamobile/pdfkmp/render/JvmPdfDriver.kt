@@ -80,6 +80,20 @@ internal class JvmPdfDriver(
         }
     }
 
+    /**
+     * Releases the [PDDocument] (and any open content stream) without
+     * producing output — used by the renderer when a draw call throws before
+     * [finish]. Idempotent and safe to call after [finish].
+     */
+    override fun close() {
+        if (!open) return
+        open = false
+        currentStream?.let { runCatching { it.close() } }
+        currentStream = null
+        currentPage = null
+        runCatching { document.close() }
+    }
+
     private fun applyMetadata(metadata: PdfMetadata) {
         val info = document.documentInformation
         metadata.title?.let { info.title = it }

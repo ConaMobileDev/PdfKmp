@@ -93,10 +93,11 @@ private const val DEFAULT_MAX_ZOOM: Float = 5f
 private const val DOUBLE_TAP_ZOOM: Float = 2.5f
 
 /**
- * Multiplicative zoom step applied per mouse-wheel / two-finger-scroll
- * notch while Ctrl (or ⌘ on macOS) is held — the Desktop zoom gesture.
- * Touch platforms never deliver a Ctrl-modified scroll, so the handler
- * that uses this is inert there and pinch-to-zoom stays the mobile path.
+ * Multiplicative zoom step applied per mouse-wheel notch while Ctrl (or ⌘
+ * on macOS) is held — the Desktop mouse zoom gesture. A bare macOS trackpad
+ * pinch goes through the separate magnify path ([installTrackpadPinchZoom]),
+ * not this scroll handler. Touch platforms never deliver a Ctrl-modified
+ * scroll, so this is inert there and pinch-to-zoom stays the mobile path.
  */
 private const val DESKTOP_SCROLL_ZOOM_STEP: Float = 1.12f
 
@@ -139,9 +140,11 @@ private const val DENSITY_REFRESH_DELAY_MS: Long = 250L
  *   scrolling viewport.
  * - **Double tap** (double click on Desktop) toggles between `1×` and a
  *   comfortable reading zoom (`2.5×`).
- * - **Desktop:** Ctrl + scroll wheel (⌘ + scroll on macOS, or a
- *   Ctrl-held two-finger trackpad scroll) zooms anchored under the
- *   cursor; a plain scroll wheel scrolls through pages as usual.
+ * - **Desktop:** a **macOS trackpad pinch** zooms anchored under the
+ *   cursor; **Ctrl/⌘ + mouse wheel** zooms with a mouse; a plain wheel
+ *   scrolls through pages. Windows/Linux trackpads (which don't deliver a
+ *   pinch gesture to the toolkit) use the on-screen ＋ / − controls
+ *   ([showZoomControls]).
  *
  * Sharpness on zoom is handled automatically — the viewer re-rasterises
  * each visible page at `renderDensity * stableZoom` (capped at
@@ -603,9 +606,37 @@ private fun PdfPagesContent(
             }
         }
 
+        // Latest cursor position (Desktop), so a trackpad pinch zooms toward
+        // the pointer rather than the viewport centre.
+        var lastCursor by remember { mutableStateOf<Offset?>(null) }
+
+        // macOS trackpad pinch: a bare pinch is an NSEvent magnify gesture, not
+        // a scroll/wheel event, so it never reaches the pointer handlers above.
+        // We bridge Apple's gesture channel here and feed the accumulated
+        // magnification into the same anchored-zoom path. No-op off macOS.
+        if (zoomEnabled) {
+            DisposableEffect(zoomEnabled, maxZoom) {
+                val dispose = installTrackpadPinchZoom { delta ->
+                    val focus = lastCursor ?: Offset(viewportCenterX, viewportCenterY)
+                    applyZoom(zoom.value * (1f + delta), focus.x, focus.y)
+                }
+                onDispose { dispose() }
+            }
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .pointerInput(Unit) {
+                    // Passive cursor tracker — never consumes, just records the
+                    // pointer position to anchor trackpad-pinch zoom.
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            event.changes.lastOrNull()?.let { lastCursor = it.position }
+                        }
+                    }
+                }
                 .pointerInput(maxZoom, zoomEnabled) {
                     if (!zoomEnabled) return@pointerInput
                     // Initial-pass handler so we can take precedence
@@ -707,14 +738,16 @@ private fun PdfPagesContent(
                 }
                 .pointerInput(zoomEnabled, maxZoom) {
                     if (!zoomEnabled) return@pointerInput
-                    // Desktop zoom: Ctrl/⌘ + scroll wheel (or a Ctrl-held
-                    // two-finger trackpad scroll) zooms, anchored under the
-                    // cursor. Handled in the Initial pass and consumed so the
-                    // LazyColumn doesn't ALSO scroll; a plain (unmodified)
-                    // scroll is left untouched so wheel/two-finger scrolling
-                    // still drives page-to-page navigation. Touch platforms
-                    // never send a Ctrl-modified scroll, so this is a no-op
-                    // there and pinch stays their path.
+                    // Mouse zoom: Ctrl/⌘ + scroll wheel zooms, anchored under
+                    // the cursor. Handled in the Initial pass and consumed so
+                    // the LazyColumn doesn't ALSO scroll; a plain (unmodified)
+                    // scroll is left untouched so the wheel still drives
+                    // page-to-page navigation. macOS trackpad PINCH goes
+                    // through the magnify path, not here. Pure-touch platforms
+                    // never send a Ctrl-modified scroll (so this is inert and
+                    // pinch stays their path); an Android device with a
+                    // physical mouse + keyboard can still Ctrl+wheel to zoom,
+                    // which is the intended behaviour there too.
                     awaitPointerEventScope {
                         while (true) {
                             val event = awaitPointerEvent(PointerEventPass.Initial)
@@ -729,8 +762,11 @@ private fun PdfPagesContent(
                             if (!zoomModifier) continue // plain scroll → scrollables handle it
 
                             val scrollY = change.scrollDelta.y
-                            change.consume()
+                            // Only a vertical delta is a zoom; leave a pure
+                            // horizontal Ctrl-scroll for the scrollables (don't
+                            // consume it, or horizontal panning would be blocked).
                             if (scrollY == 0f) continue
+                            change.consume()
                             // Wheel up reports a negative delta → zoom in.
                             val step = if (scrollY < 0f) {
                                 DESKTOP_SCROLL_ZOOM_STEP
@@ -749,7 +785,13 @@ private fun PdfPagesContent(
                         .width(contentWidth)
                         .fillMaxHeight(),
                     contentPadding = contentPadding,
-                    verticalArrangement = Arrangement.spacedBy(pageSpacing),
+                    // Scale the inter-page gap with the zoom factor so the
+                    // WHOLE content column (pages + gaps) scales uniformly.
+                    // If the gap stayed fixed while pages grew, the cursor-
+                    // anchored zoom math would drift on lower pages (the gap
+                    // contribution to the scroll offset wouldn't scale),
+                    // making pinch zoom toward the wrong point.
+                    verticalArrangement = Arrangement.spacedBy(pageSpacing * zoom.value),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     items(

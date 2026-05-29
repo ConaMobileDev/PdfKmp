@@ -32,7 +32,7 @@ internal class JvmFontMetrics(private val registry: JvmFontRegistry) : FontMetri
         val width = baseWidth + letterSpacing
 
         val descriptor = font.fontDescriptor
-        val descent = if (descriptor != null && descriptor.ascent != 0f) {
+        val descent = if (descriptor != null && descriptor.descent != 0f) {
             -descriptor.descent / 1000f * size
         } else {
             0.2f * size

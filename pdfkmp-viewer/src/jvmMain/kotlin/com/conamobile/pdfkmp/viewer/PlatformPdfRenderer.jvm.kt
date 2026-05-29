@@ -37,16 +37,21 @@ internal actual class PdfPageRenderer private constructor(
         PageSize(box.width, box.height)
     }
 
-    actual suspend fun renderPage(index: Int, density: Float): ImageBitmap? = withContext(Dispatchers.IO) {
-        if (index !in 0 until pageCount) return@withContext null
-        mutex.withLock {
+    actual suspend fun renderPage(index: Int, density: Float): ImageBitmap? {
+        if (index !in 0 until pageCount) return null
+        // Acquire the lock first, then switch to IO — a coroutine merely
+        // waiting for the (single-threaded PdfBox) renderer shouldn't park an
+        // IO worker thread. Mirrors the Android backend's ordering.
+        return mutex.withLock {
             if (closed) return@withLock null
-            // PDF points are 72 DPI; density 2f → 144 DPI, matching the
-            // Android/iOS convention of pixelSize = points × density.
-            val dpi = max(density, 0.5f) * 72f
-            runCatching {
-                renderer.renderImageWithDPI(index, dpi, ImageType.RGB).toComposeImageBitmap()
-            }.getOrNull()
+            withContext(Dispatchers.IO) {
+                // PDF points are 72 DPI; density 2f → 144 DPI, matching the
+                // Android/iOS convention of pixelSize = points × density.
+                val dpi = max(density, 0.5f) * 72f
+                runCatching {
+                    renderer.renderImageWithDPI(index, dpi, ImageType.RGB).toComposeImageBitmap()
+                }.getOrNull()
+            }
         }
     }
 

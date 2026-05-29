@@ -81,29 +81,51 @@ private fun cosArrayOf(vararg values: Float): COSArray = COSArray().apply {
 private fun buildColorFunction(stops: List<GradientStop>): PDFunction {
     val sorted = stops.sortedBy { it.offset }
     if (sorted.size <= 1) {
-        val color = sorted.firstOrNull()?.color
-        return type2(color?.let { rgb(it) } ?: floatArrayOf(0f, 0f, 0f), color?.let { rgb(it) } ?: floatArrayOf(0f, 0f, 0f))
-    }
-    if (sorted.size == 2) {
-        return type2(rgb(sorted[0].color), rgb(sorted[1].color))
+        val color = sorted.firstOrNull()?.let { rgb(it.color) } ?: floatArrayOf(0f, 0f, 0f)
+        return type2(color, color)
     }
 
-    // Multi-stop: stitch one type-2 segment per adjacent stop pair.
-    val dict = COSDictionary()
-    dict.setInt(COSName.FUNCTION_TYPE, 3)
-    dict.setItem(COSName.DOMAIN, cosArrayOf(0f, 1f))
+    // Build a type-3 stitching function whose segment boundaries match the
+    // REAL stop offsets, with constant leading/trailing segments that clamp
+    // the end colours outside [first.offset, last.offset]. This mirrors
+    // Android's Shader.TileMode.CLAMP and iOS's kCGGradientDrawsBefore/After
+    // so a gradient authored with non-0/1 endpoints renders identically on
+    // every platform. (The earlier code stretched the transition across the
+    // whole axis, ignoring the first/last offsets.)
+    val first = sorted.first().offset.coerceIn(0f, 1f)
+    val last = sorted.last().offset.coerceIn(0f, 1f)
 
     val functions = COSArray()
+    val bounds = COSArray()
     val encode = COSArray()
-    for (i in 0 until sorted.size - 1) {
-        functions.add(type2(rgb(sorted[i].color), rgb(sorted[i + 1].color)).cosObject)
+
+    fun addSegment(c0: FloatArray, c1: FloatArray) {
+        functions.add(type2(c0, c1).cosObject)
         encode.add(COSFloat(0f))
         encode.add(COSFloat(1f))
     }
-    val bounds = COSArray()
-    for (i in 1 until sorted.size - 1) {
-        bounds.add(COSFloat(sorted[i].offset.coerceIn(0f, 1f)))
+
+    if (first > 0f) {
+        // Constant clamp from t=0 to the first stop's offset.
+        addSegment(rgb(sorted.first().color), rgb(sorted.first().color))
+        bounds.add(COSFloat(first))
     }
+    for (i in 0 until sorted.size - 1) {
+        addSegment(rgb(sorted[i].color), rgb(sorted[i + 1].color))
+        // Interior boundary between this segment and the next.
+        if (i < sorted.size - 2) {
+            bounds.add(COSFloat(sorted[i + 1].offset.coerceIn(0f, 1f)))
+        }
+    }
+    if (last < 1f) {
+        // Constant clamp from the last stop's offset to t=1.
+        bounds.add(COSFloat(last))
+        addSegment(rgb(sorted.last().color), rgb(sorted.last().color))
+    }
+
+    val dict = COSDictionary()
+    dict.setInt(COSName.FUNCTION_TYPE, 3)
+    dict.setItem(COSName.DOMAIN, cosArrayOf(0f, 1f))
     dict.setItem(COSName.FUNCTIONS, functions)
     dict.setItem(COSName.BOUNDS, bounds)
     dict.setItem(COSName.ENCODE, encode)

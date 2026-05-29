@@ -54,6 +54,8 @@ internal class RecordingPdfDriver(
     }
 
     override fun finish(): ByteArray = delegate.finish()
+
+    override fun close() = delegate.close()
 }
 
 /**

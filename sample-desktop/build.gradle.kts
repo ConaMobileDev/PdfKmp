@@ -15,7 +15,6 @@ kotlin {
         jvmMain.dependencies {
             implementation(project(":pdfkmp"))
             implementation(project(":pdfkmp-viewer"))
-            implementation(project(":pdfkmp-compose-resources"))
 
             // Compose for Desktop — pulls in the Skiko native libs for the
             // current OS plus the runtime/foundation/ui/material3 desktop
@@ -34,6 +33,12 @@ kotlin {
 compose.desktop {
     application {
         mainClass = "com.conamobile.pdfkmp.sampledesktop.MainKt"
+
+        // Opens Apple's internal trackpad-gesture package so PdfKmp's viewer
+        // can reflectively attach a macOS pinch-to-zoom (magnify) listener.
+        // Harmless on Windows/Linux. Consuming desktop apps that want trackpad
+        // pinch must pass the same flag.
+        jvmArgs += listOf("--add-opens", "java.desktop/com.apple.eawt.event=ALL-UNNAMED")
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
