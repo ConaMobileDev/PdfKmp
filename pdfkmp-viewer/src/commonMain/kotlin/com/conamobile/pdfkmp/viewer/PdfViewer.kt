@@ -105,12 +105,25 @@ private const val DESKTOP_SCROLL_ZOOM_STEP: Float = 1.12f
 private const val DESKTOP_BUTTON_ZOOM_STEP: Float = 1.4f
 
 /**
- * Cap the multiplier applied to [PdfViewer]'s `renderDensity` when the
- * document is zoomed in. Going past this on a 2× base produces 4×
- * pixels — already as crisp as a retina screen — so anything higher
- * burns memory without a perceivable gain.
+ * Cap on the multiplier applied to [PdfViewer]'s `renderDensity` while
+ * zoomed in, on **touch** platforms. Mobile RAM is tight, so a 2× boost on
+ * a 2× base (4× pixels — retina-crisp) is the ceiling; going higher risks
+ * OOM on a low-end device for little visible gain.
+ *
+ * Desktop has no such constraint, so it tracks the full zoom factor (up to
+ * `maxZoom`) — see the density `LaunchedEffect` — so text keeps getting
+ * sharper the more you zoom in. The result is still bounded by
+ * [MAX_EFFECTIVE_DENSITY].
  */
 private const val MAX_DENSITY_BOOST: Float = 2f
+
+/**
+ * Absolute ceiling on the effective render density (`renderDensity ×
+ * zoom`), in the `points → pixels` sense. 10 ≈ 720 DPI — past the point of
+ * perceivable sharpening even on a hi-DPI display — and caps the worst-case
+ * per-page bitmap size so an extreme `maxZoom` can't blow up the heap.
+ */
+private const val MAX_EFFECTIVE_DENSITY: Float = 10f
 
 /**
  * Debounce window before a stable zoom value triggers a higher-density
@@ -146,11 +159,12 @@ private const val DENSITY_REFRESH_DELAY_MS: Long = 250L
  *   pinch gesture to the toolkit) use the on-screen ＋ / − controls
  *   ([showZoomControls]).
  *
- * Sharpness on zoom is handled automatically — the viewer re-rasterises
- * each visible page at `renderDensity * stableZoom` (capped at
- * `2×renderDensity`) once the user has stopped pinching. This keeps
- * text crisp at any zoom level without paying the memory cost during
- * the gesture itself.
+ * Sharpness on zoom is handled automatically — once the gesture settles,
+ * the viewer re-rasterises each visible page at `renderDensity × zoom`, so
+ * the deeper you zoom the sharper the text gets. On Desktop this tracks the
+ * full zoom range (up to `maxZoom`); touch platforms cap the boost at `2×`
+ * to bound memory. The re-render is debounced, so the gesture itself stays
+ * smooth (the existing bitmap is scaled until the sharper one is ready).
  *
  * @param source encoded PDF wrapped in a [PdfSource]. Use
  *   [PdfSource.of] to convert from a [PdfDocument] or raw bytes.
@@ -306,10 +320,15 @@ public fun PdfViewer(
         mutableFloatStateOf(renderDensity)
     }
 
-    LaunchedEffect(zoom.value, renderDensity) {
+    LaunchedEffect(zoom.value, renderDensity, maxZoom) {
         delay(DENSITY_REFRESH_DELAY_MS)
-        val multiplier = zoom.value.coerceAtMost(MAX_DENSITY_BOOST)
-        stableEffectiveDensity = renderDensity * multiplier
+        // Desktop tracks the full zoom factor so text keeps sharpening the
+        // more you zoom in (re-rasterised at zoom×renderDensity once the
+        // gesture settles); touch platforms keep the tighter mobile cap for
+        // memory. Both are bounded by the absolute MAX_EFFECTIVE_DENSITY.
+        val boostCap = if (pdfViewerIsDesktop) maxZoom else MAX_DENSITY_BOOST
+        val multiplier = zoom.value.coerceIn(1f, boostCap)
+        stableEffectiveDensity = (renderDensity * multiplier).coerceAtMost(MAX_EFFECTIVE_DENSITY)
     }
 
     // Snap back to 1× whenever the host disables zooming so the
