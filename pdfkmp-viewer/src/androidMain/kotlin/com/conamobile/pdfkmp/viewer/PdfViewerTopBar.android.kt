@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 public actual fun PdfViewerTopBar(
     title: String,
     modifier: Modifier,
+    titleOverflow: PdfTopBarTitleOverflow,
     subtitle: String?,
     backLabel: String?,
     onBack: () -> Unit,
@@ -28,6 +29,7 @@ public actual fun PdfViewerTopBar(
     PdfViewerTopBarMinimalMono(
         title = title,
         modifier = modifier,
+        titleOverflow = titleOverflow,
         subtitle = subtitle,
         onBack = onBack,
         onSearch = onSearch,

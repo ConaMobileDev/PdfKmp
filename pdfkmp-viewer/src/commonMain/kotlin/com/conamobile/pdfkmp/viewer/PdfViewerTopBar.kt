@@ -27,6 +27,11 @@ import androidx.compose.ui.Modifier
  *
  * @param title filename / document name.
  * @param modifier applied to the outer container.
+ * @param titleOverflow how the title behaves when it is too long to
+ *   fit. [PdfTopBarTitleOverflow.Ellipsis] (default) truncates with
+ *   `…` like Android; [PdfTopBarTitleOverflow.Marquee] scrolls it.
+ *   The back affordance and the action icons keep their size on both
+ *   platforms — only the title yields.
  * @param subtitle UPPERCASE meta line for Minimal Mono — typically
  *   `"PDF · 2.4 MB"`.
  * @param backLabel iOS-only previous-screen label rendered next to
@@ -44,6 +49,7 @@ import androidx.compose.ui.Modifier
 public expect fun PdfViewerTopBar(
     title: String,
     modifier: Modifier = Modifier,
+    titleOverflow: PdfTopBarTitleOverflow = PdfTopBarTitleOverflow.Ellipsis,
     subtitle: String? = null,
     backLabel: String? = null,
     onBack: () -> Unit = {},

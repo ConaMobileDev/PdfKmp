@@ -81,6 +81,11 @@ import com.conamobile.pdfkmp.PdfDocument
  *   removes the back affordance entirely.
  * @param backLabel iOS-only previous-screen label rendered next to
  *   the chevron (e.g. `"Files"`). Ignored on Android.
+ * @param titleOverflow how the topbar title behaves when it is too
+ *   long to fit. [PdfTopBarTitleOverflow.Ellipsis] (default) truncates
+ *   it with `…`; [PdfTopBarTitleOverflow.Marquee] scrolls it
+ *   horizontally. The back affordance and the share / search /
+ *   download icons keep their size either way — only the title yields.
  * @param showTopBar master switch for the entire chrome (topbar +
  *   search bar). `false` hides both unconditionally — yields a "poor
  *   viewer" surface that is just pages, indicator, and gestures.
@@ -130,6 +135,7 @@ public fun KmpPdfViewer(
     fileName: String = "document.pdf",
     onBack: (() -> Unit)? = null,
     backLabel: String? = null,
+    titleOverflow: PdfTopBarTitleOverflow = PdfTopBarTitleOverflow.Ellipsis,
     showTopBar: Boolean = true,
     showBack: Boolean = onBack != null,
     showSearch: Boolean = true,
@@ -222,6 +228,7 @@ public fun KmpPdfViewer(
             } else {
                 PdfViewerTopBar(
                     title = title,
+                    titleOverflow = titleOverflow,
                     subtitle = subtitle,
                     backLabel = backLabel,
                     onBack = onBack ?: {},
@@ -319,6 +326,7 @@ public fun KmpPdfViewer(
     fileName: String = "document.pdf",
     onBack: (() -> Unit)? = null,
     backLabel: String? = null,
+    titleOverflow: PdfTopBarTitleOverflow = PdfTopBarTitleOverflow.Ellipsis,
     showTopBar: Boolean = true,
     showBack: Boolean = onBack != null,
     showSearch: Boolean = true,
@@ -345,6 +353,7 @@ public fun KmpPdfViewer(
         fileName = fileName,
         onBack = onBack,
         backLabel = backLabel,
+        titleOverflow = titleOverflow,
         showTopBar = showTopBar,
         showBack = showBack,
         showSearch = showSearch,
@@ -381,6 +390,7 @@ public fun KmpPdfViewer(
     fileName: String = "document.pdf",
     onBack: (() -> Unit)? = null,
     backLabel: String? = null,
+    titleOverflow: PdfTopBarTitleOverflow = PdfTopBarTitleOverflow.Ellipsis,
     showTopBar: Boolean = true,
     showBack: Boolean = onBack != null,
     showSearch: Boolean = true,
@@ -407,6 +417,7 @@ public fun KmpPdfViewer(
         fileName = fileName,
         onBack = onBack,
         backLabel = backLabel,
+        titleOverflow = titleOverflow,
         showTopBar = showTopBar,
         showBack = showBack,
         showSearch = showSearch,
@@ -443,6 +454,7 @@ public fun KmpPdfViewer(
     replaceWith = ReplaceWith(
         "KmpPdfViewer(source = PdfSource.auto(uri), modifier = modifier, " +
             "title = title, fileName = fileName, onBack = onBack, backLabel = backLabel, " +
+            "titleOverflow = titleOverflow, " +
             "showTopBar = showTopBar, showBack = showBack, showSearch = showSearch, " +
             "showShare = showShare, showDownload = showDownload, " +
             "showPageIndicator = showPageIndicator, zoomEnabled = zoomEnabled, " +
@@ -463,6 +475,7 @@ public fun KmpPdfViewer(
     fileName: String = "document.pdf",
     onBack: (() -> Unit)? = null,
     backLabel: String? = null,
+    titleOverflow: PdfTopBarTitleOverflow = PdfTopBarTitleOverflow.Ellipsis,
     showTopBar: Boolean = true,
     showBack: Boolean = onBack != null,
     showSearch: Boolean = true,
@@ -489,6 +502,7 @@ public fun KmpPdfViewer(
         fileName = fileName,
         onBack = onBack,
         backLabel = backLabel,
+        titleOverflow = titleOverflow,
         showTopBar = showTopBar,
         showBack = showBack,
         showSearch = showSearch,

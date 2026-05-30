@@ -1,6 +1,7 @@
 package com.conamobile.pdfkmp.viewer
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,6 +53,11 @@ import com.conamobile.pdfkmp.viewer.icons.LucideShareIcon
  * [PdfViewer] in your own `Scaffold(topBar = { … })`.
  *
  * @param title filename / document name surfaced as the bold first line.
+ * @param titleOverflow how the title line behaves when it is too long
+ *   for the (weighted) title block — [PdfTopBarTitleOverflow.Ellipsis]
+ *   (default) truncates with `…`, [PdfTopBarTitleOverflow.Marquee]
+ *   scrolls it horizontally. The icon chips are fixed-size and never
+ *   shrink either way.
  * @param subtitle optional UPPERCASE meta line — typically
  *   `"PDF · 2.4 MB"` or similar context. Set to `null` to drop the line.
  * @param onBack tap callback for the back chip. Ignored when
@@ -76,6 +82,7 @@ import com.conamobile.pdfkmp.viewer.icons.LucideShareIcon
 public fun PdfViewerTopBarMinimalMono(
     title: String,
     modifier: Modifier = Modifier,
+    titleOverflow: PdfTopBarTitleOverflow = PdfTopBarTitleOverflow.Ellipsis,
     subtitle: String? = null,
     onBack: () -> Unit = {},
     onSearch: () -> Unit = {},
@@ -122,6 +129,7 @@ public fun PdfViewerTopBarMinimalMono(
             MinimalMonoTitleBlock(
                 title = title,
                 subtitle = subtitle,
+                titleOverflow = titleOverflow,
                 modifier = Modifier
                     .weight(1f)
                     .padding(horizontal = 6.dp),
@@ -165,22 +173,39 @@ public fun PdfViewerTopBarMinimalMono(
 private fun MinimalMonoTitleBlock(
     title: String,
     subtitle: String?,
+    titleOverflow: PdfTopBarTitleOverflow,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(
-            text = title,
-            color = MinimalMonoTitleColor,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = (-0.2).sp,
-            lineHeight = 18.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        when (titleOverflow) {
+            PdfTopBarTitleOverflow.Ellipsis -> Text(
+                text = title,
+                color = MinimalMonoTitleColor,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = (-0.2).sp,
+                lineHeight = 18.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+
+            PdfTopBarTitleOverflow.Marquee -> Text(
+                text = title,
+                color = MinimalMonoTitleColor,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = (-0.2).sp,
+                lineHeight = 18.sp,
+                maxLines = 1,
+                softWrap = false,
+                // Scrolls only when the filename overflows the weighted
+                // title block; shorter titles stay static.
+                modifier = Modifier.basicMarquee(),
+            )
+        }
         if (!subtitle.isNullOrBlank()) {
             Text(
                 text = subtitle.uppercase(),
