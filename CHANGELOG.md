@@ -6,6 +6,28 @@ versions follow [Semantic Versioning](https://semver.org). Pre-1.0
 minor versions may break public API; alpha / beta / rc tags signal
 an actively settling surface.
 
+## [1.1.1] — 2026-05-30
+
+### Fixed — `pdfkmp-viewer`
+
+- **iOS topbar action icons no longer shrink or disappear when the
+  title is long.** The Classic iOS topbar centered the filename in an
+  unweighted slot, so a long title greedily consumed the whole bar and
+  collapsed the side columns to zero width — the share icon vanished
+  and the rest shrank. The bar now uses a custom three-slot layout that
+  measures the trailing icons (and back affordance) at their natural
+  size first and hands the title only the symmetric gutter that remains,
+  so the icons are inviolable and the title stays optically centered.
+
+### Added — `pdfkmp-viewer`
+
+- **`PdfTopBarTitleOverflow { Ellipsis, Marquee }`** — choose how a
+  long topbar title behaves. `Ellipsis` (default) truncates with `…`
+  like Android; `Marquee` scrolls the title horizontally when it
+  overflows. Exposed as a `titleOverflow` parameter on `KmpPdfViewer`,
+  `PdfViewerTopBar`, `PdfViewerTopBarClassicIos`, and
+  `PdfViewerTopBarMinimalMono`; applies on Android / Desktop as well.
+
 ## [1.1.0] — 2026-05-29
 
 ### Added — Desktop / JVM support (all three modules)
