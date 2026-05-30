@@ -27,7 +27,7 @@ Available on Maven Central as `io.github.conamobiledev:pdfkmp-viewer`.
 ```kotlin
 // libs.versions.toml
 [versions]
-pdfkmp = "1.0.2"
+pdfkmp = "1.1.1"
 
 [libraries]
 pdfkmp = { module = "io.github.conamobiledev:pdfkmp", version.ref = "pdfkmp" }
@@ -293,6 +293,7 @@ PdfViewer(
 | **`@Composable KmpPdfViewer(uri / document / bytes / source, …)`** | **All-in-one viewer screen — recommended composable entry** |
 | **`KmpPdfLauncher.open(uri / document / bytes, …)`** | **Imperative wrapper — call from any scope** |
 | `PdfViewer(source / document / bytes, …)` | Lower-level viewer (no topbar / search) — for advanced layouts |
+| `PdfViewerTopBar(…)` / `…MinimalMono(…)` / `…ClassicIos(…)` | Standalone topbar variants. `titleOverflow = PdfTopBarTitleOverflow.{Ellipsis, Marquee}` picks how a long title yields — icons never shrink |
 | `PdfSource.Bytes(bytes)` / `PdfSource.Document(bytes, runs, links)` | Sealed input shape |
 | `PdfSource.of(document)` / `PdfSource.of(bytes)` | Convenience factories |
 | `rememberPdfShareAction()` | Action that triggers the system share sheet |

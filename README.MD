@@ -99,7 +99,7 @@ With a version catalog:
 ```toml
 # gradle/libs.versions.toml
 [versions]
-pdfkmp = "1.1.0"
+pdfkmp = "1.1.1"
 
 [libraries]
 pdfkmp = { module = "io.github.conamobiledev:pdfkmp", version.ref = "pdfkmp" }
@@ -127,9 +127,9 @@ Without a version catalog:
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("io.github.conamobiledev:pdfkmp:1.1.0")
-            implementation("io.github.conamobiledev:pdfkmp-compose-resources:1.1.0") // optional
-            implementation("io.github.conamobiledev:pdfkmp-viewer:1.1.0")            // optional
+            implementation("io.github.conamobiledev:pdfkmp:1.1.1")
+            implementation("io.github.conamobiledev:pdfkmp-compose-resources:1.1.1") // optional
+            implementation("io.github.conamobiledev:pdfkmp-viewer:1.1.1")            // optional
         }
     }
 }
@@ -151,7 +151,7 @@ With a version catalog:
 ```toml
 # gradle/libs.versions.toml
 [versions]
-pdfkmp = "1.1.0"
+pdfkmp = "1.1.1"
 
 [libraries]
 pdfkmp-android = { module = "io.github.conamobiledev:pdfkmp-android", version.ref = "pdfkmp" }
@@ -171,8 +171,8 @@ Without a version catalog:
 ```kotlin
 // app/build.gradle.kts
 dependencies {
-    implementation("io.github.conamobiledev:pdfkmp-android:1.1.0")
-    implementation("io.github.conamobiledev:pdfkmp-viewer:1.1.0") // optional
+    implementation("io.github.conamobiledev:pdfkmp-android:1.1.1")
+    implementation("io.github.conamobiledev:pdfkmp-viewer:1.1.1") // optional
 }
 ```
 
@@ -185,8 +185,8 @@ KMP projects with a `jvm()` target need no extra setup — Gradle resolves the D
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("io.github.conamobiledev:pdfkmp-jvm:1.1.0")
-    implementation("io.github.conamobiledev:pdfkmp-viewer-jvm:1.1.0") // optional — Compose for Desktop viewer
+    implementation("io.github.conamobiledev:pdfkmp-jvm:1.1.1")
+    implementation("io.github.conamobiledev:pdfkmp-viewer-jvm:1.1.1") // optional — Compose for Desktop viewer
 }
 ```
 
@@ -756,8 +756,8 @@ The optional `pdfkmp-compose-resources` module wires Compose Multiplatform's typ
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("io.github.conamobiledev:pdfkmp:1.1.0")
-            implementation("io.github.conamobiledev:pdfkmp-compose-resources:1.1.0")
+            implementation("io.github.conamobiledev:pdfkmp:1.1.1")
+            implementation("io.github.conamobiledev:pdfkmp-compose-resources:1.1.1")
         }
     }
 }
@@ -894,7 +894,7 @@ Both APIs accept four input shapes — pick whichever matches what your code alr
 
 ### Features
 
-- **Topbar** — Material-style Minimal Mono on Android & Desktop, Classic iOS Native on iOS. Picks the right variant per platform via expect/actual.
+- **Topbar** — Material-style Minimal Mono on Android & Desktop, Classic iOS Native on iOS. Picks the right variant per platform via expect/actual. Long titles ellipsize (`…`) by default and never shrink or push out the action icons; pass `titleOverflow = PdfTopBarTitleOverflow.Marquee` to scroll the title horizontally instead.
 - **Search** — long-press the search chip → topbar morphs into an inline `TextField`. Matches yellow-highlight in the page; previous / next chevrons cycle through results; auto-scrolls to the active match.
 - **Share** — Material 3 share affordance. Hands the bytes to `Intent.ACTION_SEND` (Android) / `UIActivityViewController` (iOS) / the OS default handler via `java.awt.Desktop.open` (Desktop).
 - **Save** — `MediaStore.Downloads` on Android (Toast on success) / `NSDocumentDirectory` on iOS / a native **Save As** dialog (default `~/Downloads`) on Desktop.
