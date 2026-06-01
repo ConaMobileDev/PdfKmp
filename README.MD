@@ -15,6 +15,7 @@
   <tr>
     <td><img src="docs/screenshots/brochure-1.png" width="380" alt="PdfKmp brochure rendered on Android" /></td>
     <td><img src="docs/screenshots/brochure-2.png" width="380" alt="PdfKmp brochure rendered on iOS" /></td>
+    <td><img src="docs/screenshots/brochure-3.png" width="380" alt="PdfKmp brochure rendered on Desktop" /></td>
   </tr>
 </table>
 
