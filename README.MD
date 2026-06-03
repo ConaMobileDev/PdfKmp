@@ -1243,7 +1243,13 @@ When working on the library locally:
 ./gradlew :sample:installDebug
 ```
 
-For repo conventions and AI-agent guidance see [CLAUDE.md](CLAUDE.md) and [AGENTS.md](AGENTS.md) / `.claude/skills/pdfkmp/SKILL.md` (using the library).
+For repo conventions and AI-agent guidance see [CLAUDE.md](CLAUDE.md) (working **on** this codebase) and [AGENTS.md](AGENTS.md) / `.claude/skills/pdfkmp/SKILL.md` (using the library).
+
+---
+
+## Powered by Claude
+
+This library — the public API, the layout engine, the Android and iOS rendering backends, every test, the sample apps, and this README — was authored end-to-end with [Claude Code](https://claude.com/claude-code), Anthropic's coding agent. Bug reports, suggestions, and PRs welcome.
 
 ---
 
