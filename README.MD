@@ -3,27 +3,37 @@
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.conamobiledev/pdfkmp.svg?label=Maven%20Central&color=blue)](https://central.sonatype.com/artifact/io.github.conamobiledev/pdfkmp)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Kotlin](https://img.shields.io/badge/kotlin-2.3-blue.svg?logo=kotlin)](https://kotlinlang.org)
-[![Platforms](https://img.shields.io/badge/platform-Android%20%7C%20iOS%20%7C%20Desktop-lightgrey.svg)](#installation)
+[![Platforms](https://img.shields.io/badge/platform-Android%20%7C%20iOS%20%7C%20Desktop%20(macOS%20%C2%B7%20Windows%20%C2%B7%20Linux)%20%7C%20Web%20(Wasm)-lightgrey.svg)](#installation)
+[![Docs](https://img.shields.io/badge/docs-conamobiledev.github.io%2FPdfKmp-7c6ff0.svg)](https://conamobiledev.github.io/PdfKmp/)
 
-> Kotlin Multiplatform PDF generator for Android, iOS & Desktop (JVM) — vector-first, type-safe, DSL-driven.
+> Kotlin Multiplatform PDF generator for Android, iOS, Desktop (JVM) & Web (Wasm) — vector-first, type-safe, DSL-driven.
+
+**📖 Full documentation: [conamobiledev.github.io/PdfKmp](https://conamobiledev.github.io/PdfKmp/)** — 20 hand-written guides, every sample, and the [Dokka API reference](https://conamobiledev.github.io/PdfKmp/api/).
 
 <table align="center">
   <tr>
     <td align="center"><strong>Android</strong></td>
-    <td align="center"><strong>iOS</strong></td>
+    <td align="center"><strong>Desktop — macOS · Windows · Linux (JVM)</strong></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/brochure-1.png" width="380" alt="PdfKmp brochure rendered on Android" /></td>
-    <td><img src="docs/screenshots/brochure-2.png" width="380" alt="PdfKmp brochure rendered on iOS" /></td>
-    <td><img src="docs/screenshots/brochure-3.png" width="380" alt="PdfKmp brochure rendered on Desktop" /></td>
+    <td align="center" valign="middle"><img src="docs/screenshots/brochure-1.png" width="300" alt="PdfKmp brochure rendered on Android" /></td>
+    <td align="center" valign="middle"><img src="docs/screenshots/brochure-3.png" width="580" alt="PdfKmp brochure rendered on Desktop (macOS / Windows / Linux)" /></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>iOS</strong></td>
+    <td align="center"><strong>Web (Kotlin/Wasm)</strong></td>
+  </tr>
+  <tr>
+    <td align="center" valign="middle"><img src="docs/screenshots/brochure-2.png" width="300" alt="PdfKmp brochure rendered on iOS" /></td>
+    <td align="center" valign="middle"><img src="docs/screenshots/web-sample.png" width="580" alt="The PdfKmp web sample running in the browser — every PDF generated in-page by Kotlin/Wasm" /></td>
   </tr>
 </table>
 
 <p align="center">
-  <em>The same <code>Samples.brochure()</code> document rendered on Android and iOS — pixel-identical vector output. Try it: <code>Samples.brochure().toByteArray()</code>.</em>
+  <em>The same <code>Samples.brochure()</code> document rendered on Android, iOS and Desktop — pixel-identical vector output — plus the browser sample generating it live on the Web. Try it: <code>Samples.brochure().toByteArray()</code>.</em>
 </p>
 
-PdfKmp lets you build PDF documents from a Compose-style DSL that runs identically on Android, iOS, and Desktop (JVM — macOS, Windows, Linux). Text becomes glyph paths, shapes become path operators — every page stays sharp at any zoom level. The library ships the **Inter** font for cross-platform Latin parity and exposes opt-in references to system CJK / Arabic / Persian fonts so non-Latin scripts render natively on Android and iOS (on Desktop, supply a custom font — see [i18n fonts](#i18n-fonts-cjk--arabic--persian-and-custom-fonts)).
+PdfKmp lets you build PDF documents from a Compose-style DSL that runs identically on Android, iOS, Desktop (JVM — macOS, Windows, Linux), and the browser (Kotlin/Wasm). Text becomes glyph paths, shapes become path operators — every page stays sharp at any zoom level. The library ships the **Inter** font for cross-platform Latin parity and exposes opt-in references to system CJK / Arabic / Persian fonts so non-Latin scripts render natively on Android and iOS (on Desktop, supply a custom font — see [i18n fonts](#i18n-fonts-cjk--arabic--persian-and-custom-fonts)).
 
 **What's in the box:**
 
@@ -45,6 +55,7 @@ See the [platform feature parity](#platform-feature-parity) table for what each 
 | Android | [`android.graphics.pdf.PdfDocument`](https://developer.android.com/reference/android/graphics/pdf/PdfDocument) + `android.graphics.Canvas` |
 | iOS | [`UIGraphicsBeginPDFContextToData`](https://developer.apple.com/documentation/uikit/uigraphicsbeginpdfcontexttodata) + Core Graphics (`CGContext`) |
 | Desktop (JVM) | [Apache PDFBox](https://pdfbox.apache.org/) — pure-Java, runs on macOS / Windows / Linux with no native libraries |
+| Web (Wasm) | `kmpwriter` — PdfKmp's own pure-Kotlin PDF 1.7 writer (no browser PDF API exists), with TrueType subsetting + Flate compression |
 
 Every DSL node funnels into these PDF backends, so the resulting bytes are real, vector PDFs — readable in Preview, Adobe Reader, Chrome, and any spec-compliant viewer. On Desktop the embedded TrueType fonts are subsetted to only the glyphs you draw, so text stays vector and the file stays small.
 
