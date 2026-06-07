@@ -1,16 +1,20 @@
 package com.conamobile.pdfkmp.layout
 
 import com.conamobile.pdfkmp.barcode.Code128Encoder
+import com.conamobile.pdfkmp.barcode.DataMatrixEncoder
+import com.conamobile.pdfkmp.barcode.Ean13Encoder
 import com.conamobile.pdfkmp.barcode.QrCodeGenerator
 import com.conamobile.pdfkmp.geometry.Constraints
 import com.conamobile.pdfkmp.geometry.Size
 import com.conamobile.pdfkmp.image.readImageInfo
 import com.conamobile.pdfkmp.node.AnchorNode
 import com.conamobile.pdfkmp.node.BarcodeNode
+import com.conamobile.pdfkmp.node.BarcodeSymbology
 import com.conamobile.pdfkmp.node.BookmarkNode
 import com.conamobile.pdfkmp.node.BoxNode
 import com.conamobile.pdfkmp.node.ColumnNode
 import com.conamobile.pdfkmp.node.ContainerDecoration
+import com.conamobile.pdfkmp.node.DataMatrixNode
 import com.conamobile.pdfkmp.node.DividerNode
 import com.conamobile.pdfkmp.node.FormCheckBoxNode
 import com.conamobile.pdfkmp.node.FormTextFieldNode
@@ -26,8 +30,8 @@ import com.conamobile.pdfkmp.node.RichTextNode
 import com.conamobile.pdfkmp.node.RowNode
 import com.conamobile.pdfkmp.node.ShapeNode
 import com.conamobile.pdfkmp.node.SpacerNode
+import com.conamobile.pdfkmp.node.TableCellNode
 import com.conamobile.pdfkmp.node.TableNode
-import com.conamobile.pdfkmp.node.TableRowNode
 import com.conamobile.pdfkmp.node.TextNode
 import com.conamobile.pdfkmp.node.TocNode
 import com.conamobile.pdfkmp.node.VectorNode
@@ -143,6 +147,8 @@ public fun measure(
     is QrCodeNode -> measureQrCode(node, constraints)
 
     is BarcodeNode -> measureBarcode(node, constraints)
+
+    is DataMatrixNode -> measureDataMatrix(node, constraints)
 
     is BookmarkNode -> MeasuredBookmark(
         title = node.title,
@@ -430,7 +436,11 @@ private fun measureQrCode(node: QrCodeNode, constraints: Constraints): MeasuredQ
  * resolution; explicit widths and the available slot both clamp it.
  */
 private fun measureBarcode(node: BarcodeNode, constraints: Constraints): MeasuredBarcode {
-    val barcode = Code128Encoder.encode(node.data)
+    val barcode = when (node.symbology) {
+        BarcodeSymbology.Code128 -> Code128Encoder.encode(node.data)
+        BarcodeSymbology.Ean13 -> Ean13Encoder.encode(node.data)
+        BarcodeSymbology.UpcA -> Ean13Encoder.encodeUpcA(node.data)
+    }
     val requested = node.width?.value ?: barcode.totalModules.toFloat()
     val width = if (requested > constraints.maxWidth && constraints.maxWidth > 0f) {
         constraints.maxWidth
@@ -442,6 +452,27 @@ private fun measureBarcode(node: BarcodeNode, constraints: Constraints): Measure
         color = node.color,
         background = node.background,
         size = Size(width = width, height = node.height.value),
+    )
+}
+
+/**
+ * Resolves a Data Matrix node's destination square and runs the encoder.
+ * Mirrors [measureQrCode] — the symbol is clamped to the available width
+ * because a clipped 2D code cannot be read.
+ */
+private fun measureDataMatrix(node: DataMatrixNode, constraints: Constraints): MeasuredDataMatrix {
+    val matrix = DataMatrixEncoder.encode(node.data)
+    val requested = node.size?.value ?: DEFAULT_QR_SIZE
+    val side = if (requested > constraints.maxWidth && constraints.maxWidth > 0f) {
+        constraints.maxWidth
+    } else {
+        requested
+    }
+    return MeasuredDataMatrix(
+        matrix = matrix,
+        color = node.color,
+        background = node.background,
+        size = Size(width = side, height = side),
     )
 }
 
@@ -471,17 +502,127 @@ private fun measureTable(
     }
 
     val columnWidths = resolveColumnWidths(node.columns, tableWidth)
+    val columnCount = columnWidths.size
 
     val orderedRows = buildList {
         node.headerRow?.let { add(it to true) }
         node.rows.forEach { add(it to false) }
     }
+    val rowCount = orderedRows.size
 
-    val measuredRows = orderedRows.map { (rowNode, isHeader) ->
-        measureTableRow(rowNode, isHeader, columnWidths, metrics)
+    // Pass 1 — build the occupancy grid. Walk rows top-to-bottom; within a
+    // row, each declared cell fills the next FREE column(s), skipping slots
+    // already claimed by a colspan/rowspan from an earlier cell or row.
+    // Spans are clamped so a cell never escapes the grid; clamped spans of 1
+    // reproduce the pre-span layout bit-for-bit.
+    val owner = Array(rowCount) { IntArray(columnCount) { -1 } }
+    val placements = ArrayList<CellPlacement>()
+    var nextOwnerId = 0
+
+    for ((rowIndex, rowPair) in orderedRows.withIndex()) {
+        val rowNode = rowPair.first
+        var nextCellIndex = 0
+        var col = 0
+        while (col < columnCount) {
+            if (owner[rowIndex][col] != -1) {
+                // Claimed by a span from above/left — skip it.
+                col++
+                continue
+            }
+            val cellNode = rowNode.cells.getOrNull(nextCellIndex)
+            if (cellNode == null) {
+                // No more declared cells: emit a 1×1 empty filler so the
+                // column geometry (and its separators) survive.
+                placements += CellPlacement(
+                    cellNode = null,
+                    rowIndex = rowIndex,
+                    columnIndex = col,
+                    colSpan = 1,
+                    rowSpan = 1,
+                )
+                owner[rowIndex][col] = nextOwnerId
+                nextOwnerId++
+                col++
+                continue
+            }
+            nextCellIndex++
+            val colSpan = cellNode.colSpan.coerceAtLeast(1).coerceAtMost(columnCount - col)
+            val rowSpan = cellNode.rowSpan.coerceAtLeast(1).coerceAtMost(rowCount - rowIndex)
+            val id = nextOwnerId++
+            for (r in rowIndex until rowIndex + rowSpan) {
+                for (c in col until col + colSpan) {
+                    owner[r][c] = id
+                }
+            }
+            placements += CellPlacement(
+                cellNode = cellNode,
+                rowIndex = rowIndex,
+                columnIndex = col,
+                colSpan = colSpan,
+                rowSpan = rowSpan,
+            )
+            col += colSpan
+        }
     }
 
-    val totalHeight = measuredRows.sumOf { it.height.toDouble() }.toFloat()
+    // Pass 2 — measure each cell at its spanned content width.
+    for (p in placements) {
+        val cellNode = p.cellNode ?: continue
+        val padding = cellNode.style.padding
+        val spannedWidth = spannedColumnWidth(columnWidths, p.columnIndex, p.colSpan)
+        val contentMaxWidth = (spannedWidth - padding.left.value - padding.right.value)
+            .coerceAtLeast(0f)
+        val measured = measure(cellNode.content, Constraints(maxWidth = contentMaxWidth), metrics)
+        p.content = measured
+        p.interiorHeight = padding.top.value + measured.size.height + padding.bottom.value
+    }
+
+    // Pass 3 — resolve row heights. Non-row-spanning cells set the baseline;
+    // then each rowspan cell whose content exceeds the sum of its rows pushes
+    // the deficit out equally across the rows it covers.
+    val rowHeights = FloatArray(rowCount)
+    for (p in placements) {
+        if (p.rowSpan == 1 && p.interiorHeight > rowHeights[p.rowIndex]) {
+            rowHeights[p.rowIndex] = p.interiorHeight
+        }
+    }
+    for ((rowIndex, rowPair) in orderedRows.withIndex()) {
+        val minH = rowPair.first.minHeight?.value ?: 0f
+        if (minH > rowHeights[rowIndex]) rowHeights[rowIndex] = minH
+    }
+    for (p in placements) {
+        if (p.rowSpan <= 1 || p.cellNode == null) continue
+        var covered = 0f
+        for (r in p.rowIndex until p.rowIndex + p.rowSpan) covered += rowHeights[r]
+        val deficit = p.interiorHeight - covered
+        if (deficit > 0f) {
+            val share = deficit / p.rowSpan
+            for (r in p.rowIndex until p.rowIndex + p.rowSpan) rowHeights[r] += share
+        }
+    }
+
+    // Pass 4 — turn placements into measured rows. Each cell appears in the
+    // row it starts in, carries its spanned width/height, and gets its
+    // cross-axis content offsets resolved against the spanned box.
+    val rowCells = Array(rowCount) { ArrayList<MeasuredTableCell>() }
+    for (p in placements) {
+        val offsetX = spannedColumnWidth(columnWidths, 0, p.columnIndex)
+        val spannedWidth = spannedColumnWidth(columnWidths, p.columnIndex, p.colSpan)
+        var spannedHeight = 0f
+        for (r in p.rowIndex until p.rowIndex + p.rowSpan) spannedHeight += rowHeights[r]
+        rowCells[p.rowIndex] += measurePlacedCell(p, offsetX, spannedWidth, spannedHeight)
+    }
+
+    val measuredRows = orderedRows.mapIndexed { rowIndex, rowPair ->
+        MeasuredTableRow(
+            height = rowHeights[rowIndex],
+            cells = rowCells[rowIndex],
+            background = rowPair.first.background,
+            isHeader = rowPair.second,
+        )
+    }
+
+    val totalHeight = rowHeights.sum()
 
     return MeasuredTable(
         columnWidths = columnWidths,
@@ -492,6 +633,96 @@ private fun measureTable(
         cornerRadius = node.cornerRadius.value,
         size = Size(width = tableWidth, height = totalHeight),
         repeatHeader = node.repeatHeader,
+        cellOwners = owner.map { it.toList() },
+    )
+}
+
+/** Sum of [count] column widths starting at [start] (clamped to the list). */
+private fun spannedColumnWidth(columnWidths: List<Float>, start: Int, count: Int): Float {
+    var sum = 0f
+    var c = start
+    val end = start + count
+    while (c < end && c < columnWidths.size) {
+        sum += columnWidths[c]
+        c++
+    }
+    return sum
+}
+
+/**
+ * Intermediate record threaded through the table measurement passes. Mutable
+ * for the in-place measure / height-resolution steps; never escapes
+ * [measureTable].
+ */
+private class CellPlacement(
+    val cellNode: TableCellNode?,
+    val rowIndex: Int,
+    val columnIndex: Int,
+    val colSpan: Int,
+    val rowSpan: Int,
+    var content: MeasuredNode? = null,
+    var interiorHeight: Float = 0f,
+)
+
+/**
+ * Finalises one [CellPlacement] into a [MeasuredTableCell]: positions the
+ * content within the spanned box using the cell's alignment, mirroring the
+ * single-cell path so spans of 1 stay byte-for-byte identical.
+ */
+private fun measurePlacedCell(
+    p: CellPlacement,
+    offsetX: Float,
+    spannedWidth: Float,
+    spannedHeight: Float,
+): MeasuredTableCell {
+    val cellNode = p.cellNode
+    if (cellNode == null) {
+        return MeasuredTableCell(
+            content = MeasuredBlock(Size(0f, 0f)),
+            style = com.conamobile.pdfkmp.style.TableCellStyle(),
+            offsetX = offsetX,
+            width = spannedWidth,
+            contentOffsetX = 0f,
+            contentOffsetY = 0f,
+            columnIndex = p.columnIndex,
+            colSpan = p.colSpan,
+            rowSpan = p.rowSpan,
+            spannedHeight = spannedHeight,
+        )
+    }
+    val padding = cellNode.style.padding
+    val content = p.content ?: MeasuredBlock(Size(0f, 0f))
+    val contentBoxWidth = (spannedWidth - padding.left.value - padding.right.value).coerceAtLeast(0f)
+    val contentBoxHeight = (spannedHeight - padding.top.value - padding.bottom.value).coerceAtLeast(0f)
+    // Same dedup as columns/boxes: a non-Start cell alignment must not stack
+    // on top of a non-Start TextAlign that already shifts glyphs across the
+    // cell's content width.
+    val effectiveContentWidth = if (cellNode.style.horizontalAlignment == HorizontalAlignment.Start) {
+        content.size.width
+    } else {
+        minOf(effectiveCrossWidth(content), contentBoxWidth)
+    }
+    val crossX = horizontalAlignmentOffset(
+        childWidth = effectiveContentWidth,
+        containerWidth = contentBoxWidth,
+        alignment = cellNode.style.horizontalAlignment,
+    )
+    val crossY = verticalAlignmentOffset(
+        childHeight = content.size.height,
+        containerHeight = contentBoxHeight,
+        alignment = cellNode.style.verticalAlignment,
+    )
+    return MeasuredTableCell(
+        content = content,
+        style = cellNode.style,
+        offsetX = offsetX,
+        width = spannedWidth,
+        contentOffsetX = padding.left.value + crossX,
+        contentOffsetY = padding.top.value + crossY,
+        columnIndex = p.columnIndex,
+        colSpan = p.colSpan,
+        rowSpan = p.rowSpan,
+        spannedHeight = spannedHeight,
     )
 }
 
@@ -523,93 +754,6 @@ private fun resolveColumnWidths(columns: List<TableColumn>, tableWidth: Float): 
             is TableColumn.Weight -> if (totalWeight <= 0f) 0f else remaining * (spec.weight / totalWeight)
         }
     }
-}
-
-private fun measureTableRow(
-    row: TableRowNode,
-    isHeader: Boolean,
-    columnWidths: List<Float>,
-    metrics: FontMetrics,
-): MeasuredTableRow {
-    val placedCells = ArrayList<MeasuredTableCell>(columnWidths.size)
-    var maxCellHeight = 0f
-    var cellLeft = 0f
-
-    for ((columnIndex, columnWidth) in columnWidths.withIndex()) {
-        val cellNode = row.cells.getOrNull(columnIndex)
-        if (cellNode == null) {
-            placedCells += MeasuredTableCell(
-                content = MeasuredBlock(Size(0f, 0f)),
-                style = com.conamobile.pdfkmp.style.TableCellStyle(),
-                offsetX = cellLeft,
-                width = columnWidth,
-                contentOffsetX = 0f,
-                contentOffsetY = 0f,
-            )
-            cellLeft += columnWidth
-            continue
-        }
-        val padding = cellNode.style.padding
-        val contentMaxWidth = (columnWidth - padding.left.value - padding.right.value)
-            .coerceAtLeast(0f)
-        val contentMeasured = measure(
-            cellNode.content,
-            Constraints(maxWidth = contentMaxWidth),
-            metrics,
-        )
-        val cellInteriorHeight = padding.top.value + contentMeasured.size.height + padding.bottom.value
-        if (cellInteriorHeight > maxCellHeight) maxCellHeight = cellInteriorHeight
-
-        placedCells += MeasuredTableCell(
-            content = contentMeasured,
-            style = cellNode.style,
-            offsetX = cellLeft,
-            width = columnWidth,
-            contentOffsetX = padding.left.value,
-            contentOffsetY = padding.top.value,
-        )
-        cellLeft += columnWidth
-    }
-
-    val rowHeight = maxOf(maxCellHeight, row.minHeight?.value ?: 0f)
-
-    // Re-resolve cross-axis offsets now that the row's full height is known.
-    val finalCells = placedCells.mapIndexed { i, placed ->
-        val cellNode = row.cells.getOrNull(i)
-        if (cellNode == null) return@mapIndexed placed
-        val padding = cellNode.style.padding
-        val contentBoxHeight = (rowHeight - padding.top.value - padding.bottom.value).coerceAtLeast(0f)
-        val contentBoxWidth = (placed.width - padding.left.value - padding.right.value).coerceAtLeast(0f)
-        // Same dedup as columns/boxes: a non-Start cell alignment must not
-        // stack on top of a non-Start TextAlign that already shifts glyphs
-        // across the cell's content width.
-        val effectiveContentWidth = if (cellNode.style.horizontalAlignment == HorizontalAlignment.Start) {
-            placed.content.size.width
-        } else {
-            minOf(effectiveCrossWidth(placed.content), contentBoxWidth)
-        }
-        val crossX = horizontalAlignmentOffset(
-            childWidth = effectiveContentWidth,
-            containerWidth = contentBoxWidth,
-            alignment = cellNode.style.horizontalAlignment,
-        )
-        val crossY = verticalAlignmentOffset(
-            childHeight = placed.content.size.height,
-            containerHeight = contentBoxHeight,
-            alignment = cellNode.style.verticalAlignment,
-        )
-        placed.copy(
-            contentOffsetX = padding.left.value + crossX,
-            contentOffsetY = padding.top.value + crossY,
-        )
-    }
-
-    return MeasuredTableRow(
-        height = rowHeight,
-        cells = finalCells,
-        background = row.background,
-        isHeader = isHeader,
-    )
 }
 
 private fun horizontalAlignmentOffset(
@@ -1051,6 +1195,7 @@ private fun MeasuredNode.withMinWidth(minWidth: Float): MeasuredNode = when (thi
     is MeasuredLink -> copy(size = size.copy(width = maxOf(size.width, minWidth)))
     is MeasuredQrCode -> copy(size = size.copy(width = maxOf(size.width, minWidth)))
     is MeasuredBarcode -> copy(size = size.copy(width = maxOf(size.width, minWidth)))
+    is MeasuredDataMatrix -> copy(size = size.copy(width = maxOf(size.width, minWidth)))
     is MeasuredBookmark -> this // Zero-size markers never stretch.
     is MeasuredAnchor -> this
     // Form widgets keep their declared box so the static fallback and the
@@ -1077,6 +1222,7 @@ private fun MeasuredNode.withMinHeight(minHeight: Float): MeasuredNode = when (t
     is MeasuredLink -> copy(size = size.copy(height = maxOf(size.height, minHeight)))
     is MeasuredQrCode -> copy(size = size.copy(height = maxOf(size.height, minHeight)))
     is MeasuredBarcode -> copy(size = size.copy(height = maxOf(size.height, minHeight)))
+    is MeasuredDataMatrix -> copy(size = size.copy(height = maxOf(size.height, minHeight)))
     is MeasuredBookmark -> this // Zero-size markers never stretch.
     is MeasuredAnchor -> this
     is MeasuredFormTextField -> this

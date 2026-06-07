@@ -11,6 +11,7 @@ import com.conamobile.pdfkmp.layout.HorizontalArrangement
 import com.conamobile.pdfkmp.layout.PageBreakStrategy
 import com.conamobile.pdfkmp.layout.VerticalAlignment
 import com.conamobile.pdfkmp.layout.VerticalArrangement
+import com.conamobile.pdfkmp.node.BarcodeSymbology
 import com.conamobile.pdfkmp.pdf
 import com.conamobile.pdfkmp.style.BorderSides
 import com.conamobile.pdfkmp.style.BorderStroke
@@ -743,6 +744,42 @@ public object Samples {
                             }
                         }
                     }
+                }
+            }
+
+            spacer(height = 24.dp)
+
+            // Merged cells: a colspan header banner and a rowspan label that
+            // covers two body rows, exercising the occupancy-grid layout.
+            text("Merged cells (colSpan / rowSpan)") {
+                fontSize = 18.sp
+                fontWeight = FontWeight.SemiBold
+            }
+            spacer(height = 8.dp)
+            table(
+                columns = listOf(
+                    TableColumn.Weight(1f),
+                    TableColumn.Weight(1f),
+                    TableColumn.Weight(1f),
+                ),
+                border = TableBorder(color = PdfColor.fromRgb(0xCFD8DC), width = 1.dp),
+                cellPadding = Padding.symmetric(horizontal = 10.dp, vertical = 8.dp),
+            ) {
+                row(background = PdfColor.fromRgb(0xECEFF1)) {
+                    // One banner spanning all three columns.
+                    cell("Quarterly summary", horizontalAlignment = HorizontalAlignment.Center, colSpan = 3) {
+                        bold = true
+                    }
+                }
+                row {
+                    // Label spanning the next two body rows.
+                    cell("H1", verticalAlignment = VerticalAlignment.Center, rowSpan = 2) { bold = true }
+                    cell("Q1")
+                    cell("+4%", horizontalAlignment = HorizontalAlignment.End)
+                }
+                row {
+                    cell("Q2")
+                    cell("+7%", horizontalAlignment = HorizontalAlignment.End)
                 }
             }
 
@@ -2025,10 +2062,32 @@ public object Samples {
                 barcode("INV-2026-00042", height = 50.dp)
                 text("INV-2026-00042") { fontSize = 10.sp; align = TextAlign.Start }
             }
-            column(spacing = 4.dp) {
-                // All-digit payloads compress via code set C automatically.
-                barcode("4006381333931", height = 50.dp)
-                text("4006381333931") { fontSize = 10.sp }
+
+            text("EAN-13 / UPC-A — retail product codes:") { bold = true }
+            row(spacing = 24.dp, verticalAlignment = VerticalAlignment.Top) {
+                column(spacing = 4.dp) {
+                    // 12 digits → the check digit is computed for you.
+                    barcode("400638133393", symbology = BarcodeSymbology.Ean13, height = 50.dp)
+                    text("EAN-13 4006381333931") { fontSize = 9.sp; color = PdfColor.Gray }
+                }
+                column(spacing = 4.dp) {
+                    barcode("036000291452", symbology = BarcodeSymbology.UpcA, height = 50.dp)
+                    text("UPC-A 036000291452") { fontSize = 9.sp; color = PdfColor.Gray }
+                }
+            }
+
+            spacer(height = 8.dp)
+
+            text("Data Matrix (ECC 200) — compact 2D codes:") { bold = true }
+            row(spacing = 24.dp, verticalAlignment = VerticalAlignment.Top) {
+                column(spacing = 4.dp) {
+                    dataMatrix("PdfKmp", size = 90.dp)
+                    text("ASCII payload") { fontSize = 9.sp; color = PdfColor.Gray }
+                }
+                column(spacing = 4.dp) {
+                    dataMatrix("SN-2026-00042", size = 90.dp, color = PdfColor(0.1f, 0.2f, 0.5f))
+                    text("Serial, brand colour") { fontSize = 9.sp; color = PdfColor.Gray }
+                }
             }
         }
     }

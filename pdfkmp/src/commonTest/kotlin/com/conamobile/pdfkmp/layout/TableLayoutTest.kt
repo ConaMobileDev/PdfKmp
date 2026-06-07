@@ -170,8 +170,150 @@ class TableLayoutTest {
     private fun cell(
         content: com.conamobile.pdfkmp.node.PdfNode,
         padding: Padding = Padding.Zero,
+        colSpan: Int = 1,
+        rowSpan: Int = 1,
     ): TableCellNode = TableCellNode(
         content = ColumnNode(listOf(content)),
         style = TableCellStyle(padding = padding),
+        colSpan = colSpan,
+        rowSpan = rowSpan,
     )
+
+    @Test
+    fun colSpan_cellTakesBothColumnWidths_andFollowingCellShiftsRight() {
+        val table = simpleTable(
+            columns = listOf(
+                TableColumn.Fixed(40.dp),
+                TableColumn.Fixed(40.dp),
+                TableColumn.Fixed(40.dp),
+            ),
+            rows = listOf(
+                TableRowNode(
+                    cells = listOf(
+                        cell(SpacerNode(width = 10.dp, height = 10.dp), colSpan = 2),
+                        cell(SpacerNode(width = 10.dp, height = 10.dp)),
+                    ),
+                ),
+            ),
+        )
+        val measured = measure(table, Constraints(maxWidth = 200f), metrics) as MeasuredTable
+        val cells = measured.rows.single().cells
+
+        assertEquals(2, cells.size)
+        // The colspan cell starts at column 0 and is two columns wide.
+        assertEquals(0, cells[0].columnIndex)
+        assertEquals(2, cells[0].colSpan)
+        assertEquals(80f, cells[0].width)
+        assertEquals(0f, cells[0].offsetX)
+        // The following cell lands in column 3 (offset = first two widths).
+        assertEquals(2, cells[1].columnIndex)
+        assertEquals(80f, cells[1].offsetX)
+        assertEquals(40f, cells[1].width)
+    }
+
+    @Test
+    fun rowSpan_secondRowFirstCellLandsInColumnTwo() {
+        val table = simpleTable(
+            columns = listOf(TableColumn.Fixed(40.dp), TableColumn.Fixed(40.dp)),
+            rows = listOf(
+                TableRowNode(
+                    cells = listOf(
+                        cell(SpacerNode(width = 10.dp, height = 10.dp), rowSpan = 2),
+                        cell(SpacerNode(width = 10.dp, height = 10.dp)),
+                    ),
+                ),
+                TableRowNode(
+                    cells = listOf(cell(SpacerNode(width = 10.dp, height = 10.dp))),
+                ),
+            ),
+        )
+        val measured = measure(table, Constraints(maxWidth = 200f), metrics) as MeasuredTable
+
+        val row0 = measured.rows[0].cells
+        val row1 = measured.rows[1].cells
+        // Row 0 holds the spanning cell (col 0) and a normal cell (col 1).
+        assertEquals(listOf(0, 1), row0.map { it.columnIndex })
+        assertEquals(2, row0[0].rowSpan)
+        // Row 1 has only ONE cell — the rowspan occupies col 0, so its single
+        // declared cell falls into column 1.
+        assertEquals(1, row1.size)
+        assertEquals(1, row1[0].columnIndex)
+        assertEquals(40f, row1[0].offsetX)
+    }
+
+    @Test
+    fun rowSpan_spannedCellDrawnHeightCoversBothRows() {
+        val table = simpleTable(
+            columns = listOf(TableColumn.Fixed(40.dp), TableColumn.Fixed(40.dp)),
+            rows = listOf(
+                TableRowNode(
+                    cells = listOf(
+                        cell(SpacerNode(width = 10.dp, height = 10.dp), rowSpan = 2),
+                        cell(SpacerNode(width = 10.dp, height = 20.dp)),
+                    ),
+                ),
+                TableRowNode(
+                    cells = listOf(cell(SpacerNode(width = 10.dp, height = 30.dp))),
+                ),
+            ),
+        )
+        val measured = measure(table, Constraints(maxWidth = 200f), metrics) as MeasuredTable
+        // Row 0 height = 20 (its non-spanning cell), row 1 height = 30.
+        assertEquals(20f, measured.rows[0].height)
+        assertEquals(30f, measured.rows[1].height)
+        // The rowspan cell's drawn height covers both rows: 20 + 30 = 50.
+        assertEquals(50f, measured.rows[0].cells[0].spannedHeight)
+    }
+
+    @Test
+    fun tallRowSpanContent_growsBothRowsEqually() {
+        val table = simpleTable(
+            columns = listOf(TableColumn.Fixed(40.dp), TableColumn.Fixed(40.dp)),
+            rows = listOf(
+                TableRowNode(
+                    cells = listOf(
+                        // 100-tall content across two 10-tall rows: deficit 80
+                        // splits 40 / 40 between the two rows.
+                        cell(SpacerNode(width = 10.dp, height = 100.dp), rowSpan = 2),
+                        cell(SpacerNode(width = 10.dp, height = 10.dp)),
+                    ),
+                ),
+                TableRowNode(
+                    cells = listOf(cell(SpacerNode(width = 10.dp, height = 10.dp))),
+                ),
+            ),
+        )
+        val measured = measure(table, Constraints(maxWidth = 200f), metrics) as MeasuredTable
+        assertEquals(50f, measured.rows[0].height)
+        assertEquals(50f, measured.rows[1].height)
+        assertEquals(100f, measured.rows[0].cells[0].spannedHeight)
+    }
+
+    @Test
+    fun spansOfOne_matchPreSpanGeometryExactly() {
+        // A plain 2×2 table must produce identical geometry whether or not
+        // the span fields are touched — guards the "spans of 1 = today's
+        // behavior" invariant.
+        val table = simpleTable(
+            columns = listOf(TableColumn.Fixed(40.dp), TableColumn.Fixed(60.dp)),
+            rows = listOf(
+                TableRowNode(cells = listOf(
+                    cell(SpacerNode(width = 10.dp, height = 12.dp)),
+                    cell(SpacerNode(width = 10.dp, height = 18.dp)),
+                )),
+                TableRowNode(cells = listOf(
+                    cell(SpacerNode(width = 10.dp, height = 24.dp)),
+                    cell(SpacerNode(width = 10.dp, height = 6.dp)),
+                )),
+            ),
+        )
+        val measured = measure(table, Constraints(maxWidth = 200f), metrics) as MeasuredTable
+        assertEquals(listOf(40f, 60f), measured.columnWidths)
+        assertEquals(18f, measured.rows[0].height)
+        assertEquals(24f, measured.rows[1].height)
+        assertEquals(listOf(0f, 40f), measured.rows[0].cells.map { it.offsetX })
+        assertEquals(listOf(40f, 60f), measured.rows[0].cells.map { it.width })
+        // Every cell carries the trivial span values.
+        assertTrue(measured.rows.all { row -> row.cells.all { it.colSpan == 1 && it.rowSpan == 1 } })
+    }
 }

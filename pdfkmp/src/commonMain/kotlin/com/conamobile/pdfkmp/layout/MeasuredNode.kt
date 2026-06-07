@@ -1,6 +1,7 @@
 package com.conamobile.pdfkmp.layout
 
 import com.conamobile.pdfkmp.barcode.Code128Barcode
+import com.conamobile.pdfkmp.barcode.DataMatrix
 import com.conamobile.pdfkmp.barcode.QrMatrix
 import com.conamobile.pdfkmp.geometry.ContentScale
 import com.conamobile.pdfkmp.geometry.Size
@@ -268,9 +269,29 @@ public data class MeasuredTable(
     val cornerRadius: Float,
     override val size: Size,
     val repeatHeader: Boolean = true,
+    /**
+     * Occupancy grid: `cellOwners[rowIndex][columnIndex]` is a stable id of
+     * the cell that paints that grid slot. Slots covered by the same spanned
+     * cell share an id; every other slot (including empty fillers) gets its
+     * own unique id so the renderer still strokes separators around them.
+     *
+     * The renderer derives per-segment separator lines from this grid so an
+     * inner border never crosses a merged (col/row-spanned) region. Empty by
+     * default for backward compatibility; always populated by the layout
+     * engine.
+     */
+    val cellOwners: List<List<Int>> = emptyList(),
 ) : MeasuredNode
 
-/** One measured row in a [MeasuredTable]. */
+/**
+ * One measured row in a [MeasuredTable].
+ *
+ * [cells] holds only the cells that *start* in this row (spanned cells appear
+ * once, in their top row); slots covered by a cell from an earlier row or an
+ * earlier column are not repeated here. Each cell carries its own
+ * [MeasuredTableCell.columnIndex] so the renderer can place it without
+ * re-deriving the grid.
+ */
 public data class MeasuredTableRow(
     val height: Float,
     val cells: List<MeasuredTableCell>,
@@ -297,6 +318,19 @@ public data class MeasuredQrCode(
  */
 public data class MeasuredBarcode(
     val barcode: Code128Barcode,
+    val color: PdfColor,
+    val background: PdfColor?,
+    override val size: Size,
+) : MeasuredNode
+
+/**
+ * Measurement result for a [com.conamobile.pdfkmp.node.DataMatrixNode]. The
+ * module matrix is computed during measurement (pure common code) so the
+ * renderer only has to turn dark modules into filled rectangles, exactly like
+ * [MeasuredQrCode].
+ */
+public data class MeasuredDataMatrix(
+    val matrix: DataMatrix,
     val color: PdfColor,
     val background: PdfColor?,
     override val size: Size,
@@ -346,9 +380,21 @@ public data class MeasuredTableCell(
     val style: TableCellStyle,
     /** Top-left x-offset of the cell, relative to the table's top-left. */
     val offsetX: Float,
-    /** Width of the cell (= column width). */
+    /** Width of the cell (= sum of the [colSpan] column widths). */
     val width: Float,
     /** Top-left y-offset within the row's interior (always 0 unless we add row sub-padding). */
     val contentOffsetX: Float,
     val contentOffsetY: Float,
+    /** Grid column this cell starts at (its left edge). */
+    val columnIndex: Int = 0,
+    /** Number of columns the cell occupies (>= 1). */
+    val colSpan: Int = 1,
+    /** Number of rows the cell occupies (>= 1). */
+    val rowSpan: Int = 1,
+    /**
+     * Drawn height of the cell — the sum of the heights of the [rowSpan] rows
+     * it covers. Equals the starting row's height for non-spanning cells, so
+     * existing single-row behaviour is unchanged.
+     */
+    val spannedHeight: Float = 0f,
 )

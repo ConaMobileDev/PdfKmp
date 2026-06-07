@@ -98,12 +98,22 @@ public class TableRowScope internal constructor(
      *
      * Inside [block] you have a normal [ContainerScope] — you can stack
      * multiple [text]s, embed an [image], or even nest a [row] / [column].
+     *
+     * @param colSpan how many columns the cell occupies. Values > 1 merge
+     *   this cell across the next `colSpan - 1` columns of the same row; the
+     *   row's later cells shift right to fill the remaining columns.
+     * @param rowSpan how many rows the cell occupies. Values > 1 extend the
+     *   cell downward across the next `rowSpan - 1` rows; those rows skip the
+     *   occupied column(s) when laying out their own cells. Both spans are
+     *   clamped to the grid at layout time.
      */
     public fun cell(
         verticalAlignment: VerticalAlignment = VerticalAlignment.Top,
         horizontalAlignment: HorizontalAlignment = HorizontalAlignment.Start,
         background: PdfColor? = null,
         padding: Padding? = null,
+        colSpan: Int = 1,
+        rowSpan: Int = 1,
         block: ContainerScope.() -> Unit,
     ) {
         val cellScope = TableCellContentScope(parentTextStyle).apply(block)
@@ -124,6 +134,8 @@ public class TableRowScope internal constructor(
                 horizontalAlignment = horizontalAlignment,
                 background = background,
             ),
+            colSpan = colSpan.coerceAtLeast(1),
+            rowSpan = rowSpan.coerceAtLeast(1),
         )
     }
 
@@ -131,7 +143,8 @@ public class TableRowScope internal constructor(
      * Adds a simple text cell.
      *
      * Equivalent to `cell { text(value, block) }` but keeps the call site
-     * readable when the cell contents are a single short label.
+     * readable when the cell contents are a single short label. See the
+     * block overload for [colSpan] / [rowSpan] semantics.
      */
     public fun cell(
         value: String,
@@ -139,6 +152,8 @@ public class TableRowScope internal constructor(
         horizontalAlignment: HorizontalAlignment = HorizontalAlignment.Start,
         background: PdfColor? = null,
         padding: Padding? = null,
+        colSpan: Int = 1,
+        rowSpan: Int = 1,
         textBlock: TextScope.() -> Unit = {},
     ) {
         cell(
@@ -146,6 +161,8 @@ public class TableRowScope internal constructor(
             horizontalAlignment = horizontalAlignment,
             background = background,
             padding = padding,
+            colSpan = colSpan,
+            rowSpan = rowSpan,
         ) {
             text(value, textBlock)
         }

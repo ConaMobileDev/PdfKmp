@@ -10,6 +10,7 @@ import com.conamobile.pdfkmp.layout.MeasuredInternalLink
 import com.conamobile.pdfkmp.layout.MeasuredKeepTogether
 import com.conamobile.pdfkmp.layout.MeasuredBox
 import com.conamobile.pdfkmp.layout.MeasuredColumn
+import com.conamobile.pdfkmp.layout.MeasuredDataMatrix
 import com.conamobile.pdfkmp.layout.MeasuredDivider
 import com.conamobile.pdfkmp.layout.MeasuredFormCheckBox
 import com.conamobile.pdfkmp.layout.MeasuredFormTextField
@@ -457,66 +458,82 @@ internal object DocumentRenderer {
         canvas: PdfCanvas,
         xOffset: Float,
     ): RenderState {
-        val header = node.rows.firstOrNull()?.takeIf { it.isHeader }
-        val bodyRows = if (header != null) node.rows.drop(1) else node.rows
+        val hasHeader = node.rows.firstOrNull()?.isHeader == true
+        val header = if (hasHeader) node.rows.first() else null
+        val headerOwners = if (hasHeader) node.cellOwners.getOrNull(0) else null
+        val firstBodyIndex = if (hasHeader) 1 else 0
+
+        // Group body rows into atomic blocks so a rowspan is never split
+        // across a page boundary. A block ends only at a row index where no
+        // spanning cell reaches past it. Single-row tables collapse to one
+        // block per row, reproducing the old per-row chunking.
+        val groups = atomicBodyGroups(node, firstBodyIndex)
 
         var currentCanvas = canvas
         var currentTop = cursorY
-        var remaining = bodyRows
+        var remaining = groups
         var isFirstChunk = true
 
         while (remaining.isNotEmpty()) {
             val available = frame.bottom - currentTop
-            val chunkRows = mutableListOf<MeasuredTableRow>()
+            val chunkGroups = mutableListOf<BodyGroup>()
             var chunkHeight = 0f
 
             // Continuation pages re-draw the header when requested.
-            if (header != null && (isFirstChunk || node.repeatHeader)) {
-                chunkRows += header
-                chunkHeight += header.height
-            }
+            val includeHeader = header != null && (isFirstChunk || node.repeatHeader)
+            if (includeHeader) chunkHeight += header.height
 
-            for (row in remaining) {
-                if (chunkHeight + row.height <= available) {
-                    chunkRows += row
-                    chunkHeight += row.height
+            for (group in remaining) {
+                if (chunkHeight + group.height <= available) {
+                    chunkGroups += group
+                    chunkHeight += group.height
                     continue
                 }
-                // The row doesn't fit. If this chunk has no body yet and
-                // the page is fresh, the row can never fit anywhere —
-                // take it alone and let it overflow rather than loop
-                // forever or drop it.
-                val chunkHasBody = chunkRows.any { !it.isHeader }
-                if (!chunkHasBody && currentTop == frame.top) {
-                    chunkRows += row
-                    chunkHeight += row.height
+                // The block doesn't fit. If this chunk has no body yet and
+                // the page is fresh, the block can never fit anywhere — take
+                // it alone and let it overflow rather than loop forever.
+                if (chunkGroups.isEmpty() && currentTop == frame.top) {
+                    chunkGroups += group
+                    chunkHeight += group.height
                 }
                 break
             }
 
-            val bodyTaken = chunkRows.count { !it.isHeader }
-            if (bodyTaken == 0) {
-                // Nothing fit — move to a fresh page and retry with the
-                // full frame height. Nothing was drawn, so the next
-                // iteration is still the table's first chunk; flipping
-                // the flag here would lose the header entirely when
-                // repeatHeader is off.
+            if (chunkGroups.isEmpty()) {
+                // Nothing fit — move to a fresh page and retry with the full
+                // frame height. Nothing was drawn, so the next iteration is
+                // still the table's first chunk; flipping the flag here would
+                // lose the header entirely when repeatHeader is off.
                 currentCanvas = openNewPage(env, currentCanvas)
                 currentTop = frame.top
                 continue
             }
 
+            // Assemble the chunk's rows + a matching owner grid slice so the
+            // per-segment separator logic in [placeTable] indexes correctly.
+            val chunkRows = mutableListOf<MeasuredTableRow>()
+            val chunkOwners = mutableListOf<List<Int>>()
+            if (includeHeader) {
+                chunkRows += header
+                if (headerOwners != null) chunkOwners += headerOwners
+            }
+            for (group in chunkGroups) {
+                chunkRows += group.rows
+                chunkOwners += group.owners
+            }
+
             // A table that splits across pages drops its corner radius:
-            // re-rounding every fragment's top AND bottom would draw
-            // corners in the middle of the table where the break happens.
-            val splits = !isFirstChunk || remaining.size > bodyTaken
+            // re-rounding every fragment's top AND bottom would draw corners
+            // in the middle of the table where the break happens.
+            val splits = !isFirstChunk || remaining.size > chunkGroups.size
             val chunk = node.copy(
                 rows = chunkRows,
+                cellOwners = chunkOwners,
                 size = Size(width = node.size.width, height = chunkHeight),
                 cornerRadius = if (splits) 0f else node.cornerRadius,
             )
             place(chunk, currentCanvas, frame.left + xOffset, currentTop)
-            remaining = remaining.drop(bodyTaken)
+            remaining = remaining.drop(chunkGroups.size)
             currentTop += chunkHeight
             isFirstChunk = false
 
@@ -527,6 +544,64 @@ internal object DocumentRenderer {
         }
 
         return RenderState(currentCanvas, currentTop)
+    }
+
+    /**
+     * One atomic block of body rows that must stay on the same page — a run
+     * tied together by a rowspan. Carries the matching slice of the owner
+     * grid so a chunk can rebuild a self-consistent [MeasuredTable].
+     */
+    private class BodyGroup(
+        val rows: List<MeasuredTableRow>,
+        val owners: List<List<Int>>,
+        val height: Float,
+    )
+
+    /**
+     * Splits the body rows (from [firstBodyIndex] to the end) into atomic
+     * groups. A group boundary may fall only where no cell's rowspan crosses
+     * it; cells that span multiple rows keep their rows in one group so the
+     * slicer never tears a merged region. With no rowspans every body row is
+     * its own group, matching the historical per-row slicing exactly.
+     */
+    private fun atomicBodyGroups(node: MeasuredTable, firstBodyIndex: Int): List<BodyGroup> {
+        val groups = ArrayList<BodyGroup>()
+        var i = firstBodyIndex
+        val lastRow = node.rows.lastIndex
+        while (i <= lastRow) {
+            // Extend the group while any row already in it has a cell whose
+            // rowspan reaches past the current end.
+            var end = i
+            var scan = i
+            while (scan <= end) {
+                val reach = rowSpanReach(node, scan)
+                if (reach > end) end = reach
+                scan++
+            }
+            if (end > lastRow) end = lastRow
+            val rows = ArrayList<MeasuredTableRow>(end - i + 1)
+            val owners = ArrayList<List<Int>>(end - i + 1)
+            var height = 0f
+            for (r in i..end) {
+                rows += node.rows[r]
+                node.cellOwners.getOrNull(r)?.let { owners += it }
+                height += node.rows[r].height
+            }
+            groups += BodyGroup(rows = rows, owners = owners, height = height)
+            i = end + 1
+        }
+        return groups
+    }
+
+    /** Furthest row index reached by a cell starting in [rowIndex]. */
+    private fun rowSpanReach(node: MeasuredTable, rowIndex: Int): Int {
+        val row = node.rows.getOrNull(rowIndex) ?: return rowIndex
+        var maxReach = rowIndex
+        for (cell in row.cells) {
+            val reach = rowIndex + cell.rowSpan - 1
+            if (reach > maxReach) maxReach = reach
+        }
+        return maxReach
     }
 
     private fun sliceText(
@@ -749,6 +824,7 @@ internal object DocumentRenderer {
             }
             is MeasuredQrCode -> placeQrCode(node, canvas, originX, originY)
             is MeasuredBarcode -> placeBarcode(node, canvas, originX, originY)
+            is MeasuredDataMatrix -> placeDataMatrix(node, canvas, originX, originY)
             is MeasuredBookmark -> canvas.bookmark(node.title, node.level, originY)
             is MeasuredAnchor -> canvas.namedDestination(node.id, originY)
             is MeasuredInternalLink -> {
@@ -769,6 +845,48 @@ internal object DocumentRenderer {
      * command count (and thus the PDF size) far below one-rect-per-module.
      */
     private fun placeQrCode(node: MeasuredQrCode, canvas: PdfCanvas, originX: Float, originY: Float) {
+        val n = node.matrix.size
+        if (n <= 0 || node.size.width <= 0f) return
+        node.background?.let { canvas.drawRect(originX, originY, node.size.width, node.size.height, it) }
+
+        val module = node.size.width / n
+        val commands = mutableListOf<PathCommand>()
+        for (y in 0 until n) {
+            var x = 0
+            while (x < n) {
+                if (!node.matrix[x, y]) {
+                    x++
+                    continue
+                }
+                var runEnd = x
+                while (runEnd + 1 < n && node.matrix[runEnd + 1, y]) runEnd++
+                val left = originX + x * module
+                val top = originY + y * module
+                val right = originX + (runEnd + 1) * module
+                val bottom = top + module
+                commands += PathCommand.MoveTo(left, top)
+                commands += PathCommand.LineTo(right, top)
+                commands += PathCommand.LineTo(right, bottom)
+                commands += PathCommand.LineTo(left, bottom)
+                commands += PathCommand.Close
+                x = runEnd + 1
+            }
+        }
+        if (commands.isEmpty()) return
+        canvas.drawPath(
+            commands = commands,
+            fill = PdfPaint.Solid(node.color),
+            strokeColor = null,
+            strokeWidth = 0f,
+        )
+    }
+
+    /**
+     * Draws a Data Matrix symbol as one vector path, collapsing horizontal runs
+     * of dark modules into single rectangles exactly like [placeQrCode] so the
+     * path command count stays well below one-rect-per-module.
+     */
+    private fun placeDataMatrix(node: MeasuredDataMatrix, canvas: PdfCanvas, originX: Float, originY: Float) {
         val n = node.matrix.size
         if (n <= 0 || node.size.width <= 0f) return
         node.background?.let { canvas.drawRect(originX, originY, node.size.width, node.size.height, it) }
@@ -1331,6 +1449,18 @@ internal object DocumentRenderer {
         val tableWidth = node.size.width
         val tableHeight = node.size.height
 
+        // Pre-compute each row's top edge (relative to the table top) so cells
+        // and separators can address any row by index — spanned cells need
+        // the y of rows other than their own.
+        val rowTops = FloatArray(node.rows.size)
+        run {
+            var y = 0f
+            for ((i, row) in node.rows.withIndex()) {
+                rowTops[i] = y
+                y += row.height
+            }
+        }
+
         canvas.saveState()
         try {
             if (node.cornerRadius > 0f) {
@@ -1339,42 +1469,27 @@ internal object DocumentRenderer {
                 canvas.clipRect(originX, originY, tableWidth, tableHeight)
             }
 
-            var rowY = originY
-            for (row in node.rows) {
-                drawTableRow(row, canvas, originX, rowY)
-                rowY += row.height
+            // Row backgrounds first, then cells on top. Row fills skip any
+            // column carried over by a rowspan from an earlier row so the
+            // spanning cell (drawn in its starting row) is never overpainted.
+            for ((rowIndex, row) in node.rows.withIndex()) {
+                val fill = row.background ?: continue
+                val rowTop = originY + rowTops[rowIndex]
+                for ((startX, width) in rowBackgroundSegments(node, rowIndex)) {
+                    canvas.drawRect(originX + startX, rowTop, width, row.height, fill)
+                }
+            }
+
+            for ((rowIndex, row) in node.rows.withIndex()) {
+                drawTableRow(row, canvas, originX, originY + rowTops[rowIndex])
             }
 
             if (node.border.showHorizontalLines && node.borderWidth > 0f) {
-                var sepY = originY
-                for ((index, row) in node.rows.withIndex()) {
-                    sepY += row.height
-                    if (index == node.rows.lastIndex) break
-                    canvas.drawLine(
-                        x1 = originX,
-                        y1 = sepY,
-                        x2 = originX + tableWidth,
-                        y2 = sepY,
-                        color = node.borderColor,
-                        thickness = node.borderWidth,
-                    )
-                }
+                drawHorizontalSeparators(node, canvas, originX, originY, rowTops)
             }
 
             if (node.border.showVerticalLines && node.borderWidth > 0f) {
-                var lineX = originX
-                for ((index, columnWidth) in node.columnWidths.withIndex()) {
-                    lineX += columnWidth
-                    if (index == node.columnWidths.lastIndex) break
-                    canvas.drawLine(
-                        x1 = lineX,
-                        y1 = originY,
-                        x2 = lineX,
-                        y2 = originY + tableHeight,
-                        color = node.borderColor,
-                        thickness = node.borderWidth,
-                    )
-                }
+                drawVerticalSeparators(node, canvas, originX, originY, rowTops)
             }
         } finally {
             canvas.restoreState()
@@ -1404,20 +1519,134 @@ internal object DocumentRenderer {
         }
     }
 
+    /**
+     * Horizontal run-segments `(startX, width)` of [rowIndex] that this row
+     * should paint its background across — i.e. every column whose owner is
+     * NOT inherited from the row above (those belong to a spanning cell that
+     * already painted itself). Adjacent paint-this-row columns coalesce so a
+     * plain row stays one rectangle.
+     */
+    private fun rowBackgroundSegments(node: MeasuredTable, rowIndex: Int): List<Pair<Float, Float>> {
+        val owners = node.cellOwners.getOrNull(rowIndex) ?: return listOf(0f to node.size.width)
+        val above = if (rowIndex > 0) node.cellOwners.getOrNull(rowIndex - 1) else null
+        val segments = ArrayList<Pair<Float, Float>>()
+        var x = 0f
+        var segStart = -1f
+        var segWidth = 0f
+        for (c in node.columnWidths.indices) {
+            val w = node.columnWidths[c]
+            val carriedOver = above != null && above.getOrNull(c) == owners.getOrNull(c)
+            if (!carriedOver) {
+                if (segStart < 0f) segStart = x
+                segWidth += w
+            } else if (segStart >= 0f) {
+                segments += segStart to segWidth
+                segStart = -1f
+                segWidth = 0f
+            }
+            x += w
+        }
+        if (segStart >= 0f) segments += segStart to segWidth
+        return segments
+    }
+
+    /**
+     * Draws the horizontal inner separators. A segment under column `c`
+     * between rows `r` and `r+1` is skipped when the same cell owns both
+     * slots (a rowspan crossing the boundary) so the line never cuts through
+     * a merged region.
+     */
+    private fun drawHorizontalSeparators(
+        node: MeasuredTable,
+        canvas: PdfCanvas,
+        originX: Float,
+        originY: Float,
+        rowTops: FloatArray,
+    ) {
+        val lastColumn = node.columnWidths.lastIndex
+        for (rowIndex in 0 until node.rows.lastIndex) {
+            val sepY = originY + rowTops[rowIndex] + node.rows[rowIndex].height
+            val ownersHere = node.cellOwners.getOrNull(rowIndex)
+            val ownersBelow = node.cellOwners.getOrNull(rowIndex + 1)
+            // Coalesce consecutive non-merged columns into one stroke so a
+            // boundary with no rowspan crossing it draws a single line — the
+            // pre-span behaviour — while a rowspan still breaks the run.
+            var x = originX
+            var runStart = -1f
+            for (c in node.columnWidths.indices) {
+                val w = node.columnWidths[c]
+                val merged = ownersHere != null && ownersBelow != null &&
+                    ownersHere.getOrNull(c) == ownersBelow.getOrNull(c)
+                if (!merged) {
+                    if (runStart < 0f) runStart = x
+                    if (c == lastColumn) {
+                        // Extend the final segment to the full table width so a
+                        // full-width separator draws edge-to-edge, as before.
+                        canvas.drawLine(runStart, sepY, originX + node.size.width, sepY, node.borderColor, node.borderWidth)
+                        runStart = -1f
+                    }
+                } else if (runStart >= 0f) {
+                    canvas.drawLine(runStart, sepY, x, sepY, node.borderColor, node.borderWidth)
+                    runStart = -1f
+                }
+                x += w
+            }
+        }
+    }
+
+    /**
+     * Draws the vertical inner separators. A segment in row `r` between
+     * columns `c` and `c+1` is skipped when the same cell owns both slots
+     * (a colspan crossing the boundary). Consecutive non-merged rows coalesce
+     * into one stroke so a boundary with no colspan draws a single full-height
+     * line — the pre-span behaviour — while a colspan still breaks the run.
+     */
+    private fun drawVerticalSeparators(
+        node: MeasuredTable,
+        canvas: PdfCanvas,
+        originX: Float,
+        originY: Float,
+        rowTops: FloatArray,
+    ) {
+        val lastRow = node.rows.lastIndex
+        var lineX = originX
+        for (c in 0 until node.columnWidths.lastIndex) {
+            lineX += node.columnWidths[c]
+            var runTop = -1f
+            for (rowIndex in node.rows.indices) {
+                val owners = node.cellOwners.getOrNull(rowIndex)
+                val merged = owners != null && owners.getOrNull(c) == owners.getOrNull(c + 1)
+                val top = originY + rowTops[rowIndex]
+                if (!merged) {
+                    if (runTop < 0f) runTop = top
+                    if (rowIndex == lastRow) {
+                        // Extend to the full table height so a full-height
+                        // separator draws top-to-bottom, as before.
+                        canvas.drawLine(lineX, runTop, lineX, originY + node.size.height, node.borderColor, node.borderWidth)
+                        runTop = -1f
+                    }
+                } else if (runTop >= 0f) {
+                    canvas.drawLine(lineX, runTop, lineX, top, node.borderColor, node.borderWidth)
+                    runTop = -1f
+                }
+            }
+        }
+    }
+
     private fun drawTableRow(
         row: MeasuredTableRow,
         canvas: PdfCanvas,
         originX: Float,
         originY: Float,
     ) {
-        val tableWidth = row.cells.sumOf { it.width.toDouble() }.toFloat()
-        row.background?.let { fill ->
-            canvas.drawRect(originX, originY, tableWidth, row.height, fill)
-        }
         for (cell in row.cells) {
+            // [spannedHeight] equals the row height for non-spanning cells, so
+            // single-row cells behave exactly as before; a rowspan cell draws
+            // its fill and content over the full block it covers.
+            val cellHeight = cell.spannedHeight
             val cellX = originX + cell.offsetX
             cell.style.background?.let { cellFill ->
-                canvas.drawRect(cellX, originY, cell.width, row.height, cellFill)
+                canvas.drawRect(cellX, originY, cell.width, cellHeight, cellFill)
             }
             place(
                 node = cell.content,

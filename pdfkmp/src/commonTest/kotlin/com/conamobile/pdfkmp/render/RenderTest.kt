@@ -551,6 +551,137 @@ class RenderTest {
         assertTrue(images.all { !it.allowDownScale }, "every slice must keep the original opt-out")
     }
 
+    @Test
+    fun rowSpanSeparator_doesNotCrossTheSpannedColumn() {
+        val factory = FakePdfDriverFactory()
+        // Weight columns fill the 100pt-wide page, so each column is 50pt and
+        // the table width equals the column total — coords stay predictable.
+        pdf(factory = factory) {
+            page(PageSize.custom(width = 100.dp, height = 200.dp)) {
+                padding = Padding.Zero
+                spacing = 0.dp
+                table(
+                    columns = listOf(TableColumn.Weight(1f), TableColumn.Weight(1f)),
+                    cellPadding = Padding.Zero,
+                ) {
+                    row {
+                        // Column 0 spans both rows.
+                        cell("A", rowSpan = 2) { fontSize = 10.sp }
+                        cell("B") { fontSize = 10.sp }
+                    }
+                    row {
+                        // Lands in column 1 (column 0 is occupied from above).
+                        cell("C") { fontSize = 10.sp }
+                    }
+                }
+            }
+        }
+        val calls = factory.drivers.single().pages.single().canvas.calls
+        // Both rows are 10pt tall; the inner horizontal separator sits at y=10.
+        val horizontalAtSep = calls.filterIsInstance<DrawCall.Line>()
+            .filter { it.y1 == it.y2 && it.y1 == 10f }
+        // It must span ONLY column 1 (x 50..100), never the spanned column 0.
+        assertTrue(
+            horizontalAtSep.any { it.x1 == 50f && it.x2 == 100f },
+            "separator should cross the non-spanned column: $horizontalAtSep",
+        )
+        assertTrue(
+            horizontalAtSep.none { it.x1 < 50f },
+            "separator must not cross the rowspanned column 0: $horizontalAtSep",
+        )
+        // The second row's first cell ("C") lands in column 1 (offset 50).
+        val cText = calls.filterIsInstance<DrawCall.Text>().single { it.text == "C" }
+        assertEquals(50f, cText.x)
+        assertEquals(10f, cText.y)
+    }
+
+    @Test
+    fun colSpanSeparator_doesNotCrossTheMergedColumns() {
+        val factory = FakePdfDriverFactory()
+        // Three equal Weight columns over a 120pt page → 40pt each.
+        pdf(factory = factory) {
+            page(PageSize.custom(width = 120.dp, height = 200.dp)) {
+                padding = Padding.Zero
+                spacing = 0.dp
+                table(
+                    columns = listOf(
+                        TableColumn.Weight(1f),
+                        TableColumn.Weight(1f),
+                        TableColumn.Weight(1f),
+                    ),
+                    cellPadding = Padding.Zero,
+                ) {
+                    row {
+                        // Merge columns 0+1; "Y" then fills column 2.
+                        cell("X", colSpan = 2) { fontSize = 10.sp }
+                        cell("Y") { fontSize = 10.sp }
+                    }
+                }
+            }
+        }
+        val calls = factory.drivers.single().pages.single().canvas.calls
+        // Vertical inner separators sit at x=40 (cols 0|1) and x=80 (cols 1|2).
+        val verticals = calls.filterIsInstance<DrawCall.Line>().filter { it.x1 == it.x2 }
+        // The 0|1 boundary is inside the colspan and must be suppressed.
+        assertTrue(verticals.none { it.x1 == 40f }, "merged colspan boundary must not be stroked: $verticals")
+        // The 1|2 boundary (between the colspan and "Y") is still drawn.
+        assertTrue(verticals.any { it.x1 == 80f }, "boundary after the colspan must be stroked: $verticals")
+        // "Y" is placed in column 2 (offset = 80).
+        val yText = calls.filterIsInstance<DrawCall.Text>().single { it.text == "Y" }
+        assertEquals(80f, yText.x)
+    }
+
+    @Test
+    fun rowSpanBlock_movesAtomicallyAcrossPageBoundary() {
+        val factory = FakePdfDriverFactory()
+        // Page tall enough for ~4 rows of 10pt; the rowspan block (rows 4+5)
+        // would straddle the boundary and must move whole to page 2.
+        pdf(factory = factory) {
+            defaultPageBreakStrategy = PageBreakStrategy.Slice
+            page(PageSize.custom(width = 200.dp, height = 45.dp)) {
+                padding = Padding.Zero
+                spacing = 0.dp
+                table(
+                    columns = listOf(TableColumn.Fixed(50.dp), TableColumn.Fixed(50.dp)),
+                    cellPadding = Padding.Zero,
+                    repeatHeader = false,
+                ) {
+                    // Four standalone rows (10pt each) fill the first page.
+                    repeat(4) { i ->
+                        row {
+                            cell("a$i") { fontSize = 10.sp }
+                            cell("b$i") { fontSize = 10.sp }
+                        }
+                    }
+                    // Atomic 2-row block via a rowspan in its first row.
+                    row {
+                        cell("SPAN", rowSpan = 2) { fontSize = 10.sp }
+                        cell("p") { fontSize = 10.sp }
+                    }
+                    row { cell("q") { fontSize = 10.sp } }
+                }
+            }
+        }
+        val driver = factory.drivers.single()
+        assertTrue(driver.pages.size >= 2, "expected the table to slice across pages")
+        // The whole rowspan block lands together — "SPAN", "p" and "q" share
+        // one page; none of them appears on the page that ends the first four
+        // rows without the others.
+        val pageOf = { label: String ->
+            driver.pages.indexOfFirst { page ->
+                page.canvas.calls.filterIsInstance<DrawCall.Text>().any { it.text == label }
+            }
+        }
+        val spanPage = pageOf("SPAN")
+        assertEquals(spanPage, pageOf("p"), "rowspan top row + neighbour must stay together")
+        assertEquals(spanPage, pageOf("q"), "the spanned-into row must stay with the block")
+        assertTrue(spanPage >= 1, "the block must have moved off the first page")
+        // Sanity: every body cell is emitted exactly once.
+        val texts = driver.pages.flatMap { it.canvas.calls.filterIsInstance<DrawCall.Text>() }.map { it.text }
+        assertEquals(1, texts.count { it == "SPAN" })
+        assertEquals(1, texts.count { it == "q" })
+    }
+
     /** Hand-built PNG header used by the image tests above. */
     private fun pngHeader(width: Int, height: Int): ByteArray = byteArrayOf(
         0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,

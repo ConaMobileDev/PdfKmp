@@ -332,13 +332,25 @@ public data class TableRowNode(
  * The cell's content is itself a small [ColumnNode] subtree so the user can
  * stack multiple text blocks (e.g. a title + a subtitle) inside one cell.
  *
+ * Cells may span multiple columns ([colSpan]) and/or rows ([rowSpan]),
+ * HTML-table style. A spanned cell occupies a rectangular block of the
+ * occupancy grid; the row's later cells, and the cells of the rows it
+ * extends into, fill the remaining free columns in order and skip the
+ * occupied ones.
+ *
  * @property content node tree that fills the cell's interior.
  * @property style cell-level overrides on top of the table-wide
  *   [TableNode.cellPadding] and default alignment.
+ * @property colSpan number of columns this cell occupies (>= 1). Clamped to
+ *   the columns remaining from the cell's starting column at layout time.
+ * @property rowSpan number of rows this cell occupies (>= 1). Clamped to the
+ *   rows remaining from the cell's starting row at layout time.
  */
 public data class TableCellNode(
     val content: PdfNode,
     val style: TableCellStyle,
+    val colSpan: Int = 1,
+    val rowSpan: Int = 1,
 )
 
 /**
