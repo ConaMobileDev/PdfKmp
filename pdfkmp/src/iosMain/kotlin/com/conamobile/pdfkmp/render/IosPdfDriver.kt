@@ -76,6 +76,7 @@ internal class IosPdfDriver(
             bounds = CGRectMake(0.0, 0.0, size.width.value.toDouble(), size.height.value.toDouble()),
             pageInfo = null,
         )
+        navigation.currentPage++
         pageOpen = true
         val ctx = UIGraphicsGetCurrentContext()
             ?: error("UIGraphicsGetCurrentContext returned null inside an open PDF page")
@@ -105,10 +106,11 @@ internal class IosPdfDriver(
 
     /**
      * Writes the collected bookmarks into the PDF context's outline before
-     * the context closes. Entries reference the synthetic named
-     * destinations that [IosPdfCanvas.bookmark] registered while pages
-     * were rendering — `CGPDFContextSetOutline` accepts destination names
-     * in its `Destination` entries.
+     * the context closes. Entries reference their 1-based page number —
+     * the only `Destination` form Core Graphics documents for
+     * `CGPDFContextSetOutline` (a named-destination string makes the child
+     * node creation fail, and Core Graphics then crashes setting a nil
+     * `/First`).
      */
     private fun attachOutline() {
         if (navigation.bookmarks.isEmpty()) return
@@ -132,22 +134,26 @@ internal class IosPdfDriver(
         val rootChildren = NSMutableArray()
         root.setValue(rootChildren, forKey = "Children")
 
-        // (level, children-array-of-that-entry) — entries nest under the
-        // most recent entry with a smaller level.
-        val stack = ArrayDeque<Pair<Int, NSMutableArray>>()
+        // (level, entry-dictionary) — entries nest under the most recent
+        // entry with a smaller level. A "Children" array is attached to a
+        // parent only once it actually gains a child: Core Graphics treats
+        // an empty "Children" as "has a first child", finds none, and
+        // crashes inserting nil under /First.
+        val stack = ArrayDeque<Pair<Int, NSMutableDictionary>>()
         for (bookmark in navigation.bookmarks) {
             val entry = NSMutableDictionary()
             entry.setValue(bookmark.title, forKey = "Title")
-            entry.setValue(bookmark.destination, forKey = "Destination")
-            val children = NSMutableArray()
-            entry.setValue(children, forKey = "Children")
+            entry.setValue(NSNumber(int = bookmark.page), forKey = "Destination")
 
             while (stack.isNotEmpty() && stack.last().first >= bookmark.level) {
                 stack.removeLast()
             }
-            val parent = stack.lastOrNull()?.second ?: rootChildren
-            parent.addObject(entry)
-            stack.addLast(bookmark.level to children)
+            val parentChildren = stack.lastOrNull()?.second?.let { parent ->
+                parent.objectForKey("Children") as? NSMutableArray
+                    ?: NSMutableArray().also { parent.setValue(it, forKey = "Children") }
+            } ?: rootChildren
+            parentChildren.addObject(entry)
+            stack.addLast(bookmark.level to entry)
         }
         return root
     }
@@ -202,15 +208,14 @@ internal class IosNavigation {
     internal data class Bookmark(
         val title: String,
         val level: Int,
-        /** Synthetic named destination registered at the bookmark's position. */
-        val destination: String,
+        /** 1-based number of the page the bookmark was registered on. */
+        val page: Int,
     )
 
     val bookmarks: MutableList<Bookmark> = mutableListOf()
-    private var counter = 0
 
-    /** Returns a fresh document-unique destination name for a bookmark. */
-    fun nextBookmarkDestination(): String = "__pdfkmp_bookmark_${counter++}"
+    /** 1-based index of the page currently being rendered; 0 before the first page. */
+    var currentPage: Int = 0
 }
 
 /**

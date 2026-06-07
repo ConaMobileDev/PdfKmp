@@ -562,14 +562,11 @@ internal class IosPdfCanvas(
 
     override fun bookmark(title: String, level: Int, y: Float) {
         // The outline dictionary (attached at finish()) references jump
-        // targets by destination name, so each bookmark registers its own
-        // synthetic named destination at the marker's position.
-        val destination = navigation.nextBookmarkDestination()
-        UIGraphicsAddPDFContextDestinationAtPoint(
-            name = destination,
-            point = CGPointMake(0.0, y.toDouble()),
-        )
-        navigation.bookmarks += IosNavigation.Bookmark(title, level, destination)
+        // targets by 1-based page number — the only Destination form
+        // CGPDFContextSetOutline accepts without crashing (a named
+        // destination makes child-node creation fail, and Core Graphics
+        // then dies inserting nil under /First).
+        navigation.bookmarks += IosNavigation.Bookmark(title, level, navigation.currentPage)
     }
 
     override fun drawImage(
