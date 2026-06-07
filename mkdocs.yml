@@ -55,24 +55,27 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - Getting started: getting-started.md
-  - Guides:
-      - Text & typography: guides/text.md
-      - Layout containers: guides/layout.md
-      - Tables: guides/tables.md
-      - Decorations & effects: guides/decorations.md
-      - Images & vectors: guides/images-vectors.md
-      - Compose Resources: guides/compose-resources.md
-      - QR, barcodes & charts: guides/graphics.md
-      - Links, bookmarks & TOC: guides/navigation.md
-      - Pages, headers & watermarks: guides/page-setup.md
-      - Forms & security: guides/forms-security.md
-      - Fonts, i18n & RTL: guides/i18n.md
-      - PDF viewer (Compose): guides/viewer.md
-      - Markdown to PDF: guides/markdown.md
-      - Web (Kotlin/Wasm): guides/web.md
-      - Platform parity: guides/platform-parity.md
-  - Samples: samples.md
+  - Getting started:
+      - Installation & first PDF: getting-started.md
+      - Features:
+          - Text & typography: guides/text.md
+          - Layout containers: guides/layout.md
+          - Tables: guides/tables.md
+          - Decorations & effects: guides/decorations.md
+          - Images & vectors: guides/images-vectors.md
+          - QR, barcodes & charts: guides/graphics.md
+          - Links, bookmarks & TOC: guides/navigation.md
+          - Pages, headers & watermarks: guides/page-setup.md
+          - Forms & security: guides/forms-security.md
+          - Fonts, i18n & RTL: guides/i18n.md
+      - Companion modules:
+          - PDF viewer (Compose): guides/viewer.md
+          - Compose Resources: guides/compose-resources.md
+          - Markdown to PDF: guides/markdown.md
+      - Platforms:
+          - Web (Kotlin/Wasm): guides/web.md
+          - Platform parity: guides/platform-parity.md
+      - Samples: samples.md
   - Internals:
       - Architecture: internals/architecture.md
       - Streaming & memory: streaming-and-memory.md
