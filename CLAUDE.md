@@ -44,14 +44,14 @@ Every text glyph and shape is emitted as a vector path — no rasterisation. Out
 ./gradlew :sample:installDebug                     # Android, on connected device
 # iOS sample: open iosApp/iosApp.xcodeproj in Xcode and Run
 
-# Publishing — all three publishable modules ship together; release them in lock-step.
+# Publishing — all four publishable modules ship together; release them in lock-step.
 # Maven Central releases normally go through GitHub: publishing a Release triggers the
 # publish.yml workflow, which runs the command below for you on a macOS runner. Run it by
 # hand ONLY as a local/fallback path, and NEVER for a version you also publish a GitHub
 # Release for — both call publishAndReleaseToMavenCentral, so the second fails on a
 # duplicate version. See the Publishing checklist below.
-./gradlew :pdfkmp:publishToMavenLocal :pdfkmp-compose-resources:publishToMavenLocal :pdfkmp-viewer:publishToMavenLocal              # local install
-./gradlew :pdfkmp:publishAndReleaseToMavenCentral :pdfkmp-compose-resources:publishAndReleaseToMavenCentral :pdfkmp-viewer:publishAndReleaseToMavenCentral  # Maven Central (fallback; CI does this on Release)
+./gradlew :pdfkmp:publishToMavenLocal :pdfkmp-compose-resources:publishToMavenLocal :pdfkmp-viewer:publishToMavenLocal :pdfkmp-markdown:publishToMavenLocal              # local install
+./gradlew :pdfkmp:publishAndReleaseToMavenCentral :pdfkmp-compose-resources:publishAndReleaseToMavenCentral :pdfkmp-viewer:publishAndReleaseToMavenCentral :pdfkmp-markdown:publishAndReleaseToMavenCentral  # Maven Central (fallback; CI does this on Release)
 ```
 
 JDK 21 recommended (`export JAVA_HOME=$(/usr/libexec/java_home -v 21)` on macOS).
@@ -116,17 +116,17 @@ The pure-common surface uses `FakePdfDriver` so layout and rendering decisions c
 
 ## Publishing checklist
 
-All three publishable modules — `:pdfkmp`, `:pdfkmp-compose-resources`, `:pdfkmp-viewer` — share the same `VERSION_NAME` in root `gradle.properties` and are released together. Never ship one without the others, otherwise consumers pulling a companion artifact will get a version mismatch against the core. The runtime [`PdfKmp.VERSION`][version] constant is generated from `VERSION_NAME` by the `generatePdfKmpVersion` Gradle task, so a release bump only requires editing `gradle.properties` once.
+All four publishable modules — `:pdfkmp`, `:pdfkmp-compose-resources`, `:pdfkmp-viewer`, `:pdfkmp-markdown` — share the same `VERSION_NAME` in root `gradle.properties` and are released together. Never ship one without the others, otherwise consumers pulling a companion artifact will get a version mismatch against the core. The runtime [`PdfKmp.VERSION`][version] constant is generated from `VERSION_NAME` by the `generatePdfKmpVersion` Gradle task, so a release bump only requires editing `gradle.properties` once.
 
 [version]: pdfkmp/src/commonMain/kotlin/com/conamobile/pdfkmp/Pdf.kt
 
 When cutting a release:
 
 1. Set `VERSION_NAME` in `gradle.properties` to the release version (e.g. `1.2.0` or `1.2.0-alpha01`). This project does **not** use `-SNAPSHOT` dev versions — `VERSION_NAME` stays at the last released version between releases and is only changed when cutting the next one. (Do not bump it back to a `-SNAPSHOT` afterwards.)
-2. Run the tests on both canonical surfaces — iOS Simulator AND JVM (the JVM/PdfBox backend has its own correctness gate): `./gradlew :pdfkmp:iosSimulatorArm64Test :pdfkmp-viewer:iosSimulatorArm64Test :pdfkmp:jvmTest :pdfkmp-viewer:jvmTest` and `./gradlew :pdfkmp:assemble :pdfkmp-compose-resources:assemble :pdfkmp-viewer:assemble` locally.
+2. Run the tests on both canonical surfaces — iOS Simulator AND JVM (the JVM/PdfBox backend has its own correctness gate): `./gradlew :pdfkmp:iosSimulatorArm64Test :pdfkmp-viewer:iosSimulatorArm64Test :pdfkmp:jvmTest :pdfkmp-viewer:jvmTest :pdfkmp-markdown:jvmTest` and `./gradlew :pdfkmp:assemble :pdfkmp-compose-resources:assemble :pdfkmp-viewer:assemble :pdfkmp-markdown:assemble` locally.
 3. Add the version's section to `CHANGELOG.md`, then commit + push the `VERSION_NAME` bump and changelog.
 4. Tag the release commit and push the tag: `git tag v1.2.0 && git push origin v1.2.0`.
-5. **Publish a GitHub Release** for that tag (title + notes from the CHANGELOG). Publishing the Release triggers the `publish.yml` workflow (`on: release: published`), which runs `publishAndReleaseToMavenCentral` for all three modules on a macOS runner and ships them to Maven Central in one go — this is the **canonical** publish path. The manual `./gradlew …publishAndReleaseToMavenCentral` is a fallback only; never run it for a version you also publish a GitHub Release for, or the CI run will fail on the duplicate version.
-6. Verify all three artifacts landed (allow ~10–30 min for the Central Portal to propagate to the public mirror): `https://repo1.maven.org/maven2/io/github/conamobiledev/pdfkmp/<version>/`, `.../pdfkmp-compose-resources/<version>/`, and `.../pdfkmp-viewer/<version>/` should all return 200.
+5. **Publish a GitHub Release** for that tag (title + notes from the CHANGELOG). Publishing the Release triggers the `publish.yml` workflow (`on: release: published`), which runs `publishAndReleaseToMavenCentral` for all four modules on a macOS runner and ships them to Maven Central in one go — this is the **canonical** publish path. The manual `./gradlew …publishAndReleaseToMavenCentral` is a fallback only; never run it for a version you also publish a GitHub Release for, or the CI run will fail on the duplicate version.
+6. Verify all four artifacts landed (allow ~10–30 min for the Central Portal to propagate to the public mirror): `https://repo1.maven.org/maven2/io/github/conamobiledev/pdfkmp/<version>/`, `.../pdfkmp-compose-resources/<version>/`, `.../pdfkmp-viewer/<version>/`, and `.../pdfkmp-markdown/<version>/` should all return 200.
 
 Versions follow [semver](https://semver.org). Pre-1.0 minor versions may break API; alpha tags (`-alpha0N`) signal an actively settling surface.

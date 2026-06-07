@@ -39,4 +39,5 @@ jobs:
             :pdfkmp:publishAndReleaseToMavenCentral \
             :pdfkmp-compose-resources:publishAndReleaseToMavenCentral \
             :pdfkmp-viewer:publishAndReleaseToMavenCentral \
+            :pdfkmp-markdown:publishAndReleaseToMavenCentral \
             --no-configuration-cache --stacktrace
