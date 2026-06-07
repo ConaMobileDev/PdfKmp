@@ -11,13 +11,25 @@ import com.conamobile.pdfkmp.style.PdfPaint
  * the root element name. Both share the SVG path mini-language so the same
  * [PathDataParser] is used for both.
  *
- * Limitations of this first version:
- * - `<g>` group transforms are walked recursively but only the
- *   nested `<path>` elements are honoured. Group-level `transform`
- *   attributes are not applied yet.
- * - Gradients, masks, filters, and animations are ignored — we read the
- *   first solid `fill` / `stroke` colour we find on each path.
- * - Elliptical arcs in path data are rejected by [PathDataParser].
+ * SVG subset supported:
+ * - Shape elements: `<path>`, `<rect>` (incl. `rx`/`ry` rounded corners),
+ *   `<circle>`, `<ellipse>`, `<line>`, `<polyline>`, `<polygon>` — all
+ *   converted to the common [PathCommand] list (see [SvgShapes]).
+ * - `<g>` groups with `transform` inheritance and cascading presentation
+ *   state; nested groups compose. `transform` on a shape composes on top of
+ *   the group chain.
+ * - Presentation attributes and inline `style="fill:…;stroke:…"` CSS:
+ *   `fill`, `stroke`, `stroke-width`, `opacity`, `fill-opacity`,
+ *   `stroke-opacity`. Colours accept `#hex` (3/6/8), `rgb(...)`, and the
+ *   common named colours (see [SvgColor]). Inline style wins over the
+ *   matching presentation attribute.
+ * - `viewBox` with `min-x`/`min-y` offsets, `width`/`height` with `px` or
+ *   no unit, falling back to the viewBox dimensions.
+ * - `<linearGradient>` / `<radialGradient>` referenced via `fill="url(#id)"`.
+ *
+ * Gracefully ignored (never crash): `<defs>`, `<title>`, `<desc>`,
+ * `<style>`, `<use>`, and any unknown element. Masks, filters, clip-paths,
+ * patterns, text, and animations are not rendered.
  */
 internal object VectorParser {
 
@@ -60,8 +72,8 @@ internal object VectorParser {
             when (child.localName) {
                 "path" -> {
                     val pathData = child.attribute("pathData") ?: continue
-                    val fill = child.attribute("fillColor")?.let(::parseHexColor)?.let(PdfPaint::Solid)
-                    val stroke = child.attribute("strokeColor")?.let(::parseHexColor)
+                    val fill = child.attribute("fillColor")?.let(SvgColor::parse)?.let(PdfPaint::Solid)
+                    val stroke = child.attribute("strokeColor")?.let(SvgColor::parse)
                     val strokeWidth = child.attribute("strokeWidth")?.toFloatOrNull() ?: 0f
                     val raw = PathDataParser.parse(pathData)
                     val transformed = if (parentTransform == AffineTransform.Identity) raw
@@ -103,17 +115,23 @@ internal object VectorParser {
     }
 
     private fun parseSvg(root: XmlElement): VectorImage {
+        // `width`/`height` expressed as a percentage are relative to the
+        // (here unknown) containing viewport, so we ignore them and fall
+        // back to the viewBox dimensions instead.
+        val widthAttr = root.attribute("width")?.takeUnless { it.trim().endsWith("%") }
+        val heightAttr = root.attribute("height")?.takeUnless { it.trim().endsWith("%") }
+
         val viewBoxAttr = root.attribute("viewBox")
         val viewBox = viewBoxAttr?.let(::parseViewBox) ?: ViewBox(
             x = 0f,
             y = 0f,
-            width = root.attribute("width")?.let(::parseDimension) ?: 0f,
-            height = root.attribute("height")?.let(::parseDimension) ?: 0f,
+            width = widthAttr?.let(::parseDimension) ?: 0f,
+            height = heightAttr?.let(::parseDimension) ?: 0f,
         )
         val viewportWidth = viewBox.width.takeIf { it > 0f } ?: 24f
         val viewportHeight = viewBox.height.takeIf { it > 0f } ?: 24f
-        val intrinsicWidth = root.attribute("width")?.let(::parseDimension) ?: viewportWidth
-        val intrinsicHeight = root.attribute("height")?.let(::parseDimension) ?: viewportHeight
+        val intrinsicWidth = widthAttr?.let(::parseDimension) ?: viewportWidth
+        val intrinsicHeight = heightAttr?.let(::parseDimension) ?: viewportHeight
 
         val gradients = mutableMapOf<String, PdfPaint>()
         collectSvgGradients(root, gradients)
@@ -121,7 +139,7 @@ internal object VectorParser {
         val paths = mutableListOf<VectorPath>()
         collectSvgPaths(
             element = root,
-            defaultFill = PdfColor.Black,
+            inheritedStyle = resolveStyle(root, SvgStyle.Root),
             sink = paths,
             originX = viewBox.x,
             originY = viewBox.y,
@@ -136,9 +154,18 @@ internal object VectorParser {
         )
     }
 
+    /**
+     * Recursively walks the SVG tree, emitting one [VectorPath] per drawable
+     * shape with its resolved paint and the composed transform applied.
+     *
+     * [inheritedStyle] carries the cascading presentation state from the
+     * ancestor `<g>` chain; [parentTransform] carries the composed
+     * coordinate transform. Container / metadata elements (`<defs>`,
+     * `<title>`, `<style>`, `<use>`, …) are skipped.
+     */
     private fun collectSvgPaths(
         element: XmlElement,
-        defaultFill: PdfColor,
+        inheritedStyle: SvgStyle,
         sink: MutableList<VectorPath>,
         originX: Float,
         originY: Float,
@@ -147,33 +174,17 @@ internal object VectorParser {
     ) {
         for (child in element.children) {
             when (child.localName) {
-                "path" -> {
-                    val d = child.attribute("d") ?: continue
-                    val fillAttr = child.attribute("fill")
-                    val fill = resolveSvgFill(fillAttr, defaultFill, gradients)
-                    val stroke = child.attribute("stroke")?.let(::parseSvgColor)
-                    val strokeWidth = child.attribute("stroke-width")?.toFloatOrNull() ?: 0f
-                    val pathTransform = TransformParser.parse(child.attribute("transform"))
-                    val combined = parentTransform.multiply(pathTransform)
-                    val raw = PathDataParser.parse(d)
-                    val transformed = raw.map { command ->
-                        val withGroupTransform = applyTransform(command, combined)
-                        if (originX == 0f && originY == 0f) withGroupTransform
-                        else translateCommand(withGroupTransform, -originX, -originY)
-                    }
-                    sink += VectorPath(
-                        commands = transformed,
-                        fill = fill,
-                        strokeColor = stroke,
-                        strokeWidth = strokeWidth,
-                    )
-                }
+                // Pure metadata / definition containers — never drawn.
+                "defs", "title", "desc", "style", "metadata", "symbol",
+                "linearGradient", "radialGradient", "use", "clipPath", "mask",
+                "pattern", "filter",
+                -> Unit
                 "g" -> {
-                    val groupFill = child.attribute("fill")?.let(::parseSvgColor) ?: defaultFill
+                    val groupStyle = resolveStyle(child, inheritedStyle)
                     val groupTransform = TransformParser.parse(child.attribute("transform"))
                     collectSvgPaths(
                         element = child,
-                        defaultFill = groupFill,
+                        inheritedStyle = groupStyle,
                         sink = sink,
                         originX = originX,
                         originY = originY,
@@ -181,36 +192,79 @@ internal object VectorParser {
                         parentTransform = parentTransform.multiply(groupTransform),
                     )
                 }
-                else -> Unit
+                "path" -> {
+                    val d = child.attribute("d") ?: continue
+                    emitShape(
+                        element = child,
+                        rawCommands = PathDataParser.parse(d),
+                        inheritedStyle = inheritedStyle,
+                        sink = sink,
+                        originX = originX,
+                        originY = originY,
+                        gradients = gradients,
+                        parentTransform = parentTransform,
+                    )
+                }
+                "rect", "circle", "ellipse", "line", "polyline", "polygon" -> {
+                    val raw = SvgShapes.toPath(child) ?: continue
+                    if (raw.isEmpty()) continue
+                    emitShape(
+                        element = child,
+                        rawCommands = raw,
+                        inheritedStyle = inheritedStyle,
+                        sink = sink,
+                        originX = originX,
+                        originY = originY,
+                        gradients = gradients,
+                        parentTransform = parentTransform,
+                    )
+                }
+                // Unknown element: ignore the element itself but still walk
+                // its children so a wrapper like <a> doesn't hide its content.
+                else -> collectSvgPaths(
+                    element = child,
+                    inheritedStyle = resolveStyle(child, inheritedStyle),
+                    sink = sink,
+                    originX = originX,
+                    originY = originY,
+                    gradients = gradients,
+                    parentTransform = parentTransform.multiply(
+                        TransformParser.parse(child.attribute("transform")),
+                    ),
+                )
             }
         }
     }
 
     /**
-     * Resolves an SVG `fill` attribute into a [PdfPaint]. Recognised
-     * shapes:
-     *
-     * - `none` → no fill
-     * - `url(#gradId)` → gradient looked up in [gradients]
-     * - any colour value → solid fill
+     * Resolves [element]'s style on top of [inheritedStyle], applies the
+     * element + ancestor transforms (and the viewBox origin shift) to
+     * [rawCommands], and appends the resulting [VectorPath] to [sink].
      */
-    private fun resolveSvgFill(
-        attr: String?,
-        default: PdfColor,
+    private fun emitShape(
+        element: XmlElement,
+        rawCommands: List<PathCommand>,
+        inheritedStyle: SvgStyle,
+        sink: MutableList<VectorPath>,
+        originX: Float,
+        originY: Float,
         gradients: Map<String, PdfPaint>,
-    ): PdfPaint? {
-        if (attr == null) return PdfPaint.Solid(default)
-        val trimmed = attr.trim()
-        if (trimmed.equals("none", ignoreCase = true)) return null
-        if (trimmed.startsWith("url(")) {
-            val end = trimmed.indexOf(')')
-            if (end < 0) return PdfPaint.Solid(default)
-            var ref = trimmed.substring(4, end).trim()
-            if (ref.startsWith("#")) ref = ref.substring(1)
-            return gradients[ref] ?: PdfPaint.Solid(default)
+        parentTransform: AffineTransform,
+    ) {
+        val style = resolveStyle(element, inheritedStyle)
+        val combined = parentTransform.multiply(TransformParser.parse(element.attribute("transform")))
+        val transformed = rawCommands.map { command ->
+            val withTransform = applyTransform(command, combined)
+            if (originX == 0f && originY == 0f) withTransform
+            else translateCommand(withTransform, -originX, -originY)
         }
-        val color = parseSvgColor(trimmed) ?: default
-        return PdfPaint.Solid(color)
+        val stroke = style.resolveStroke()
+        sink += VectorPath(
+            commands = transformed,
+            fill = style.resolveFill(gradients),
+            strokeColor = stroke,
+            strokeWidth = if (stroke != null) style.resolveStrokeWidth() else 0f,
+        )
     }
 
     /**
@@ -262,8 +316,8 @@ internal object VectorParser {
         for (child in element.children) {
             if (child.localName == "stop") {
                 val offset = child.attribute("offset")?.let { parseStopOffset(it) } ?: stops.size.toFloat()
-                val color = child.attribute("stop-color")?.let(::parseSvgColor)
-                    ?: child.attribute("color")?.let(::parseSvgColor)
+                val color = child.attribute("stop-color")?.let(SvgColor::parse)
+                    ?: child.attribute("color")?.let(SvgColor::parse)
                     ?: PdfColor.Black
                 stops += GradientStop(offset = offset, color = color)
             }
@@ -302,46 +356,6 @@ internal object VectorParser {
         val numberEnd = trimmed.indexOfFirst { !it.isDigit() && it != '.' && it != '-' && it != '+' }
         val numericPart = if (numberEnd < 0) trimmed else trimmed.substring(0, numberEnd)
         return numericPart.toFloatOrNull() ?: 0f
-    }
-
-    /** Parses `#RRGGBB`, `#AARRGGBB`, or `#RGB`. Throws on malformed input. */
-    private fun parseHexColor(value: String): PdfColor? {
-        val trimmed = value.trim()
-        if (!trimmed.startsWith("#")) return null
-        val hex = trimmed.substring(1)
-        return when (hex.length) {
-            3 -> {
-                val r = hex[0].digitToInt(16) * 17
-                val g = hex[1].digitToInt(16) * 17
-                val b = hex[2].digitToInt(16) * 17
-                PdfColor(r / 255f, g / 255f, b / 255f, 1f)
-            }
-            6 -> {
-                val rgb = hex.toLong(16)
-                PdfColor.fromRgb(rgb)
-            }
-            8 -> {
-                val argb = hex.toLong(16)
-                PdfColor.fromArgb(argb)
-            }
-            else -> null
-        }
-    }
-
-    /** SVG colour values: `#RGB`, `#RRGGBB`, `none`, or named keywords (limited). */
-    private fun parseSvgColor(value: String): PdfColor? {
-        val trimmed = value.trim().lowercase()
-        if (trimmed == "none" || trimmed.isEmpty()) return null
-        if (trimmed.startsWith("#")) return parseHexColor(trimmed)
-        return when (trimmed) {
-            "black" -> PdfColor.Black
-            "white" -> PdfColor.White
-            "red" -> PdfColor.Red
-            "green" -> PdfColor.Green
-            "blue" -> PdfColor.Blue
-            "gray", "grey" -> PdfColor.Gray
-            else -> PdfColor.Black
-        }
     }
 
     private fun translateCommand(cmd: PathCommand, dx: Float, dy: Float): PathCommand = when (cmd) {
