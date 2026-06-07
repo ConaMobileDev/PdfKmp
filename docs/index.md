@@ -48,7 +48,7 @@ val bytes: ByteArray = document.toByteArray()
 - **Rich text engine** — full justification, `maxLines` + ellipsis, soft-hyphen + mid-word breaking, super/subscript spans, RTL with bidi reorder + Arabic shaping, orphan/widow control.
 - **Layout & pagination** — column / row / box / card, weighted children, recursive column slicing, table row slicing with repeating headers, `keepTogether`, multi-column and uniform grid, mixed page orientations.
 - **Tables, lists, dividers, circles & ellipses**, plus a free-form vector DSL (`freeDraw`).
-- **Graphics** — QR codes, Code 128 barcodes, bar / line / pie / donut charts — all pure vector, no external dependencies.
+- **Graphics** — QR codes, Code 128 / EAN-13 / UPC-A barcodes, Data Matrix, bar / stacked-bar / line (multi-series) / pie / donut charts — all pure vector, no external dependencies.
 - **Decorations** — backgrounds, per-corner radii, per-side borders, dashed / dotted borders, gradients, drop shadows, rotation, group opacity.
 - **Navigation & document features** — bookmarks / outline, internal links + auto table of contents, hyperlinks, AcroForm fields, encryption, file attachments, best-effort PDF/A, and JVM digital signing.
 - **Images & vectors** — PNG / JPEG / WebP / HEIF, Android `<vector>` and W3C `<svg>` (kept vector inside the PDF).
