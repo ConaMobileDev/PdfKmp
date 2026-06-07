@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PdfKmp — Web (Kotlin/Wasm) sample</title>
+    <style>
+        :root {
+            --bg: #0f1117;
+            --card: #1a1d27;
+            --card-hover: #232736;
+            --accent: #7c6ff0;
+            --text: #e8eaf2;
+            --muted: #9aa0b4;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 48px 24px;
+        }
+        .container { max-width: 920px; margin: 0 auto; }
+        h1 {
+            font-size: 2rem;
+            background: linear-gradient(90deg, #7c6ff0, #4fc3f7);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            margin-bottom: 8px;
+        }
+        .subtitle { color: var(--muted); margin-bottom: 12px; }
+        .badge {
+            display: inline-block;
+            font-size: 0.75rem;
+            padding: 3px 10px;
+            border-radius: 999px;
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            margin-bottom: 32px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+            gap: 14px;
+        }
+        button.sample {
+            background: var(--card);
+            border: 1px solid #2a2e3f;
+            border-radius: 12px;
+            color: var(--text);
+            padding: 16px;
+            font-size: 0.95rem;
+            text-align: left;
+            cursor: pointer;
+            transition: background 0.15s, transform 0.15s, border-color 0.15s;
+        }
+        button.sample:hover {
+            background: var(--card-hover);
+            border-color: var(--accent);
+            transform: translateY(-2px);
+        }
+        button.sample .name { display: block; font-weight: 600; margin-bottom: 4px; }
+        button.sample .desc { display: block; font-size: 0.8rem; color: var(--muted); }
+        #status {
+            margin-top: 28px;
+            color: var(--muted);
+            font-size: 0.9rem;
+            min-height: 1.4em;
+        }
+        a { color: var(--accent); }
+        footer { margin-top: 40px; font-size: 0.8rem; color: var(--muted); }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>PdfKmp on the Web</h1>
+    <p class="subtitle">Every document below is generated <strong>in your browser</strong> by Kotlin/Wasm —
+        no server, no JavaScript PDF library. Each opens in the browser's own PDF viewer.</p>
+    <span class="badge">pure-Kotlin PDF writer · Kotlin/Wasm</span>
+
+    <div class="grid" id="samples"></div>
+
+    <p id="status"></p>
+
+    <footer>
+        Pop-up blocked? Allow pop-ups for this page — tabs are opened from your click.
+        · <a href="https://conamobiledev.github.io/PdfKmp/guides/web/">Web guide</a>
+        · <a href="https://github.com/ConaMobileDev/PdfKmp">GitHub</a>
+    </footer>
+</div>
+<script src="sample-web.js"></script>
+</body>
+</html>

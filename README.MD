@@ -1818,13 +1818,18 @@ Three samples (`withImage`, `slicedImage`, `customDesigns`) take a `ByteArray` s
 
 ## Sample apps
 
-The repo ships three sample apps that mirror each other feature-for-feature:
+The repo ships four sample apps that mirror each other feature-for-feature:
 
 - `:sample` — Compose Android app (a plain `com.android.application` module). The Compose-Resources showcase (`pdfAsync { drawable(Res.drawable.X) }`) lives in a companion KMP library, `:sample-shared`, that the app depends on — AGP 9 no longer allows the Kotlin Multiplatform plugin and `com.android.application` in one module. The detail screen drops straight into `KmpPdfViewer(...)` — five lines for a complete viewer with topbar, search, share, save, hyperlinks, and gestures. Run with `./gradlew :sample:installDebug`.
 - `iosApp/iosApp.xcodeproj` — SwiftUI iOS app. Detail view follows the Classic iOS Native handoff with chevron + label, centered title, and three iOS-blue trailing icons; PDFKit handles rendering. Open in Xcode and Run; the build phase calls `:pdfkmp:embedAndSignAppleFrameworkForXcode` automatically.
 - `:sample-desktop` — Compose for Desktop (JVM) app. A master/detail window: a scrollable list of every `Samples.*` document (plus a **Compose-Resources** demo that builds a PDF from a `Res.drawable.*` asset via `pdfAsync { drawable(...) }`); click one to open it in `KmpPdfViewer` (pages rasterised via PdfBox `PDFRenderer`) with macOS trackpad-pinch / Ctrl-wheel / ＋−-button zoom. Run with `./gradlew :sample-desktop:run` on macOS / Windows / Linux.
+- `:sample-web` — Kotlin/Wasm browser app. A button grid over the no-asset `Samples.*` documents plus a live `pdfkmp-markdown` demo; every click generates the PDF **in the browser** through the pure-Kotlin writer and opens it in the browser's own viewer (`openInNewTab()`, with a download fallback when a pop-up blocker interferes). Run with `./gradlew :sample-web:wasmJsBrowserDevelopmentRun`.
 
-All three apps surface demos from `Samples` (in `:pdfkmp/src/commonMain/kotlin/.../samples/Samples.kt`) plus `ComposeResourcesDemo` (Android sample only — iOS demo coming with the next iOS sample refresh) so you can eyeball each feature on real devices.
+<p align="center">
+  <img src="docs/screenshots/web-sample.png" width="760" alt="The PdfKmp web sample running in the browser — every document generated in-page by Kotlin/Wasm" />
+</p>
+
+All four apps surface demos from `Samples` (in `:pdfkmp/src/commonMain/kotlin/.../samples/Samples.kt`) plus `ComposeResourcesDemo` (Android sample only — iOS demo coming with the next iOS sample refresh) so you can eyeball each feature on real devices.
 
 ---
 

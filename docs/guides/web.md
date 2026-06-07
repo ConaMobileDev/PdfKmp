@@ -91,6 +91,18 @@ doc.save(StorageLocation.Downloads, "hello.pdf")    // browser download
 implementation("io.github.conamobiledev:pdfkmp:1.2.0")   // resolves pdfkmp-wasm-js for the wasmJs target
 ```
 
+## Try the sample
+
+The repo ships a browser sample app — a button grid over the bundled
+`Samples.*` documents plus a live `pdfkmp-markdown` demo, every PDF generated
+in-browser on click:
+
+```bash
+./gradlew :sample-web:wasmJsBrowserDevelopmentRun
+```
+
+![The PdfKmp web sample running in the browser — every document generated in-page by Kotlin/Wasm](../screenshots/web-sample.png)
+
 ## See also
 
 - [Platform parity](platform-parity.md) — the Web column in the feature matrix.
