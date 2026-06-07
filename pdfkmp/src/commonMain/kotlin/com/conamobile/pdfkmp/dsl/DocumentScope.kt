@@ -3,6 +3,8 @@ package com.conamobile.pdfkmp.dsl
 import com.conamobile.pdfkmp.geometry.PageSize
 import com.conamobile.pdfkmp.geometry.Padding
 import com.conamobile.pdfkmp.layout.PageBreakStrategy
+import com.conamobile.pdfkmp.metadata.PdfAttachment
+import com.conamobile.pdfkmp.metadata.PdfEncryption
 import com.conamobile.pdfkmp.metadata.PdfMetadata
 import com.conamobile.pdfkmp.node.DocumentSpec
 import com.conamobile.pdfkmp.node.PageSpec
@@ -55,6 +57,9 @@ public class DocumentScope internal constructor() {
     public var defaultPageBreakStrategy: PageBreakStrategy = PageBreakStrategy.MoveToNextPage
 
     private var metadata: PdfMetadata = PdfMetadata.Empty
+    private var encryption: PdfEncryption? = null
+    private var pdfAOverride: Boolean? = null
+    private val attachments: MutableList<PdfAttachment> = mutableListOf()
     private val pages: MutableList<PageSpec> = mutableListOf()
     private val fonts: MutableSet<PdfFont.Custom> = linkedSetOf()
 
@@ -62,9 +67,78 @@ public class DocumentScope internal constructor() {
      * Configures document metadata (title, author, …). Calling this more
      * than once replaces any previous values — fields not set in the latest
      * call become `null`.
+     *
+     * Encryption and attachments are configured separately via [encryption]
+     * and [attachment]; they survive across `metadata { }` calls and are
+     * merged into the final metadata at build time.
      */
     public fun metadata(block: MetadataScope.() -> Unit) {
         metadata = MetadataScope().apply(block).build()
+    }
+
+    /**
+     * Password-protects the document. Calling this more than once replaces the
+     * previous configuration. See [PdfEncryption] for the per-platform support
+     * matrix (full on JVM/Desktop, partial on iOS, no-op on Android).
+     *
+     * ```
+     * encryption {
+     *     ownerPassword = "owner"
+     *     userPassword = "user"
+     *     allowPrinting = false
+     * }
+     * ```
+     */
+    public fun encryption(block: EncryptionScope.() -> Unit) {
+        encryption = EncryptionScope().apply(block).build()
+    }
+
+    /**
+     * Password-protects the document with a pre-built [PdfEncryption]. Useful
+     * when the configuration is assembled elsewhere; equivalent to the
+     * [encryption] builder overload.
+     */
+    public fun encryption(encryption: PdfEncryption) {
+        this.encryption = encryption
+    }
+
+    /**
+     * Requests best-effort PDF/A-2b conformance for the document. Equivalent
+     * to setting [MetadataScope.pdfACompliance] inside `metadata { }`, but
+     * survives across `metadata { }` calls (like [encryption] and
+     * [attachment]) and wins over the value set there.
+     *
+     * Honest scope: best-effort only — XMP id + sRGB output intent +
+     * document-info alignment + `MarkInfo /Marked`. Full veraPDF conformance
+     * is not guaranteed. JVM/Desktop only; Android and iOS ignore it. See
+     * [PdfMetadata.pdfACompliance].
+     */
+    public fun pdfA(enabled: Boolean) {
+        pdfAOverride = enabled
+    }
+
+    /**
+     * Embeds a file into the document. Repeatable — each call adds another
+     * attachment in source order. Only honoured by the JVM/Desktop backend;
+     * silently skipped on iOS and Android (see [PdfAttachment]).
+     *
+     * @param fileName name shown to the user (e.g. `"invoice.xml"`).
+     * @param bytes raw file contents.
+     * @param mimeType MIME type recorded as the embedded stream subtype.
+     * @param description optional human-readable description.
+     */
+    public fun attachment(
+        fileName: String,
+        bytes: ByteArray,
+        mimeType: String = "application/octet-stream",
+        description: String? = null,
+    ) {
+        attachments += PdfAttachment(
+            fileName = fileName,
+            bytes = bytes,
+            mimeType = mimeType,
+            description = description,
+        )
     }
 
     /**
@@ -100,8 +174,16 @@ public class DocumentScope internal constructor() {
         val collected = linkedSetOf<PdfFont.Custom>()
         collected += fonts
         pages.forEach { page -> collectCustomFonts(page.content, collected) }
+        // Fold encryption + attachments into the metadata so they ride the
+        // existing factory.create(metadata, …) channel without widening
+        // DocumentSpec — drivers read them off PdfMetadata.
+        val mergedMetadata = metadata.copy(
+            encryption = encryption,
+            attachments = attachments.toList(),
+            pdfACompliance = pdfAOverride ?: metadata.pdfACompliance,
+        )
         return DocumentSpec(
-            metadata = metadata,
+            metadata = mergedMetadata,
             pages = pages.toList(),
             customFonts = collected.toList(),
         )

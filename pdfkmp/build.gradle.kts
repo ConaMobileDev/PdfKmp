@@ -157,10 +157,21 @@ kotlin {
 
         jvmMain.dependencies {
             implementation(libs.pdfbox)
+            // BouncyCastle is compileOnly: the keystore-based PdfSigner.sign(...)
+            // path is built against it, but the ~9 MB jar is NOT bundled into the
+            // published artifact. Callers who use that overload bring their own BC
+            // at runtime; the callback-based overload needs no BC at all.
+            compileOnly(libs.bouncycastle.bcpkix)
         }
 
         commonTest.dependencies {
             implementation(kotlin("test"))
+        }
+
+        jvmTest.dependencies {
+            // BC is a test-only dependency here: the signing tests generate a
+            // self-signed certificate and exercise the keystore-based signer.
+            implementation(libs.bouncycastle.bcpkix)
         }
 
         compilerOptions {

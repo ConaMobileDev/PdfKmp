@@ -41,6 +41,24 @@ sealed interface DrawCall {
         val sourceTop: Float,
         val sourceBottom: Float,
         val allowDownScale: Boolean,
+        val altText: String? = null,
+    ) : DrawCall
+    data class FormTextField(
+        val name: String,
+        val x: Float,
+        val y: Float,
+        val width: Float,
+        val height: Float,
+        val value: String,
+        val multiline: Boolean,
+        val fontSizePt: Float,
+    ) : DrawCall
+    data class FormCheckBox(
+        val name: String,
+        val x: Float,
+        val y: Float,
+        val size: Float,
+        val checked: Boolean,
     ) : DrawCall
     data class Path(
         val commands: List<PathCommand>,
@@ -48,6 +66,18 @@ sealed interface DrawCall {
         val strokeColor: PdfColor?,
         val strokeWidth: Float,
     ) : DrawCall
+    data class Bookmark(val title: String, val level: Int, val y: Float) : DrawCall
+    data class NamedDestination(val name: String, val y: Float) : DrawCall
+    data class LinkToDestination(
+        val name: String,
+        val x: Float,
+        val y: Float,
+        val width: Float,
+        val height: Float,
+    ) : DrawCall
+    data class Rotate(val degrees: Float, val pivotX: Float, val pivotY: Float) : DrawCall
+    data class BeginTransparencyGroup(val alpha: Float) : DrawCall
+    data object EndTransparencyGroup : DrawCall
 }
 
 /** Records draw calls made through it. One instance per page. */
@@ -106,6 +136,7 @@ class FakePdfCanvas : PdfCanvas {
         sourceTop: Float,
         sourceBottom: Float,
         allowDownScale: Boolean,
+        altText: String?,
     ) {
         calls += DrawCall.Image(
             x = x,
@@ -117,7 +148,25 @@ class FakePdfCanvas : PdfCanvas {
             sourceTop = sourceTop,
             sourceBottom = sourceBottom,
             allowDownScale = allowDownScale,
+            altText = altText,
         )
+    }
+
+    override fun formTextField(
+        name: String,
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        value: String,
+        multiline: Boolean,
+        fontSizePt: Float,
+    ) {
+        calls += DrawCall.FormTextField(name, x, y, width, height, value, multiline, fontSizePt)
+    }
+
+    override fun formCheckBox(name: String, x: Float, y: Float, size: Float, checked: Boolean) {
+        calls += DrawCall.FormCheckBox(name, x, y, size, checked)
     }
 
     override fun drawPath(
@@ -127,6 +176,30 @@ class FakePdfCanvas : PdfCanvas {
         strokeWidth: Float,
     ) {
         calls += DrawCall.Path(commands, fill, strokeColor, strokeWidth)
+    }
+
+    override fun bookmark(title: String, level: Int, y: Float) {
+        calls += DrawCall.Bookmark(title, level, y)
+    }
+
+    override fun rotate(degrees: Float, pivotX: Float, pivotY: Float) {
+        calls += DrawCall.Rotate(degrees, pivotX, pivotY)
+    }
+
+    override fun beginTransparencyGroup(alpha: Float) {
+        calls += DrawCall.BeginTransparencyGroup(alpha)
+    }
+
+    override fun endTransparencyGroup() {
+        calls += DrawCall.EndTransparencyGroup
+    }
+
+    override fun namedDestination(name: String, y: Float) {
+        calls += DrawCall.NamedDestination(name, y)
+    }
+
+    override fun linkToDestination(name: String, x: Float, y: Float, width: Float, height: Float) {
+        calls += DrawCall.LinkToDestination(name, x, y, width, height)
     }
 }
 

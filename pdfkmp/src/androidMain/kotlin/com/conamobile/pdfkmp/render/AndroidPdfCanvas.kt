@@ -9,7 +9,12 @@ import android.graphics.RectF
 import android.graphics.LinearGradient
 import android.graphics.RadialGradient
 import android.graphics.Shader
+import com.conamobile.pdfkmp.PdfLog
 import com.conamobile.pdfkmp.geometry.ContentScale
+import com.conamobile.pdfkmp.pdfwriter.PdfBookmark
+import com.conamobile.pdfkmp.pdfwriter.PdfDestination
+import com.conamobile.pdfkmp.pdfwriter.PdfLink
+import com.conamobile.pdfkmp.pdfwriter.PdfNavigation
 import com.conamobile.pdfkmp.style.LineStyle
 import com.conamobile.pdfkmp.style.PdfColor
 import com.conamobile.pdfkmp.style.PdfPaint
@@ -27,12 +32,22 @@ import com.conamobile.pdfkmp.vector.PathCommand
  * Coordinates from PdfKmp use a top-left origin with Y increasing downward,
  * which already matches Android's canvas convention, so no Y flip is needed.
  *
+ * Android's `PdfDocument` can draw vector content but cannot write the info
+ * dictionary or any interactive feature (links, named destinations, the
+ * outline). Those calls are therefore *recorded* into [navigation] keyed by
+ * [pageIndex]; [AndroidPdfDriver.finish] feeds the collection to the
+ * post-processor, which patches them into the finished bytes. Coordinates are
+ * stored in PdfKmp's top-left-origin space — the patcher flips Y once it knows
+ * each page's height.
+ *
  * One [AndroidPdfCanvas] is created per page; do not reuse a canvas across
  * pages.
  */
 internal class AndroidPdfCanvas(
     private val canvas: Canvas,
     private val fontMetrics: AndroidFontMetrics,
+    private val pageIndex: Int = 0,
+    private val navigation: PdfNavigation = PdfNavigation(),
 ) : PdfCanvas {
 
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -122,6 +137,20 @@ internal class AndroidPdfCanvas(
         // For dotted we draw zero-length segments with a round cap, which
         // produces actual circular dots rather than tiny rectangles.
         LineStyle.Dotted -> DashPathEffect(floatArrayOf(0f, thickness * 2f), 0f)
+    }
+
+    override fun rotate(degrees: Float, pivotX: Float, pivotY: Float) {
+        canvas.rotate(degrees, pivotX, pivotY)
+    }
+
+    override fun beginTransparencyGroup(alpha: Float) {
+        // saveLayerAlpha composites everything drawn until the matching
+        // restore() at the group alpha — true group transparency.
+        canvas.saveLayerAlpha(null, (alpha.coerceIn(0f, 1f) * 255f).toInt())
+    }
+
+    override fun endTransparencyGroup() {
+        canvas.restore()
     }
 
     override fun saveState() {
@@ -231,6 +260,26 @@ internal class AndroidPdfCanvas(
         }
     }
 
+    override fun linkAnnotation(x: Float, y: Float, width: Float, height: Float, url: String) {
+        if (width <= 0f || height <= 0f) return
+        navigation.links += PdfLink(pageIndex, x, y, width, height, url = url)
+    }
+
+    override fun namedDestination(name: String, y: Float) {
+        navigation.destinations += PdfDestination(name, pageIndex, y)
+    }
+
+    override fun linkToDestination(name: String, x: Float, y: Float, width: Float, height: Float) {
+        if (width <= 0f || height <= 0f) return
+        // Forward references are fine: the patcher resolves anchor names against
+        // the full destination list after every page has rendered.
+        navigation.links += PdfLink(pageIndex, x, y, width, height, anchor = name)
+    }
+
+    override fun bookmark(title: String, level: Int, y: Float) {
+        navigation.bookmarks += PdfBookmark(title, level, pageIndex, y)
+    }
+
     override fun drawImage(
         bytes: ByteArray,
         x: Float,
@@ -241,13 +290,20 @@ internal class AndroidPdfCanvas(
         sourceTop: Float,
         sourceBottom: Float,
         allowDownScale: Boolean,
+        // Android's PdfDocument writes no tagged structure, so the
+        // accessibility description has nowhere to go — accepted but ignored.
+        altText: String?,
     ) {
         val bitmap = decodeBitmap(
             bytes = bytes,
             dstWidthPoints = width,
             dstHeightPoints = height,
             allowDownScale = allowDownScale,
-        ) ?: return
+        )
+        if (bitmap == null) {
+            PdfLog.warn("drawImage skipped: ${bytes.size}-byte payload is not a decodable image (Android backend)")
+            return
+        }
         val srcTopPx = (bitmap.height * sourceTop.coerceIn(0f, 1f)).toInt()
         val srcBottomPx = (bitmap.height * sourceBottom.coerceIn(0f, 1f)).toInt()
             .coerceAtLeast(srcTopPx + 1)

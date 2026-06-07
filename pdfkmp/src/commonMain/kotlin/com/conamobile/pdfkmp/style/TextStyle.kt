@@ -56,6 +56,48 @@ public data class TextStyle(
      * [TextAlign] for the four options. Defaults to [TextAlign.Start].
      */
     val align: TextAlign = TextAlign.Start,
+
+    /**
+     * Maximum number of wrapped lines to keep. `null` (the default) keeps
+     * every line. When the paragraph wraps to more lines than this, the
+     * excess is dropped according to [overflow].
+     */
+    val maxLines: Int? = null,
+
+    /**
+     * How to present the cut when [maxLines] truncates the paragraph.
+     * Ignored while [maxLines] is `null`.
+     */
+    val overflow: TextOverflow = TextOverflow.Clip,
+
+    /**
+     * Vertical script position — superscript / subscript. Only takes
+     * effect on rich-text spans; see [TextScript].
+     */
+    val script: TextScript = TextScript.None,
+
+    /**
+     * Base paragraph direction. [TextDirection.Auto] (default) detects
+     * RTL scripts (Arabic, Hebrew) from the content; see [TextDirection].
+     */
+    val direction: TextDirection = TextDirection.Auto,
+
+    /**
+     * Orphan control: when the `Slice` strategy breaks this paragraph
+     * across pages, keep at least this many lines together at the bottom
+     * of the page before the break — fewer would leave a lonely "orphan"
+     * line. The paragraph moves to the next page whole when the minimum
+     * cannot be met. `1` (default) allows any split.
+     */
+    val minLinesBeforeBreak: Int = 1,
+
+    /**
+     * Widow control: the slicing counterpart of [minLinesBeforeBreak] —
+     * at least this many lines must continue on the next page, otherwise
+     * lines are pulled forward from the previous page to join the lonely
+     * "widow". `1` (default) allows any split.
+     */
+    val minLinesAfterBreak: Int = 1,
 ) {
     public companion object {
         public val Default: TextStyle = TextStyle()

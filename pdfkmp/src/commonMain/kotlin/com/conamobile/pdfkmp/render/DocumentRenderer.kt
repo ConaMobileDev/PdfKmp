@@ -2,13 +2,21 @@ package com.conamobile.pdfkmp.render
 
 import com.conamobile.pdfkmp.geometry.Constraints
 import com.conamobile.pdfkmp.geometry.Size
+import com.conamobile.pdfkmp.layout.MeasuredAnchor
+import com.conamobile.pdfkmp.layout.MeasuredBarcode
 import com.conamobile.pdfkmp.layout.MeasuredBlock
+import com.conamobile.pdfkmp.layout.MeasuredBookmark
+import com.conamobile.pdfkmp.layout.MeasuredInternalLink
+import com.conamobile.pdfkmp.layout.MeasuredKeepTogether
 import com.conamobile.pdfkmp.layout.MeasuredBox
 import com.conamobile.pdfkmp.layout.MeasuredColumn
 import com.conamobile.pdfkmp.layout.MeasuredDivider
+import com.conamobile.pdfkmp.layout.MeasuredFormCheckBox
+import com.conamobile.pdfkmp.layout.MeasuredFormTextField
 import com.conamobile.pdfkmp.layout.MeasuredImage
 import com.conamobile.pdfkmp.layout.MeasuredLink
 import com.conamobile.pdfkmp.layout.MeasuredNode
+import com.conamobile.pdfkmp.layout.MeasuredQrCode
 import com.conamobile.pdfkmp.layout.MeasuredRichText
 import com.conamobile.pdfkmp.layout.MeasuredRow
 import com.conamobile.pdfkmp.layout.MeasuredShape
@@ -17,13 +25,25 @@ import com.conamobile.pdfkmp.layout.MeasuredTableRow
 import com.conamobile.pdfkmp.layout.MeasuredText
 import com.conamobile.pdfkmp.layout.MeasuredVector
 import com.conamobile.pdfkmp.layout.PageBreakStrategy
+import com.conamobile.pdfkmp.layout.PlacedChild
 import com.conamobile.pdfkmp.layout.TextLine
 import com.conamobile.pdfkmp.layout.measure
+import com.conamobile.pdfkmp.node.ColumnNode
 import com.conamobile.pdfkmp.node.ContainerDecoration
 import com.conamobile.pdfkmp.node.PageContext
+import com.conamobile.pdfkmp.node.Shape
 import com.conamobile.pdfkmp.node.VectorStrokeMode
+import com.conamobile.pdfkmp.style.BorderSides
+import com.conamobile.pdfkmp.style.BorderStroke
+import com.conamobile.pdfkmp.style.CornerRadius
+import com.conamobile.pdfkmp.style.DropShadow
+import com.conamobile.pdfkmp.style.LineStyle
+import com.conamobile.pdfkmp.style.PdfColor
 import com.conamobile.pdfkmp.style.PdfPaint
+import com.conamobile.pdfkmp.style.TextAlign
+import com.conamobile.pdfkmp.style.TextDirection
 import com.conamobile.pdfkmp.style.TextStyle
+import com.conamobile.pdfkmp.unit.sp
 import com.conamobile.pdfkmp.vector.PathCommand
 import com.conamobile.pdfkmp.node.DocumentSpec
 import com.conamobile.pdfkmp.node.PageSpec
@@ -47,9 +67,8 @@ import com.conamobile.pdfkmp.node.PageSpec
  *   page if it would not fit, leaving blank space at the bottom of the
  *   current page.
  * - [PageBreakStrategy.Slice] — the renderer slices the child at line
- *   boundaries (for text) or at the bottom of the page (for images, once
- *   image rendering is implemented), drawing what fits and continuing the
- *   rest on the next page.
+ *   boundaries (for text) or at the bottom of the page (for images),
+ *   drawing what fits and continuing the rest on the next page.
  */
 internal object DocumentRenderer {
 
@@ -64,11 +83,39 @@ internal object DocumentRenderer {
      */
     fun render(spec: DocumentSpec, driver: PdfDriver): ByteArray {
         val metrics = driver.fontMetrics
-        val hasDecoration = spec.pages.any { it.header != null || it.footer != null }
-        val totalPages = if (hasDecoration) countTotalPages(spec, metrics) else spec.pages.size
+        val effectiveSpec: DocumentSpec
+        var precomputedTotal: Int? = null
+        if (spec.containsToc()) {
+            // Two-stage TOC resolution. Stage 1: expand with placeholder
+            // page numbers (entry count and heights are already final) and
+            // dry-run to learn where every bookmark anchor lands. Stage 2:
+            // re-expand with the real numbers and render that.
+            val bookmarks = collectBookmarks(spec)
+            val placeholderEntries = bookmarks.mapIndexed { index, (title, level) ->
+                TocEntry(index = index, title = title, level = level, pageNumber = 0)
+            }
+            val countingDriver = CountingPdfDriver(metrics, trackDestinations = true)
+            runCountingPass(expandToc(spec, placeholderEntries), countingDriver)
+            val resolvedEntries = bookmarks.mapIndexed { index, (title, level) ->
+                TocEntry(
+                    index = index,
+                    title = title,
+                    level = level,
+                    pageNumber = countingDriver.destinationPages[TOC_ANCHOR_PREFIX + index] ?: 0,
+                )
+            }
+            effectiveSpec = expandToc(spec, resolvedEntries)
+            precomputedTotal = countingDriver.pageCount
+        } else {
+            effectiveSpec = spec
+        }
+
+        val hasDecoration = effectiveSpec.pages.any { it.header != null || it.footer != null }
+        val totalPages = precomputedTotal
+            ?: if (hasDecoration) countTotalPages(effectiveSpec, metrics) else effectiveSpec.pages.size
         val state = PageCounter()
         try {
-            for (page in spec.pages) {
+            for (page in effectiveSpec.pages) {
                 renderPage(page, driver, metrics, totalPages, state)
             }
             return driver.finish()
@@ -87,14 +134,20 @@ internal object DocumentRenderer {
 
     private fun countTotalPages(spec: DocumentSpec, metrics: FontMetrics): Int {
         val countingDriver = CountingPdfDriver(metrics)
-        // Use placeholder totalPages = 1 during the count pass; height of
-        // headers / footers is fixed per logical page (probed below) so the
-        // page count is independent of the value used here.
+        runCountingPass(spec, countingDriver)
+        return countingDriver.pageCount
+    }
+
+    /**
+     * Renders [spec] through [countingDriver] without emitting output.
+     * Uses placeholder totalPages = 1 — header / footer heights are fixed
+     * per logical page, so the page count is independent of the value.
+     */
+    private fun runCountingPass(spec: DocumentSpec, countingDriver: CountingPdfDriver) {
         val state = PageCounter()
         for (page in spec.pages) {
-            renderPage(page, countingDriver, metrics, totalPages = 1, state)
+            renderPage(page, countingDriver, countingDriver.fontMetrics, totalPages = 1, state)
         }
-        return countingDriver.pageCount
     }
 
     private fun renderPage(
@@ -167,7 +220,7 @@ internal object DocumentRenderer {
 
     /** Measures the height of a header / footer column at the page width. */
     private fun measureColumnHeight(
-        column: com.conamobile.pdfkmp.node.ColumnNode,
+        column: ColumnNode,
         page: PageSpec,
         metrics: FontMetrics,
     ): Float {
@@ -228,9 +281,13 @@ internal object DocumentRenderer {
     )
 
     /**
-     * Places one top-level child of the page, breaking onto a new page when
-     * required by the configured [PageBreakStrategy]. Returns the canvas and
-     * cursor position to use for the next child.
+     * Places one child of the page, breaking onto a new page when required
+     * by the configured [PageBreakStrategy]. Returns the canvas and cursor
+     * position to use for the next child.
+     *
+     * @param xOffset horizontal shift from the frame's left edge. Zero for
+     *   top-level page children; non-zero when a sliced column re-renders
+     *   its children at their aligned offsets.
      */
     private fun renderChild(
         node: MeasuredNode,
@@ -238,29 +295,34 @@ internal object DocumentRenderer {
         frame: ContentFrame,
         cursorY: Float,
         canvas: PdfCanvas,
+        xOffset: Float = 0f,
     ): RenderState {
         val available = frame.bottom - cursorY
         val fits = node.size.height <= available
         val isPageEmpty = cursorY == frame.top
 
         if (fits) {
-            place(node, canvas, frame.left, cursorY)
+            place(node, canvas, frame.left + xOffset, cursorY)
             return RenderState(canvas, cursorY + node.size.height)
         }
 
         return when (env.page.pageBreakStrategy) {
             PageBreakStrategy.MoveToNextPage -> {
                 if (isPageEmpty) {
-                    // Element is taller than a full page; we have nowhere to
-                    // move it — draw what we have and overflow past the
-                    // bottom margin. Splitting an oversized element is the
-                    // job of `Slice`.
-                    place(node, canvas, frame.left, cursorY)
-                    RenderState(canvas, cursorY + node.size.height)
+                    // Element is taller than a full page; we have nowhere
+                    // to move it. Images and vectors scale down to fit —
+                    // overflowing past the bottom margin clips them in
+                    // most PDF readers, which always reads as a bug.
+                    // Other node types still overflow; splitting them is
+                    // the job of `Slice`.
+                    val fitted = fitOversizeToHeight(node, available)
+                    place(fitted, canvas, frame.left + xOffset, cursorY)
+                    RenderState(canvas, cursorY + fitted.size.height)
                 } else {
                     val newCanvas = openNewPage(env, canvas)
-                    place(node, newCanvas, frame.left, frame.top)
-                    RenderState(newCanvas, frame.top + node.size.height)
+                    val fitted = fitOversizeToHeight(node, frame.height)
+                    place(fitted, newCanvas, frame.left + xOffset, frame.top)
+                    RenderState(newCanvas, frame.top + fitted.size.height)
                 }
             }
 
@@ -270,13 +332,39 @@ internal object DocumentRenderer {
                 frame = frame,
                 cursorY = cursorY,
                 canvas = canvas,
+                xOffset = xOffset,
             )
         }
     }
 
     /**
+     * Scales an image / vector that is taller than the available frame
+     * down so it fits, preserving aspect ratio. Other node types are
+     * returned unchanged — splitting them across pages is
+     * [PageBreakStrategy.Slice]'s job, not a silent rescale.
+     */
+    private fun fitOversizeToHeight(node: MeasuredNode, maxHeight: Float): MeasuredNode = when {
+        maxHeight <= 0f || node.size.height <= maxHeight -> node
+        node is MeasuredImage -> {
+            val scale = maxHeight / node.size.height
+            node.copy(size = Size(width = node.size.width * scale, height = maxHeight))
+        }
+        node is MeasuredVector -> {
+            val scale = maxHeight / node.size.height
+            node.copy(size = Size(width = node.size.width * scale, height = maxHeight))
+        }
+        else -> node
+    }
+
+    /**
      * Splits [node] into chunks that each fit on a page and emits them across
      * however many physical pages are needed.
+     *
+     * Sliceable nodes: text (by line), images (by source window), columns
+     * (recursively, by child), and tables (by row, with an optional
+     * repeated header). Everything else — rows, boxes, shapes — moves to
+     * the next page whole, because splitting horizontal or z-stacked
+     * content vertically has no sensible general answer.
      */
     private fun sliceAcrossPages(
         node: MeasuredNode,
@@ -284,17 +372,161 @@ internal object DocumentRenderer {
         frame: ContentFrame,
         cursorY: Float,
         canvas: PdfCanvas,
+        xOffset: Float = 0f,
     ): RenderState = when (node) {
-        is MeasuredText -> sliceText(node, env, frame, cursorY, canvas)
-        is MeasuredImage -> sliceImage(node, env, frame, cursorY, canvas)
+        is MeasuredText -> sliceText(node, env, frame, cursorY, canvas, xOffset)
+        is MeasuredImage -> sliceImage(node, env, frame, cursorY, canvas, xOffset)
+        is MeasuredColumn -> sliceColumn(node, env, frame, cursorY, canvas, xOffset)
+        is MeasuredTable -> sliceTable(node, env, frame, cursorY, canvas, xOffset)
+        // keepTogether { } exists precisely to opt out of slicing — the
+        // wrapped content falls through to the move-whole branch below.
         else -> {
-            // TODO: implement slicing for MeasuredColumn (recursive). Until
-            //  then we degrade gracefully to MoveToNextPage so the document
-            //  still produces a valid output.
             val newCanvas = openNewPage(env, canvas)
-            place(node, newCanvas, frame.left, frame.top)
+            place(node, newCanvas, frame.left + xOffset, frame.top)
             RenderState(newCanvas, frame.top + node.size.height)
         }
+    }
+
+    /**
+     * Slices a column by walking its already-measured children in flow
+     * order and pushing each through [renderChild], so an oversized child
+     * (a long paragraph, a nested column, a tall table) recursively slices
+     * with the same rules as a top-level node.
+     *
+     * Decorated columns (background / border / corner radius) are not
+     * sliced — a fill or outline cut in half at an arbitrary page boundary
+     * reads as a rendering bug, so they fall back to moving whole, and to
+     * a plain overflow when even a full page can't hold them.
+     */
+    private fun sliceColumn(
+        node: MeasuredColumn,
+        env: PageEnv,
+        frame: ContentFrame,
+        cursorY: Float,
+        canvas: PdfCanvas,
+        xOffset: Float,
+    ): RenderState {
+        if (node.decoration != ContainerDecoration.None) {
+            val isPageEmpty = cursorY == frame.top
+            return if (isPageEmpty) {
+                place(node, canvas, frame.left + xOffset, cursorY)
+                RenderState(canvas, cursorY + node.size.height)
+            } else {
+                val newCanvas = openNewPage(env, canvas)
+                place(node, newCanvas, frame.left + xOffset, frame.top)
+                RenderState(newCanvas, frame.top + node.size.height)
+            }
+        }
+
+        var state = RenderState(canvas, cursorY)
+        // Children carry pre-computed offsets; re-derive the inter-child
+        // gaps from them so arrangement spacing survives the re-flow.
+        var previousBottom = 0f
+        for (placed in node.children) {
+            val gap = (placed.offsetY - previousBottom).coerceAtLeast(0f)
+            var childTop = state.cursorY + gap
+            if (childTop >= frame.bottom && placed.node.size.height > 0f) {
+                state = RenderState(openNewPage(env, state.canvas), frame.top)
+                childTop = frame.top
+            }
+            state = renderChild(
+                node = placed.node,
+                env = env,
+                frame = frame,
+                cursorY = childTop,
+                canvas = state.canvas,
+                xOffset = xOffset + placed.offsetX,
+            )
+            previousBottom = placed.offsetY + placed.node.size.height
+        }
+        return state
+    }
+
+    /**
+     * Slices a table between rows: each page receives as many complete
+     * rows as fit, and — when [MeasuredTable.repeatHeader] is set — the
+     * header row is re-drawn at the top of every continuation page. A
+     * single row taller than a full page is drawn anyway and overflows;
+     * splitting inside a row would tear its cell content.
+     */
+    private fun sliceTable(
+        node: MeasuredTable,
+        env: PageEnv,
+        frame: ContentFrame,
+        cursorY: Float,
+        canvas: PdfCanvas,
+        xOffset: Float,
+    ): RenderState {
+        val header = node.rows.firstOrNull()?.takeIf { it.isHeader }
+        val bodyRows = if (header != null) node.rows.drop(1) else node.rows
+
+        var currentCanvas = canvas
+        var currentTop = cursorY
+        var remaining = bodyRows
+        var isFirstChunk = true
+
+        while (remaining.isNotEmpty()) {
+            val available = frame.bottom - currentTop
+            val chunkRows = mutableListOf<MeasuredTableRow>()
+            var chunkHeight = 0f
+
+            // Continuation pages re-draw the header when requested.
+            if (header != null && (isFirstChunk || node.repeatHeader)) {
+                chunkRows += header
+                chunkHeight += header.height
+            }
+
+            for (row in remaining) {
+                if (chunkHeight + row.height <= available) {
+                    chunkRows += row
+                    chunkHeight += row.height
+                    continue
+                }
+                // The row doesn't fit. If this chunk has no body yet and
+                // the page is fresh, the row can never fit anywhere —
+                // take it alone and let it overflow rather than loop
+                // forever or drop it.
+                val chunkHasBody = chunkRows.any { !it.isHeader }
+                if (!chunkHasBody && currentTop == frame.top) {
+                    chunkRows += row
+                    chunkHeight += row.height
+                }
+                break
+            }
+
+            val bodyTaken = chunkRows.count { !it.isHeader }
+            if (bodyTaken == 0) {
+                // Nothing fit — move to a fresh page and retry with the
+                // full frame height. Nothing was drawn, so the next
+                // iteration is still the table's first chunk; flipping
+                // the flag here would lose the header entirely when
+                // repeatHeader is off.
+                currentCanvas = openNewPage(env, currentCanvas)
+                currentTop = frame.top
+                continue
+            }
+
+            // A table that splits across pages drops its corner radius:
+            // re-rounding every fragment's top AND bottom would draw
+            // corners in the middle of the table where the break happens.
+            val splits = !isFirstChunk || remaining.size > bodyTaken
+            val chunk = node.copy(
+                rows = chunkRows,
+                size = Size(width = node.size.width, height = chunkHeight),
+                cornerRadius = if (splits) 0f else node.cornerRadius,
+            )
+            place(chunk, currentCanvas, frame.left + xOffset, currentTop)
+            remaining = remaining.drop(bodyTaken)
+            currentTop += chunkHeight
+            isFirstChunk = false
+
+            if (remaining.isNotEmpty()) {
+                currentCanvas = openNewPage(env, currentCanvas)
+                currentTop = frame.top
+            }
+        }
+
+        return RenderState(currentCanvas, currentTop)
     }
 
     private fun sliceText(
@@ -303,6 +535,7 @@ internal object DocumentRenderer {
         frame: ContentFrame,
         cursorY: Float,
         canvas: PdfCanvas,
+        xOffset: Float = 0f,
     ): RenderState {
         var currentCanvas = canvas
         var currentTop = cursorY
@@ -310,7 +543,9 @@ internal object DocumentRenderer {
 
         while (remaining.isNotEmpty()) {
             val available = frame.bottom - currentTop
-            val (fitting, overflow) = splitLinesByHeight(remaining, available)
+            val split = splitLinesByHeight(remaining, available)
+            var fitting = split.first
+            var overflow = split.second
 
             if (fitting.isEmpty()) {
                 currentCanvas = openNewPage(env, currentCanvas)
@@ -318,13 +553,36 @@ internal object DocumentRenderer {
                 continue
             }
 
+            if (overflow.isNotEmpty()) {
+                // Orphan control: too few lines would stay behind — move
+                // the paragraph forward instead (only when there is a
+                // fresh page to move to; a full-frame chunk that still
+                // violates the minimum has nowhere better to go).
+                if (fitting.size < node.style.minLinesBeforeBreak && currentTop != frame.top) {
+                    currentCanvas = openNewPage(env, currentCanvas)
+                    currentTop = frame.top
+                    continue
+                }
+                // Widow control: too few lines would continue — pull
+                // lines back from this page to keep the widow company.
+                val deficit = node.style.minLinesAfterBreak - overflow.size
+                if (deficit > 0) {
+                    val pullBack = deficit.coerceAtMost(fitting.size - 1)
+                    if (pullBack > 0) {
+                        overflow = fitting.takeLast(pullBack) + overflow
+                        fitting = fitting.dropLast(pullBack)
+                    }
+                }
+            }
+
             val chunk = MeasuredText(
                 lines = fitting,
                 style = node.style,
                 size = Size(width = node.size.width, height = fitting.sumOf { it.height.toDouble() }.toFloat()),
                 paragraphWidth = node.paragraphWidth,
+                resolvedDirection = node.resolvedDirection,
             )
-            place(chunk, currentCanvas, frame.left, currentTop)
+            place(chunk, currentCanvas, frame.left + xOffset, currentTop)
 
             if (overflow.isEmpty()) {
                 return RenderState(currentCanvas, currentTop + chunk.size.height)
@@ -344,6 +602,7 @@ internal object DocumentRenderer {
         frame: ContentFrame,
         cursorY: Float,
         canvas: PdfCanvas,
+        xOffset: Float = 0f,
     ): RenderState {
         val totalHeight = node.size.height
         if (totalHeight <= 0f) return RenderState(canvas, cursorY)
@@ -364,7 +623,7 @@ internal object DocumentRenderer {
             val srcBottom = (consumed + chunkHeight) / totalHeight
             currentCanvas.drawImage(
                 bytes = node.bytes,
-                x = frame.left,
+                x = frame.left + xOffset,
                 y = currentTop,
                 width = node.size.width,
                 height = chunkHeight,
@@ -372,6 +631,7 @@ internal object DocumentRenderer {
                 sourceTop = srcTop,
                 sourceBottom = srcBottom,
                 allowDownScale = node.allowDownScale,
+                altText = node.altText,
             )
             consumed += chunkHeight
             currentTop += chunkHeight
@@ -436,8 +696,11 @@ internal object DocumentRenderer {
                 height = node.size.height,
                 contentScale = node.contentScale,
                 allowDownScale = node.allowDownScale,
+                altText = node.altText,
             )
             is MeasuredBlock -> Unit // Spacers contribute size only.
+            is MeasuredFormTextField -> placeFormTextField(node, canvas, originX, originY)
+            is MeasuredFormCheckBox -> placeFormCheckBox(node, canvas, originX, originY)
             is MeasuredDivider -> {
                 // Center the stroke vertically in the line's allocated height.
                 val y = originY + node.thickness / 2f
@@ -484,8 +747,178 @@ internal object DocumentRenderer {
                     url = node.url,
                 )
             }
+            is MeasuredQrCode -> placeQrCode(node, canvas, originX, originY)
+            is MeasuredBarcode -> placeBarcode(node, canvas, originX, originY)
+            is MeasuredBookmark -> canvas.bookmark(node.title, node.level, originY)
+            is MeasuredAnchor -> canvas.namedDestination(node.id, originY)
+            is MeasuredInternalLink -> {
+                place(node.child, canvas, originX, originY)
+                canvas.linkToDestination(
+                    name = node.anchorId,
+                    x = originX, y = originY,
+                    width = node.size.width, height = node.size.height,
+                )
+            }
+            is MeasuredKeepTogether -> place(node.child, canvas, originX, originY)
         }
     }
+
+    /**
+     * Draws a QR symbol as one vector path: horizontal runs of dark
+     * modules collapse into single rectangles, which keeps the path
+     * command count (and thus the PDF size) far below one-rect-per-module.
+     */
+    private fun placeQrCode(node: MeasuredQrCode, canvas: PdfCanvas, originX: Float, originY: Float) {
+        val n = node.matrix.size
+        if (n <= 0 || node.size.width <= 0f) return
+        node.background?.let { canvas.drawRect(originX, originY, node.size.width, node.size.height, it) }
+
+        val module = node.size.width / n
+        val commands = mutableListOf<PathCommand>()
+        for (y in 0 until n) {
+            var x = 0
+            while (x < n) {
+                if (!node.matrix[x, y]) {
+                    x++
+                    continue
+                }
+                var runEnd = x
+                while (runEnd + 1 < n && node.matrix[runEnd + 1, y]) runEnd++
+                val left = originX + x * module
+                val top = originY + y * module
+                val right = originX + (runEnd + 1) * module
+                val bottom = top + module
+                commands += PathCommand.MoveTo(left, top)
+                commands += PathCommand.LineTo(right, top)
+                commands += PathCommand.LineTo(right, bottom)
+                commands += PathCommand.LineTo(left, bottom)
+                commands += PathCommand.Close
+                x = runEnd + 1
+            }
+        }
+        if (commands.isEmpty()) return
+        canvas.drawPath(
+            commands = commands,
+            fill = PdfPaint.Solid(node.color),
+            strokeColor = null,
+            strokeWidth = 0f,
+        )
+    }
+
+    /**
+     * Draws a Code 128 barcode: the encoder's alternating bar/space module
+     * widths scale into the destination rectangle, bars become full-height
+     * rectangles in a single vector path.
+     */
+    private fun placeBarcode(node: MeasuredBarcode, canvas: PdfCanvas, originX: Float, originY: Float) {
+        val totalModules = node.barcode.totalModules
+        if (totalModules <= 0 || node.size.width <= 0f) return
+        node.background?.let { canvas.drawRect(originX, originY, node.size.width, node.size.height, it) }
+
+        val module = node.size.width / totalModules
+        val commands = mutableListOf<PathCommand>()
+        var cursor = originX
+        for ((index, widthModules) in node.barcode.modules.withIndex()) {
+            val width = widthModules * module
+            // Even indices are bars, odd are spaces — the encoder guarantees
+            // the sequence starts and ends with a bar.
+            if (index % 2 == 0) {
+                commands += PathCommand.MoveTo(cursor, originY)
+                commands += PathCommand.LineTo(cursor + width, originY)
+                commands += PathCommand.LineTo(cursor + width, originY + node.size.height)
+                commands += PathCommand.LineTo(cursor, originY + node.size.height)
+                commands += PathCommand.Close
+            }
+            cursor += width
+        }
+        if (commands.isEmpty()) return
+        canvas.drawPath(
+            commands = commands,
+            fill = PdfPaint.Solid(node.color),
+            strokeColor = null,
+            strokeWidth = 0f,
+        )
+    }
+
+    /**
+     * Draws an AcroForm text field. Always paints the static visual fallback
+     * (a light-gray-filled box with a gray outline and the value rendered
+     * inside) so the document reads correctly on every backend, then asks the
+     * canvas to overlay a real interactive widget at the same rectangle. The
+     * overlay is a no-op on backends without AcroForm support (Android, iOS),
+     * leaving only the static box.
+     */
+    private fun placeFormTextField(
+        node: MeasuredFormTextField,
+        canvas: PdfCanvas,
+        originX: Float,
+        originY: Float,
+    ) {
+        val w = node.size.width
+        val h = node.size.height
+        // Static look: pale fill + hairline border, matching a typical form box.
+        canvas.drawRect(originX, originY, w, h, FORM_FIELD_FILL)
+        canvas.strokeRect(originX, originY, w, h, FORM_FIELD_BORDER, 0.75f)
+        if (node.value.isNotEmpty()) {
+            val style = TextStyle(fontSize = node.fontSizePt.sp, color = PdfColor.Black)
+            // drawText never interprets newlines, so a multiline value is
+            // drawn line-by-line, inset a couple of points from the box
+            // edges and clipped to the box height.
+            val lineAdvance = node.fontSizePt * 1.3f
+            var lineTop = originY + 3f
+            for (line in node.value.split('\n')) {
+                if (lineTop + lineAdvance > originY + h) break
+                canvas.drawText(line, originX + 3f, lineTop, style)
+                lineTop += lineAdvance
+            }
+        }
+        canvas.formTextField(
+            name = node.name,
+            x = originX,
+            y = originY,
+            width = w,
+            height = h,
+            value = node.value,
+            multiline = node.multiline,
+            fontSizePt = node.fontSizePt,
+        )
+    }
+
+    /**
+     * Draws an AcroForm checkbox: a bordered square (with an `X` through it
+     * when checked) as the static fallback, then the interactive widget
+     * overlay (no-op on Android / iOS).
+     */
+    private fun placeFormCheckBox(
+        node: MeasuredFormCheckBox,
+        canvas: PdfCanvas,
+        originX: Float,
+        originY: Float,
+    ) {
+        val s = node.size.width
+        canvas.drawRect(originX, originY, s, s, FORM_FIELD_FILL)
+        canvas.strokeRect(originX, originY, s, s, FORM_FIELD_BORDER, 0.75f)
+        if (node.checked) {
+            val inset = s * 0.2f
+            canvas.drawLine(
+                originX + inset, originY + inset,
+                originX + s - inset, originY + s - inset,
+                PdfColor.Black, s * 0.12f,
+            )
+            canvas.drawLine(
+                originX + s - inset, originY + inset,
+                originX + inset, originY + s - inset,
+                PdfColor.Black, s * 0.12f,
+            )
+        }
+        canvas.formCheckBox(name = node.name, x = originX, y = originY, size = s, checked = node.checked)
+    }
+
+    /** Pale fill shared by the static form-field fallbacks. */
+    private val FORM_FIELD_FILL = PdfColor(0.95f, 0.95f, 0.95f)
+
+    /** Hairline outline shared by the static form-field fallbacks. */
+    private val FORM_FIELD_BORDER = PdfColor.Gray
 
     /**
      * Draws a [MeasuredShape] (circle / ellipse) by generating the
@@ -500,14 +933,14 @@ internal object DocumentRenderer {
         val x: Float
         val y: Float
         when (node.shape) {
-            com.conamobile.pdfkmp.node.Shape.Circle -> {
+            Shape.Circle -> {
                 val diameter = minOf(node.size.width, node.size.height)
                 w = diameter
                 h = diameter
                 x = originX + (node.size.width - diameter) / 2f
                 y = originY + (node.size.height - diameter) / 2f
             }
-            com.conamobile.pdfkmp.node.Shape.Ellipse -> {
+            Shape.Ellipse -> {
                 w = node.size.width
                 h = node.size.height
                 x = originX
@@ -549,7 +982,7 @@ internal object DocumentRenderer {
         originY: Float,
         width: Float,
         height: Float,
-        children: List<com.conamobile.pdfkmp.layout.PlacedChild>,
+        children: List<PlacedChild>,
     ) {
         val cornerEach = decoration.cornerRadiusEach
         val perCornerPath: List<PathCommand>? = if (cornerEach != null && cornerEach.hasAnyRadius()) {
@@ -563,6 +996,26 @@ internal object DocumentRenderer {
         } else null
         val uniformRadius = decoration.cornerRadius.value
         val needsClip = perCornerPath != null || uniformRadius > 0f || decoration.clipToBounds
+
+        // Rotation / opacity wrap the entire container — fill, shadow,
+        // children, and border all transform together.
+        val groupOpacity = decoration.opacity.coerceIn(0f, 1f)
+        val needsTransform = decoration.rotation != 0f || groupOpacity < 1f
+        if (needsTransform) {
+            canvas.saveState()
+            if (decoration.rotation != 0f) {
+                canvas.rotate(
+                    degrees = decoration.rotation,
+                    pivotX = originX + width / 2f,
+                    pivotY = originY + height / 2f,
+                )
+            }
+            if (groupOpacity < 1f) canvas.beginTransparencyGroup(groupOpacity)
+        }
+
+        decoration.dropShadow?.let { shadow ->
+            drawDropShadow(canvas, shadow, originX, originY, width, height, uniformRadius)
+        }
 
         if (needsClip) canvas.saveState()
         try {
@@ -618,14 +1071,72 @@ internal object DocumentRenderer {
                         uniformRadius > 0f -> canvas.strokeRoundedRect(
                             originX, originY, width, height, uniformRadius, border.color, strokeWidth,
                         )
+                        // Dashed / dotted outlines are drawn edge-by-edge —
+                        // drawLine is the only primitive that takes a
+                        // LineStyle. Rounded rectangles fall back to a
+                        // solid stroke above (the dash phase can't follow
+                        // the arc cleanly).
+                        border.style != LineStyle.Solid -> {
+                            drawStyledRectOutline(canvas, originX, originY, width, height, border)
+                        }
                         else -> canvas.strokeRect(originX, originY, width, height, border.color, strokeWidth)
                     }
                 }
             }
         }
+
+        if (needsTransform) {
+            if (groupOpacity < 1f) canvas.endTransparencyGroup()
+            canvas.restoreState()
+        }
     }
 
-    private fun com.conamobile.pdfkmp.style.CornerRadius.hasAnyRadius(): Boolean =
+    /**
+     * Approximates a blurred shadow with concentric translucent rounded
+     * rectangles, outermost first so the innermost layers stack their
+     * alpha towards [DropShadow.color]'s at the centre.
+     */
+    private fun drawDropShadow(
+        canvas: PdfCanvas,
+        shadow: DropShadow,
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        cornerRadius: Float,
+    ) {
+        val layers = 5
+        val layerColor = shadow.color.copy(alpha = shadow.color.alpha / layers)
+        for (i in layers downTo 1) {
+            val spread = shadow.blur.value * i / layers
+            canvas.drawRoundedRect(
+                x = x + shadow.offsetX.value - spread / 2f,
+                y = y + shadow.offsetY.value - spread / 2f,
+                width = width + spread,
+                height = height + spread,
+                cornerRadius = cornerRadius + spread / 2f,
+                color = layerColor,
+            )
+        }
+    }
+
+    /** Strokes a sharp rectangle outline as four styled (dashed / dotted) lines. */
+    private fun drawStyledRectOutline(
+        canvas: PdfCanvas,
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        border: BorderStroke,
+    ) {
+        val w = border.width.value
+        canvas.drawLine(x, y, x + width, y, border.color, w, border.style)
+        canvas.drawLine(x + width, y, x + width, y + height, border.color, w, border.style)
+        canvas.drawLine(x + width, y + height, x, y + height, border.color, w, border.style)
+        canvas.drawLine(x, y + height, x, y, border.color, w, border.style)
+    }
+
+    private fun CornerRadius.hasAnyRadius(): Boolean =
         topLeft.value > 0f || topRight.value > 0f || bottomLeft.value > 0f || bottomRight.value > 0f
 
     /**
@@ -683,14 +1194,14 @@ internal object DocumentRenderer {
         originY: Float,
         width: Float,
         height: Float,
-        sides: com.conamobile.pdfkmp.style.BorderSides,
+        sides: BorderSides,
     ) {
         sides.top?.let {
             val w = it.width.value
             if (w > 0f) canvas.drawLine(
                 x1 = originX, y1 = originY,
                 x2 = originX + width, y2 = originY,
-                color = it.color, thickness = w,
+                color = it.color, thickness = w, style = it.style,
             )
         }
         sides.right?.let {
@@ -698,7 +1209,7 @@ internal object DocumentRenderer {
             if (w > 0f) canvas.drawLine(
                 x1 = originX + width, y1 = originY,
                 x2 = originX + width, y2 = originY + height,
-                color = it.color, thickness = w,
+                color = it.color, thickness = w, style = it.style,
             )
         }
         sides.bottom?.let {
@@ -706,7 +1217,7 @@ internal object DocumentRenderer {
             if (w > 0f) canvas.drawLine(
                 x1 = originX, y1 = originY + height,
                 x2 = originX + width, y2 = originY + height,
-                color = it.color, thickness = w,
+                color = it.color, thickness = w, style = it.style,
             )
         }
         sides.left?.let {
@@ -714,7 +1225,7 @@ internal object DocumentRenderer {
             if (w > 0f) canvas.drawLine(
                 x1 = originX, y1 = originY,
                 x2 = originX, y2 = originY + height,
-                color = it.color, thickness = w,
+                color = it.color, thickness = w, style = it.style,
             )
         }
     }
@@ -924,7 +1435,15 @@ internal object DocumentRenderer {
             // Decoration lines (underline, strikethrough) scale with font
             // size — small for body text, weighty for display sizes.
             val decorationThickness = (node.style.fontSize.value * 0.06f).coerceAtLeast(0.5f)
-            canvas.drawText(text = line.text, x = lineX, y = lineTop, style = node.style)
+            if (line.justifiedWords.isNotEmpty()) {
+                // The layout engine pre-computed every word's x-offset so
+                // the line fills the paragraph slot exactly.
+                for (word in line.justifiedWords) {
+                    canvas.drawText(text = word.text, x = lineX + word.x, y = lineTop, style = node.style)
+                }
+            } else {
+                canvas.drawText(text = line.text, x = lineX, y = lineTop, style = node.style)
+            }
             drawTextDecorations(
                 line = line,
                 style = node.style,
@@ -940,20 +1459,23 @@ internal object DocumentRenderer {
 
     /**
      * Returns how far to shift [line] from the paragraph's left edge so
-     * it obeys [com.conamobile.pdfkmp.style.TextAlign].
+     * it obeys [TextAlign] under the paragraph's resolved direction —
+     * RTL paragraphs anchor `Start` to the right edge and `End` to the
+     * left, mirroring what readers of those scripts expect.
      *
-     * `Justify` falls back to `Start` for now — proper justification
-     * requires per-word width metrics that the v1 layout pipeline does
-     * not surface. Tracked as a follow-up; for `Start`, `Center`, and
-     * `End` the rendering is exact.
+     * Justified lines already carry per-word positions spanning the full
+     * paragraph slot (their [TextLine.width] equals the slot), so their
+     * slack collapses to zero here.
      */
     private fun alignmentOffsetForLine(node: MeasuredText, line: TextLine): Float {
         val slack = (node.paragraphWidth - line.width).coerceAtLeast(0f)
+        val rtl = node.resolvedDirection == TextDirection.Rtl
         return when (node.style.align) {
-            com.conamobile.pdfkmp.style.TextAlign.Start -> 0f
-            com.conamobile.pdfkmp.style.TextAlign.Center -> slack / 2f
-            com.conamobile.pdfkmp.style.TextAlign.End -> slack
-            com.conamobile.pdfkmp.style.TextAlign.Justify -> 0f // TODO: per-word spacing
+            TextAlign.Start -> if (rtl) slack else 0f
+            TextAlign.Center -> slack / 2f
+            TextAlign.End -> if (rtl) 0f else slack
+            // Non-stretched (paragraph-final) lines anchor to the start edge.
+            TextAlign.Justify -> if (rtl) slack else 0f
         }
     }
 
@@ -972,20 +1494,26 @@ internal object DocumentRenderer {
         originY: Float,
     ) {
         var lineTop = originY
+        val rtl = node.resolvedDirection == TextDirection.Rtl
         for (line in node.lines) {
             val slack = (node.paragraphWidth - line.totalWidth).coerceAtLeast(0f)
             val lineLeft = originX + when (node.align) {
-                com.conamobile.pdfkmp.style.TextAlign.Start -> 0f
-                com.conamobile.pdfkmp.style.TextAlign.Center -> slack / 2f
-                com.conamobile.pdfkmp.style.TextAlign.End -> slack
-                com.conamobile.pdfkmp.style.TextAlign.Justify -> 0f // TODO: per-word spacing
+                TextAlign.Start -> if (rtl) slack else 0f
+                TextAlign.Center -> slack / 2f
+                TextAlign.End -> if (rtl) 0f else slack
+                // Justified lines already span the slot (stretched space
+                // segments), so there is no slack left to distribute.
+                TextAlign.Justify -> if (rtl) slack else 0f
             }
             for (segment in line.segments) {
                 val segmentX = lineLeft + segment.xOffset
+                // [RichSegment.yOffset] carries the superscript / subscript
+                // baseline shift computed during layout.
+                val segmentY = lineTop + segment.yOffset
                 canvas.drawText(
                     text = segment.text,
                     x = segmentX,
-                    y = lineTop,
+                    y = segmentY,
                     style = segment.style,
                 )
                 val decorationThickness = (segment.style.fontSize.value * 0.06f).coerceAtLeast(0.5f)
@@ -1001,7 +1529,7 @@ internal object DocumentRenderer {
                     canvas = canvas,
                     lineLeft = segmentX,
                     lineWidth = segment.width,
-                    lineTop = lineTop,
+                    lineTop = segmentY,
                     decorationThickness = decorationThickness,
                 )
             }

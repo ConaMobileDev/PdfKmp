@@ -11,6 +11,23 @@ public data class PageSize(
     val width: Dp,
     val height: Dp,
 ) {
+    /**
+     * The same page rotated into landscape orientation (width ≥ height).
+     * Pages with mixed orientations can coexist in one document — each
+     * `page(size)` call carries its own size:
+     *
+     * ```
+     * page(PageSize.A4) { ... }            // portrait
+     * page(PageSize.A4.landscape) { ... }  // landscape
+     * ```
+     */
+    public val landscape: PageSize
+        get() = if (width.value >= height.value) this else PageSize(height, width)
+
+    /** The same page rotated into portrait orientation (height ≥ width). */
+    public val portrait: PageSize
+        get() = if (height.value >= width.value) this else PageSize(height, width)
+
     public companion object {
         public val A4: PageSize = PageSize(595.dp, 842.dp)
         public val A5: PageSize = PageSize(420.dp, 595.dp)
@@ -54,6 +71,13 @@ public data class Padding(
 /**
  * Layout constraint passed down during measurement. A value of
  * [Float.POSITIVE_INFINITY] means unconstrained in that dimension.
+ *
+ * Degenerate slots are well-defined rather than fatal: when a container's
+ * padding consumes all of the available extent, children measure against
+ * a zero-width / zero-height constraint and collapse to nothing — the
+ * document still renders, with that subtree invisible. Sizes are never
+ * clamped negative. Install a [com.conamobile.pdfkmp.PdfLog.logger]
+ * during development to surface other silently-handled conditions.
  */
 public data class Constraints(
     val maxWidth: Float,

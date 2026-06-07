@@ -103,6 +103,42 @@ class JvmBackendTest {
     }
 
     @Test
+    fun outlineAndInternalLinksAreWritten() {
+        val doc = com.conamobile.pdfkmp.pdf {
+            page {
+                bookmark("Chapter 1")
+                anchor("ch1")
+                text("Chapter 1")
+                linkToAnchor(anchor = "ch2") { text("jump to chapter 2") }
+            }
+            page {
+                bookmark("Chapter 2")
+                bookmark("Section 2.1", level = 1)
+                anchor("ch2")
+                text("Chapter 2")
+            }
+        }
+        Loader.loadPDF(doc.toByteArray()).use { loaded ->
+            val outline = loaded.documentCatalog.documentOutline
+            assertTrue(outline != null, "document outline missing")
+            val first = outline.firstChild
+            assertTrue(first?.title == "Chapter 1", "first outline entry: ${first?.title}")
+            val second = first?.nextSibling
+            assertTrue(second?.title == "Chapter 2", "second outline entry: ${second?.title}")
+            assertTrue(
+                second?.firstChild?.title == "Section 2.1",
+                "nested outline entry: ${second?.firstChild?.title}",
+            )
+            // The internal link on page 1 must carry a resolved GoTo action
+            // even though its destination was registered by page 2.
+            val goTos = loaded.getPage(0).annotations
+                .filterIsInstance<org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink>()
+                .mapNotNull { it.action as? org.apache.pdfbox.pdmodel.interactive.action.PDActionGoTo }
+            assertTrue(goTos.isNotEmpty(), "internal link has no GoTo action")
+        }
+    }
+
+    @Test
     fun metadataIsWritten() {
         val doc = com.conamobile.pdfkmp.pdf {
             metadata {

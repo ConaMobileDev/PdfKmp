@@ -1,5 +1,6 @@
 package com.conamobile.pdfkmp.dsl
 
+import com.conamobile.pdfkmp.barcode.QrErrorCorrection
 import com.conamobile.pdfkmp.geometry.ContentScale
 import com.conamobile.pdfkmp.geometry.Padding
 import com.conamobile.pdfkmp.layout.BoxAlignment
@@ -7,14 +8,23 @@ import com.conamobile.pdfkmp.layout.HorizontalAlignment
 import com.conamobile.pdfkmp.layout.HorizontalArrangement
 import com.conamobile.pdfkmp.layout.VerticalAlignment
 import com.conamobile.pdfkmp.layout.VerticalArrangement
+import com.conamobile.pdfkmp.node.AnchorNode
+import com.conamobile.pdfkmp.node.BarcodeNode
+import com.conamobile.pdfkmp.node.BookmarkNode
 import com.conamobile.pdfkmp.node.BoxChild
 import com.conamobile.pdfkmp.node.BoxNode
 import com.conamobile.pdfkmp.node.ColumnNode
+import com.conamobile.pdfkmp.node.InternalLinkNode
+import com.conamobile.pdfkmp.node.KeepTogetherNode
 import com.conamobile.pdfkmp.node.ContainerDecoration
 import com.conamobile.pdfkmp.node.DividerNode
+import com.conamobile.pdfkmp.node.FormCheckBoxNode
+import com.conamobile.pdfkmp.node.FormTextFieldNode
 import com.conamobile.pdfkmp.node.ImageNode
 import com.conamobile.pdfkmp.node.LinkNode
+import com.conamobile.pdfkmp.node.MultiColumnNode
 import com.conamobile.pdfkmp.node.PdfNode
+import com.conamobile.pdfkmp.node.QrCodeNode
 import com.conamobile.pdfkmp.node.RichTextNode
 import com.conamobile.pdfkmp.node.RowNode
 import com.conamobile.pdfkmp.node.Shape
@@ -22,12 +32,14 @@ import com.conamobile.pdfkmp.node.ShapeNode
 import com.conamobile.pdfkmp.node.SpacerNode
 import com.conamobile.pdfkmp.node.TableNode
 import com.conamobile.pdfkmp.node.TextNode
+import com.conamobile.pdfkmp.node.TocNode
 import com.conamobile.pdfkmp.node.VectorNode
 import com.conamobile.pdfkmp.node.VectorStrokeMode
 import com.conamobile.pdfkmp.node.WeightNode
 import com.conamobile.pdfkmp.style.BorderSides
 import com.conamobile.pdfkmp.style.BorderStroke
 import com.conamobile.pdfkmp.style.CornerRadius
+import com.conamobile.pdfkmp.style.DropShadow
 import com.conamobile.pdfkmp.style.LineStyle
 import com.conamobile.pdfkmp.style.PdfColor
 import com.conamobile.pdfkmp.style.PdfPaint
@@ -142,6 +154,9 @@ public abstract class ContainerScope internal constructor(
         borderEach: BorderSides? = null,
         backgroundPaint: PdfPaint? = null,
         clipToBounds: Boolean = false,
+        dropShadow: DropShadow? = null,
+        rotation: Float = 0f,
+        opacity: Float = 1f,
         block: ColumnScope.() -> Unit,
     ) {
         val scope = ColumnScope(textStyle).apply(block)
@@ -159,6 +174,9 @@ public abstract class ContainerScope internal constructor(
                 borderEach = borderEach,
                 backgroundPaint = backgroundPaint,
                 clipToBounds = clipToBounds,
+                dropShadow = dropShadow,
+                rotation = rotation,
+                opacity = opacity,
             ),
         )
     }
@@ -192,6 +210,9 @@ public abstract class ContainerScope internal constructor(
         borderEach: BorderSides? = null,
         backgroundPaint: PdfPaint? = null,
         clipToBounds: Boolean = false,
+        dropShadow: DropShadow? = null,
+        rotation: Float = 0f,
+        opacity: Float = 1f,
         block: RowScope.() -> Unit,
     ) {
         val scope = RowScope(textStyle).apply(block)
@@ -209,6 +230,9 @@ public abstract class ContainerScope internal constructor(
                 borderEach = borderEach,
                 backgroundPaint = backgroundPaint,
                 clipToBounds = clipToBounds,
+                dropShadow = dropShadow,
+                rotation = rotation,
+                opacity = opacity,
             ),
         )
     }
@@ -252,6 +276,9 @@ public abstract class ContainerScope internal constructor(
         borderEach: BorderSides? = null,
         backgroundPaint: PdfPaint? = null,
         clipToBounds: Boolean = false,
+        dropShadow: DropShadow? = null,
+        rotation: Float = 0f,
+        opacity: Float = 1f,
         block: BoxScope.() -> Unit,
     ) {
         val scope = BoxScope(textStyle).apply(block)
@@ -268,6 +295,9 @@ public abstract class ContainerScope internal constructor(
                 borderEach = borderEach,
                 backgroundPaint = backgroundPaint,
                 clipToBounds = clipToBounds,
+                dropShadow = dropShadow,
+                rotation = rotation,
+                opacity = opacity,
             ),
         )
     }
@@ -299,6 +329,9 @@ public abstract class ContainerScope internal constructor(
         borderEach: BorderSides? = null,
         backgroundPaint: PdfPaint? = null,
         clipToBounds: Boolean = false,
+        dropShadow: DropShadow? = null,
+        rotation: Float = 0f,
+        opacity: Float = 1f,
         block: ColumnScope.() -> Unit,
     ) {
         column(
@@ -310,6 +343,9 @@ public abstract class ContainerScope internal constructor(
             borderEach = borderEach,
             backgroundPaint = backgroundPaint,
             clipToBounds = clipToBounds,
+            dropShadow = dropShadow,
+            rotation = rotation,
+            opacity = opacity,
             block = block,
         )
     }
@@ -320,6 +356,63 @@ public abstract class ContainerScope internal constructor(
      */
     public fun spacer(width: Dp = Dp.Zero, height: Dp = Dp.Zero) {
         children += SpacerNode(width, height)
+    }
+
+    /**
+     * Appends an interactive AcroForm text input field — a fillable box in
+     * the produced PDF.
+     *
+     * Per-platform behaviour:
+     * - **JVM / Desktop (PdfBox)** — a real interactive `PDTextField` the
+     *   user can type into, plus the static visual box.
+     * - **Android / iOS** — visual-only: a bordered light-gray box rendered
+     *   with [value] inside, but not editable (the underlying PDF generators
+     *   expose no AcroForm API). The field still reads correctly as a form
+     *   slot when the document is printed or viewed.
+     *
+     * Field-name collisions are resolved by the backend by appending a
+     * numeric suffix (`-2`, `-3`, …) so two fields named the same don't
+     * clobber each other's value.
+     *
+     * @param name AcroForm field name (used to read the value back).
+     * @param width rendered width of the field box.
+     * @param height rendered height of the field box.
+     * @param value initial text content.
+     * @param multiline whether the field accepts multiple lines.
+     */
+    public fun textField(
+        name: String,
+        width: Dp,
+        height: Dp = Dp(24f),
+        value: String = "",
+        multiline: Boolean = false,
+    ) {
+        children += FormTextFieldNode(
+            name = name,
+            width = width,
+            height = height,
+            value = value,
+            multiline = multiline,
+        )
+    }
+
+    /**
+     * Appends an interactive AcroForm checkbox.
+     *
+     * Per-platform behaviour mirrors [textField]: interactive `PDCheckBox`
+     * on JVM/Desktop, visual-only square (with an `X` when [checked]) on
+     * Android and iOS.
+     *
+     * @param name AcroForm field name (used to read the state back).
+     * @param size edge length of the square checkbox.
+     * @param checked initial on/off state.
+     */
+    public fun checkBox(
+        name: String,
+        size: Dp = Dp(14f),
+        checked: Boolean = false,
+    ) {
+        children += FormCheckBoxNode(name = name, size = size, checked = checked)
     }
 
     /**
@@ -407,6 +500,184 @@ public abstract class ContainerScope internal constructor(
             fill = fillPaint ?: fill?.let { PdfPaint.Solid(it) },
             strokeColor = strokeColor,
             strokeWidth = strokeWidth,
+        )
+    }
+
+    /**
+     * Adds an entry to the document outline — the bookmark sidebar PDF
+     * readers show for quick navigation. The entry points at this marker's
+     * position in the rendered flow, so place it right before the heading
+     * it labels.
+     *
+     * Zero-size: contributes nothing visual. Supported on iOS and
+     * JVM/Desktop; Android's `PdfDocument` API has no outline support, so
+     * the marker is silently ignored there.
+     *
+     * @param title text shown in the outline panel.
+     * @param level nesting depth — `0` for chapters, `1` for sections
+     *   under the previous level-0 entry, and so on.
+     */
+    public fun bookmark(title: String, level: Int = 0) {
+        children += BookmarkNode(title = title, level = level)
+    }
+
+    /**
+     * Registers a named jump target at this position. Pair with
+     * [linkToAnchor] to build clickable cross-references ("see chapter 3")
+     * and tables of contents.
+     *
+     * Zero-size: contributes nothing visual.
+     *
+     * @param id document-unique destination name.
+     */
+    public fun anchor(id: String) {
+        children += AnchorNode(id = id)
+    }
+
+    /**
+     * Wraps the content added in [block] in a clickable region that jumps
+     * to the [anchor] registered under the same id — the internal-link
+     * counterpart of [link]. Forward references are fine: the anchor may
+     * appear later in the document.
+     *
+     * Clickable on iOS and JVM/Desktop; on Android only the visual
+     * styling renders (no annotation support in `PdfDocument`). Style the
+     * content yourself, exactly like [link].
+     *
+     * @param anchor the [anchor] id to jump to.
+     */
+    public fun linkToAnchor(anchor: String, block: ColumnScope.() -> Unit) {
+        val scope = ColumnScope(textStyle).apply(block)
+        val inner = if (scope.children.size == 1) {
+            scope.children.first()
+        } else {
+            ColumnNode(children = scope.children.toList())
+        }
+        children += InternalLinkNode(anchorId = anchor, child = inner)
+    }
+
+    /**
+     * Appends a newspaper-style multi-column block: the children added in
+     * [block] flow into [count] equal-width columns, balanced so the
+     * columns end up roughly the same height while keeping source order.
+     *
+     * The block participates in page breaking as a single unit — columns
+     * do not continue onto the next page. Split very long content into
+     * several `columns { }` blocks when it can exceed one page.
+     *
+     * @param count number of columns; must be positive.
+     * @param gap horizontal space between adjacent columns.
+     * @param spacing vertical gap between items inside a column.
+     */
+    public fun columns(
+        count: Int = 2,
+        gap: Dp = Dp(16f),
+        spacing: Dp = Dp(6f),
+        block: ColumnScope.() -> Unit,
+    ) {
+        require(count > 0) { "columns must have at least one column (got $count)" }
+        val scope = ColumnScope(textStyle).apply(block)
+        children += MultiColumnNode(
+            children = scope.children.toList(),
+            count = count,
+            gap = gap,
+            spacing = spacing,
+        )
+    }
+
+    /**
+     * Appends an automatically generated table of contents.
+     *
+     * Every [bookmark] in the document becomes one clickable row — title,
+     * dotted leader, final page number — that jumps to the bookmark's
+     * position. Page numbers are resolved with a dry-run layout pass, so
+     * forward references (the TOC usually sits before the chapters) come
+     * out correct, including the page shift the TOC itself introduces.
+     *
+     * Only valid in a page body; headers, footers, and watermarks cannot
+     * host a TOC because they are rebuilt for every physical page.
+     *
+     * @param maxLevel deepest bookmark level included; `0` lists chapters
+     *   only, `1` adds their sections, and so on.
+     * @param indentPerLevel horizontal indent applied per bookmark level.
+     * @param spacing vertical gap between entry rows.
+     */
+    public fun tableOfContents(
+        maxLevel: Int = 1,
+        indentPerLevel: Dp = Dp(14f),
+        spacing: Dp = Dp(6f),
+    ) {
+        children += TocNode(
+            maxLevel = maxLevel,
+            style = textStyle,
+            indentPerLevel = indentPerLevel,
+            spacing = spacing,
+        )
+    }
+
+    /**
+     * Appends a QR code symbol encoding [data] in byte mode (UTF-8). The
+     * symbol is drawn as crisp vector squares, so it scans reliably at any
+     * print size, and the smallest QR version that fits the payload at the
+     * requested [errorCorrection] level is selected automatically.
+     *
+     * Leave some quiet space around the symbol (the QR spec recommends 4
+     * modules) — a padded container or the page margin is usually enough.
+     *
+     * @param data payload — URLs, plain text, vCards, etc.
+     * @param size rendered edge length of the (square) symbol.
+     * @param errorCorrection redundancy level; higher levels survive more
+     *   damage but produce denser symbols.
+     * @param color module (dark square) colour.
+     * @param background fill behind the symbol; `null` for transparent.
+     *   Keep strong contrast against [color] or scanners will struggle.
+     */
+    public fun qrCode(
+        data: String,
+        size: Dp = Dp(100f),
+        errorCorrection: QrErrorCorrection = QrErrorCorrection.M,
+        color: PdfColor = PdfColor.Black,
+        background: PdfColor? = PdfColor.White,
+    ) {
+        children += QrCodeNode(
+            data = data,
+            errorCorrection = errorCorrection,
+            size = size,
+            color = color,
+            background = background,
+        )
+    }
+
+    /**
+     * Appends a Code 128 barcode encoding [data] (printable ASCII 32–126).
+     * Digit runs compress automatically via code set C, and the mandatory
+     * mod-103 checksum is appended for you.
+     *
+     * Readers expect a quiet zone of roughly ten modules on both sides —
+     * give the barcode some horizontal breathing room. The human-readable
+     * caption customary under retail barcodes is not drawn automatically;
+     * add a centred `text(data)` below when you need one.
+     *
+     * @param data payload; non-ASCII input throws [IllegalArgumentException].
+     * @param width rendered width; `null` uses the symbol's natural size of
+     *   one PDF point per module.
+     * @param height bar height — taller bars are easier to scan.
+     * @param color bar colour.
+     * @param background fill behind the bars; `null` for transparent.
+     */
+    public fun barcode(
+        data: String,
+        width: Dp? = null,
+        height: Dp = Dp(50f),
+        color: PdfColor = PdfColor.Black,
+        background: PdfColor? = PdfColor.White,
+    ) {
+        children += BarcodeNode(
+            data = data,
+            width = width,
+            height = height,
+            color = color,
+            background = background,
         )
     }
 
@@ -530,8 +801,9 @@ public abstract class ContainerScope internal constructor(
         height: Dp,
         contentScale: ContentScale = ContentScale.Fit,
         allowDownScale: Boolean = true,
+        altText: String? = null,
     ) {
-        children += ImageNode(bytes, width, height, contentScale, allowDownScale)
+        children += ImageNode(bytes, width, height, contentScale, allowDownScale, altText)
     }
 
     /**
@@ -548,6 +820,7 @@ public abstract class ContainerScope internal constructor(
         width: Dp,
         contentScale: ContentScale = ContentScale.Fit,
         allowDownScale: Boolean = true,
+        altText: String? = null,
     ) {
         children += ImageNode(
             bytes = bytes,
@@ -555,6 +828,7 @@ public abstract class ContainerScope internal constructor(
             height = null,
             contentScale = contentScale,
             allowDownScale = allowDownScale,
+            altText = altText,
         )
     }
 
@@ -568,6 +842,7 @@ public abstract class ContainerScope internal constructor(
         bytes: ByteArray,
         contentScale: ContentScale = ContentScale.Fit,
         allowDownScale: Boolean = true,
+        altText: String? = null,
     ) {
         children += ImageNode(
             bytes = bytes,
@@ -575,6 +850,7 @@ public abstract class ContainerScope internal constructor(
             height = null,
             contentScale = contentScale,
             allowDownScale = allowDownScale,
+            altText = altText,
         )
     }
 
@@ -665,12 +941,18 @@ public abstract class ContainerScope internal constructor(
      * @param cellPadding default padding applied to every cell. Override
      *   per row via `row(cellPadding = ...)` or per cell via
      *   `cell(padding = ...)`.
+     * @param repeatHeader when the page's
+     *   [com.conamobile.pdfkmp.layout.PageBreakStrategy.Slice] strategy
+     *   splits the table across pages, re-draw the header row at the top
+     *   of every continuation page. Ignored for tables that fit on one
+     *   page or have no header.
      */
     public fun table(
         columns: List<TableColumn>,
         border: TableBorder = TableBorder(),
         cornerRadius: Dp = Dp.Zero,
         cellPadding: Padding = Padding.all(Dp(8f)),
+        repeatHeader: Boolean = true,
         block: TableScope.() -> Unit,
     ) {
         require(columns.isNotEmpty()) { "table must have at least one column" }
@@ -682,7 +964,90 @@ public abstract class ContainerScope internal constructor(
             border = border,
             cornerRadius = cornerRadius,
             cellPadding = cellPadding,
+            repeatHeader = repeatHeader,
         )
+    }
+
+    /**
+     * Appends a free-form vector drawing authored in a local coordinate
+     * space of `(0, 0)`–`(width, height)` and scaled into the node's final
+     * rectangle. Use it for diagrams, decorations, or any shape the
+     * primitive nodes don't cover — everything stays sharp vector output.
+     *
+     * Example — a warning triangle:
+     * ```
+     * freeDraw(width = 60.dp, height = 60.dp) {
+     *     path(fill = PdfColor(1f, 0.8f, 0.2f), strokeColor = PdfColor.Black, strokeWidth = 2f) {
+     *         moveTo(30f, 4f); lineTo(56f, 52f); lineTo(4f, 52f); close()
+     *     }
+     * }
+     * ```
+     *
+     * @param width rendered width; also the local coordinate space width.
+     * @param height rendered height; also the local coordinate space height.
+     */
+    public fun freeDraw(width: Dp, height: Dp, block: FreeDrawScope.() -> Unit) {
+        val scope = FreeDrawScope().apply(block)
+        children += VectorNode(
+            image = VectorImage(
+                viewportWidth = width.value,
+                viewportHeight = height.value,
+                intrinsicWidth = width.value,
+                intrinsicHeight = height.value,
+                paths = scope.paths.toList(),
+            ),
+            width = width,
+            height = height,
+        )
+    }
+
+    /**
+     * Appends a uniform grid: children added inside [block] flow row-major
+     * into [columns] equal-width cells. The last row is padded with empty
+     * cells so every column keeps the same width.
+     *
+     * Sugar over nested [column] / [row] / weighted slots — grid cells can
+     * hold any node, including cards and images.
+     *
+     * @param columns number of cells per row; must be positive.
+     * @param spacing gap inserted both between rows and between columns.
+     */
+    public fun grid(columns: Int, spacing: Dp = Dp.Zero, block: GridScope.() -> Unit) {
+        require(columns > 0) { "grid must have at least one column (got $columns)" }
+        val scope = GridScope(textStyle).apply(block)
+        column(spacing = spacing) {
+            scope.children.toList().chunked(columns).forEach { rowCells ->
+                row(spacing = spacing) {
+                    rowCells.forEach { cell ->
+                        children += WeightNode(1f, cell)
+                    }
+                    repeat(columns - rowCells.size) {
+                        children += WeightNode(1f, SpacerNode())
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Wraps the children added in [block] in a group the page-break
+     * machinery never splits: under the `Slice` strategy the group moves
+     * to a fresh page whole instead of being cut mid-content — the
+     * `break-inside: avoid` of this DSL. Use it for figures with their
+     * captions, stat cards, or any cluster where a page break in the
+     * middle would read as a bug.
+     *
+     * A group taller than one full page still overflows past the bottom
+     * margin (there is nowhere whole to move it).
+     */
+    public fun keepTogether(block: ColumnScope.() -> Unit) {
+        val scope = ColumnScope(textStyle).apply(block)
+        val inner = if (scope.children.size == 1) {
+            scope.children.first()
+        } else {
+            ColumnNode(children = scope.children.toList())
+        }
+        children += KeepTogetherNode(child = inner)
     }
 
     /**
@@ -713,6 +1078,13 @@ public abstract class ContainerScope internal constructor(
 /** Receiver inside `column { ... }`. */
 @PdfDsl
 public class ColumnScope internal constructor(textStyle: TextStyle) : ContainerScope(textStyle)
+
+/**
+ * Receiver inside `grid { ... }`. Each child added here becomes one grid
+ * cell, filled row-major.
+ */
+@PdfDsl
+public class GridScope internal constructor(textStyle: TextStyle) : ContainerScope(textStyle)
 
 /** Receiver inside `row { ... }`. */
 @PdfDsl

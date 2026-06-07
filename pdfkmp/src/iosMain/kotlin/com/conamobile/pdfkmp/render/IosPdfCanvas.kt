@@ -1,5 +1,6 @@
 package com.conamobile.pdfkmp.render
 
+import com.conamobile.pdfkmp.PdfLog
 import com.conamobile.pdfkmp.geometry.ContentScale
 import com.conamobile.pdfkmp.style.LineStyle
 import com.conamobile.pdfkmp.style.PdfColor
@@ -13,8 +14,13 @@ import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.useContents
 import platform.CoreFoundation.CFRelease
+import platform.CoreGraphics.CGContextBeginTransparencyLayer
+import platform.CoreGraphics.CGContextEndTransparencyLayer
+import platform.CoreGraphics.CGContextRotateCTM
 import platform.CoreGraphics.CGContextScaleCTM
+import platform.CoreGraphics.CGContextSetAlpha
 import platform.CoreGraphics.CGContextTranslateCTM
+import kotlin.math.PI
 import platform.CoreGraphics.CGContextAddLineToPoint
 import platform.CoreGraphics.CGContextAddPath
 import platform.CoreGraphics.CGContextBeginPath
@@ -71,6 +77,8 @@ import platform.Foundation.NSData
 import platform.Foundation.NSString
 import platform.Foundation.NSURL
 import platform.Foundation.create
+import platform.UIKit.UIGraphicsAddPDFContextDestinationAtPoint
+import platform.UIKit.UIGraphicsSetPDFContextDestinationForRect
 import platform.UIKit.UIGraphicsSetPDFContextURLForRect
 import platform.UIKit.NSFontAttributeName
 import platform.UIKit.NSForegroundColorAttributeName
@@ -95,7 +103,25 @@ import platform.UIKit.drawAtPoint
 internal class IosPdfCanvas(
     private val ctx: CGContextRef,
     private val fonts: IosFontRegistry,
+    private val navigation: IosNavigation = IosNavigation(),
 ) : PdfCanvas {
+
+    override fun rotate(degrees: Float, pivotX: Float, pivotY: Float) {
+        // The UIKit PDF context ships a flipped (top-left) CTM, so a
+        // positive angle already reads as clockwise on the page.
+        CGContextTranslateCTM(ctx, pivotX.toDouble(), pivotY.toDouble())
+        CGContextRotateCTM(ctx, degrees.toDouble() * PI / 180.0)
+        CGContextTranslateCTM(ctx, -pivotX.toDouble(), -pivotY.toDouble())
+    }
+
+    override fun beginTransparencyGroup(alpha: Float) {
+        CGContextSetAlpha(ctx, alpha.coerceIn(0f, 1f).toDouble())
+        CGContextBeginTransparencyLayer(ctx, null)
+    }
+
+    override fun endTransparencyGroup() {
+        CGContextEndTransparencyLayer(ctx)
+    }
 
     override fun drawText(text: String, x: Float, y: Float, style: TextStyle) {
         val font = fonts.fontFor(style)
@@ -519,6 +545,33 @@ internal class IosPdfCanvas(
         )
     }
 
+    override fun namedDestination(name: String, y: Float) {
+        UIGraphicsAddPDFContextDestinationAtPoint(
+            name = name,
+            point = CGPointMake(0.0, y.toDouble()),
+        )
+    }
+
+    override fun linkToDestination(name: String, x: Float, y: Float, width: Float, height: Float) {
+        if (width <= 0f || height <= 0f) return
+        UIGraphicsSetPDFContextDestinationForRect(
+            name = name,
+            rect = CGRectMake(x.toDouble(), y.toDouble(), width.toDouble(), height.toDouble()),
+        )
+    }
+
+    override fun bookmark(title: String, level: Int, y: Float) {
+        // The outline dictionary (attached at finish()) references jump
+        // targets by destination name, so each bookmark registers its own
+        // synthetic named destination at the marker's position.
+        val destination = navigation.nextBookmarkDestination()
+        UIGraphicsAddPDFContextDestinationAtPoint(
+            name = destination,
+            point = CGPointMake(0.0, y.toDouble()),
+        )
+        navigation.bookmarks += IosNavigation.Bookmark(title, level, destination)
+    }
+
     override fun drawImage(
         bytes: ByteArray,
         x: Float,
@@ -529,9 +582,16 @@ internal class IosPdfCanvas(
         sourceTop: Float,
         sourceBottom: Float,
         allowDownScale: Boolean,
+        // The Core Graphics PDF context writes no tagged structure, so the
+        // accessibility description is accepted but ignored on iOS.
+        altText: String?,
     ) {
         if (bytes.isEmpty() || width <= 0f || height <= 0f) return
-        val decoded = decodeCGImage(bytes) ?: return
+        val decoded = decodeCGImage(bytes)
+        if (decoded == null) {
+            PdfLog.warn("drawImage skipped: ${bytes.size}-byte payload is not a decodable image (iOS backend)")
+            return
+        }
         val cgImage = if (allowDownScale) {
             val target = targetPixelDimensions(width, height)
             downscaleIfLarger(decoded, maxOf(target.first, target.second))

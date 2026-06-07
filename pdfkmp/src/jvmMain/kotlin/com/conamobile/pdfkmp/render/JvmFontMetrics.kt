@@ -20,7 +20,9 @@ internal class JvmFontMetrics(private val registry: JvmFontRegistry) : FontMetri
     override fun measure(text: String, style: TextStyle): TextMetrics {
         val font = registry.fontFor(style)
         val size = style.fontSize.value
-        val encodable = registry.encodable(font, text)
+        // Measure the shaped/reordered string so wrap widths match the
+        // presentation-form advances JvmPdfCanvas draws (see JvmBidiShaper).
+        val encodable = registry.encodable(font, JvmBidiShaper.process(text))
 
         // getStringWidth returns 1/1000 glyph-space units; scale to points.
         val baseWidth = if (encodable.isEmpty()) 0f else font.getStringWidth(encodable) / 1000f * size

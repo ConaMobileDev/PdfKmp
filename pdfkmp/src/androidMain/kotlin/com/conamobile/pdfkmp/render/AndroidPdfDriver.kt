@@ -3,6 +3,8 @@ package com.conamobile.pdfkmp.render
 import android.graphics.pdf.PdfDocument as AndroidPdfDocument
 import com.conamobile.pdfkmp.geometry.PageSize
 import com.conamobile.pdfkmp.metadata.PdfMetadata
+import com.conamobile.pdfkmp.pdfwriter.PdfNavigation
+import com.conamobile.pdfkmp.pdfwriter.PdfPatcher
 import com.conamobile.pdfkmp.style.PdfFont
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -32,6 +34,11 @@ internal class AndroidPdfDriver(
     private val registry = AndroidFontRegistry(cacheDir)
     private val metrics = AndroidFontMetrics(registry)
 
+    // Links, named destinations, and outline entries the canvas records while
+    // drawing — none of which Android's PdfDocument can emit. The patcher in
+    // finish() turns these into real PDF annotations / outline / info dict.
+    private val navigation = PdfNavigation()
+
     private var currentPage: AndroidPdfDocument.Page? = null
     private var pageNumber = 0
 
@@ -49,7 +56,8 @@ internal class AndroidPdfDriver(
             .create()
         val page = document.startPage(info)
         currentPage = page
-        return AndroidPdfCanvas(page.canvas, metrics)
+        // pageNumber is 1-based (Android API); the patcher indexes pages 0-based.
+        return AndroidPdfCanvas(page.canvas, metrics, pageNumber - 1, navigation)
     }
 
     override fun endPage() {
@@ -60,16 +68,8 @@ internal class AndroidPdfDriver(
 
     override fun finish(): ByteArray {
         check(currentPage == null) { "endPage() must be called before finish()" }
-        return try {
+        val rawBytes = try {
             ByteArrayOutputStream().use { stream ->
-                // Android's PdfDocument has no API for setting metadata in the
-                // info dictionary; the title/author the user supplied is
-                // intentionally not written until we either switch to a
-                // lower-level encoder or post-process the bytes. The metadata
-                // value is kept reachable so we don't drop user data — see
-                // https://developer.android.com/reference/android/graphics/pdf/PdfDocument
-                // for the API limitation.
-                @Suppress("UNUSED_VARIABLE") val pendingMetadata = metadata
                 document.writeTo(stream)
                 stream.toByteArray()
             }
@@ -77,5 +77,14 @@ internal class AndroidPdfDriver(
             document.close()
             registry.cleanup()
         }
+        // Android's PdfDocument has no API for the info dictionary, link
+        // annotations, named destinations, or the outline. We post-process the
+        // bytes it produced with an incremental update that adds exactly those
+        // features. The patcher returns the input untouched on any parse
+        // surprise, so the worst case is the prior silent no-op rather than a
+        // corrupt file. See
+        // https://developer.android.com/reference/android/graphics/pdf/PdfDocument
+        // for the API limitation that makes this necessary.
+        return PdfPatcher.apply(rawBytes, metadata, navigation)
     }
 }

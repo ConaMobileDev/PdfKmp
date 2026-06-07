@@ -68,6 +68,31 @@ class SamplesSmokeTest {
     fun showcase_producesValidPdf() = assertSamplePdf(Samples.showcase().toByteArray())
 
     @Test
+    fun textAdvanced_producesValidPdf() = assertSamplePdf(Samples.textAdvanced().toByteArray())
+
+    @Test
+    fun longTable_producesValidPdf() = assertSamplePdf(Samples.longTable().toByteArray())
+
+    @Test
+    fun barcodes_producesValidPdf() = assertSamplePdf(Samples.barcodes().toByteArray())
+
+    @Test
+    fun designExtras_producesValidPdf() = assertSamplePdf(Samples.designExtras().toByteArray())
+
+    @Test
+    fun navigation_producesValidPdf() = assertSamplePdf(Samples.navigation().toByteArray())
+
+    @Test
+    fun pageTemplates_producesValidPdf() = assertSamplePdf(Samples.pageTemplates().toByteArray())
+
+    @Test
+    fun newsletter_producesValidPdf() = assertSamplePdf(Samples.newsletter().toByteArray())
+
+    @Test
+    fun formsAndAccessibility_producesValidPdf() =
+        assertSamplePdf(Samples.formsAndAccessibility().toByteArray())
+
+    @Test
     fun imageDownscale_producesValidPdf() {
         // Reuse the 1×1 PNG fixture — exercise both the default
         // (allowDownScale = true) and opt-out paths end-to-end.

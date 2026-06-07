@@ -1,20 +1,30 @@
 package com.conamobile.pdfkmp.render
 
+import com.conamobile.pdfkmp.PdfLog
 import com.conamobile.pdfkmp.geometry.ContentScale
 import com.conamobile.pdfkmp.style.LineStyle
 import com.conamobile.pdfkmp.style.PdfColor
 import com.conamobile.pdfkmp.style.PdfPaint
 import com.conamobile.pdfkmp.style.TextStyle
 import com.conamobile.pdfkmp.vector.PathCommand
+import org.apache.pdfbox.cos.COSDictionary
+import org.apache.pdfbox.cos.COSName
+import org.apache.pdfbox.cos.COSString
 import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.pdmodel.PDPage
 import org.apache.pdfbox.pdmodel.PDPageContentStream
 import org.apache.pdfbox.pdmodel.common.PDRectangle
+import org.apache.pdfbox.pdmodel.documentinterchange.markedcontent.PDPropertyList
 import org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory
 import org.apache.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink
+import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationWidget
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDBorderStyleDictionary
 import org.apache.pdfbox.pdmodel.interactive.action.PDActionURI
+import org.apache.pdfbox.pdmodel.interactive.documentnavigation.destination.PDPageXYZDestination
+import org.apache.pdfbox.pdmodel.interactive.form.PDCheckBox
+import org.apache.pdfbox.pdmodel.interactive.form.PDTextField
+import org.apache.pdfbox.util.Matrix
 import java.awt.Color
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
@@ -44,6 +54,8 @@ internal class JvmPdfCanvas(
     private val cs: PDPageContentStream,
     private val pageHeight: Float,
     private val fonts: JvmFontRegistry,
+    private val navigation: JvmNavigation = JvmNavigation(),
+    private val forms: JvmAcroForm = JvmAcroForm(document),
 ) : PdfCanvas {
 
     /** Cache of alpha-only graphics states, keyed by the rounded alpha value. */
@@ -54,7 +66,9 @@ internal class JvmPdfCanvas(
 
     override fun drawText(text: String, x: Float, y: Float, style: TextStyle) {
         val font = fonts.fontFor(style)
-        val shown = fonts.encodable(font, text)
+        // PdfBox's showText does no bidi/Arabic shaping; reorder + shape on JVM
+        // so RTL scripts render the way Android/iOS get for free. No-op for Latin.
+        val shown = fonts.encodable(font, JvmBidiShaper.process(text))
         if (shown.isEmpty()) return
         val size = style.fontSize.value
         // PdfKmp positions text by its top-left corner; PDF text operators
@@ -271,6 +285,87 @@ internal class JvmPdfCanvas(
         page.annotations.add(link)
     }
 
+    override fun namedDestination(name: String, y: Float) {
+        navigation.destinations[name] = destinationAt(y)
+    }
+
+    override fun bookmark(title: String, level: Int, y: Float) {
+        navigation.bookmarks += JvmNavigation.Bookmark(title, level, destinationAt(y))
+    }
+
+    override fun linkToDestination(name: String, x: Float, y: Float, width: Float, height: Float) {
+        if (width <= 0f || height <= 0f) return
+        val link = PDAnnotationLink()
+        link.rectangle = PDRectangle(x, fy(y + height), width, height)
+        link.borderStyle = PDBorderStyleDictionary().apply { this.width = 0f }
+        page.annotations.add(link)
+        // The GoTo action attaches at finish() — the destination may be
+        // registered by a later page (TOC entries link forward).
+        navigation.pendingLinks += name to link
+    }
+
+    override fun formTextField(
+        name: String,
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        value: String,
+        multiline: Boolean,
+        fontSizePt: Float,
+    ) {
+        if (width <= 0f || height <= 0f) return
+        val acroForm = forms.acroForm()
+        val field = PDTextField(acroForm).apply {
+            partialName = forms.uniqueName(name)
+            // Inherit the form-level /DA but pin the requested font size so the
+            // interactive field matches the static fallback's visual size.
+            defaultAppearance = "/Helv $fontSizePt Tf 0 g"
+            isMultiline = multiline
+        }
+        val widget = field.widgets.first().apply {
+            rectangle = PDRectangle(x, fy(y + height), width, height)
+            page = this@JvmPdfCanvas.page
+            // The static fallback already draws the box + border; keep the
+            // widget's own border invisible so they don't double up.
+            setBorderStyle(PDBorderStyleDictionary().apply { this.width = 0f })
+        }
+        // Set the value after the widget exists so NeedAppearances has a widget
+        // to regenerate against.
+        if (value.isNotEmpty()) field.value = value
+        page.annotations.add(widget)
+        forms.addField(field)
+    }
+
+    override fun formCheckBox(name: String, x: Float, y: Float, size: Float, checked: Boolean) {
+        if (size <= 0f) return
+        val acroForm = forms.acroForm()
+        val field = PDCheckBox(acroForm).apply {
+            partialName = forms.uniqueName(name)
+        }
+        val widget = field.widgets.first().apply {
+            rectangle = PDRectangle(x, fy(y + size), size, size)
+            page = this@JvmPdfCanvas.page
+            setBorderStyle(PDBorderStyleDictionary().apply { this.width = 0f })
+        }
+        page.annotations.add(widget)
+        forms.addField(field)
+        // Toggle state after the widget is wired up.
+        if (checked) field.check() else field.unCheck()
+    }
+
+    /**
+     * Jump target at the given top-left-origin [y] on this page. Zoom 0
+     * keeps the reader's current zoom level, matching what users expect
+     * from in-document navigation.
+     */
+    private fun destinationAt(y: Float): PDPageXYZDestination = PDPageXYZDestination().apply {
+        setPage(this@JvmPdfCanvas.page)
+        top = fy(y).toInt()
+        left = 0
+        zoom = 0f
+    }
+
     override fun drawImage(
         bytes: ByteArray,
         x: Float,
@@ -281,9 +376,14 @@ internal class JvmPdfCanvas(
         sourceTop: Float,
         sourceBottom: Float,
         allowDownScale: Boolean,
+        altText: String?,
     ) {
         if (bytes.isEmpty() || width <= 0f || height <= 0f) return
-        val decoded = runCatching { ImageIO.read(ByteArrayInputStream(bytes)) }.getOrNull() ?: return
+        val decoded = runCatching { ImageIO.read(ByteArrayInputStream(bytes)) }.getOrNull()
+        if (decoded == null) {
+            PdfLog.warn("drawImage skipped: ${bytes.size}-byte payload is not a decodable image (JVM backend)")
+            return
+        }
 
         val sliced = sliceRows(decoded, sourceTop, sourceBottom)
         val shaped = if (contentScale == ContentScale.Crop) {
@@ -303,7 +403,20 @@ internal class JvmPdfCanvas(
             dstHeight = height,
         )
         val xObject = LosslessFactory.createFromImage(document, scaled)
-        cs.drawImage(xObject, dst.x, fy(dst.y + dst.height), dst.width, dst.height)
+        // When alt text is supplied, wrap the image draw in a /Figure marked-
+        // content sequence carrying /Alt so tagged-PDF consumers (screen
+        // readers) can describe the picture. Best-effort: this records the
+        // alternate text on the content; a full tag tree is out of scope.
+        if (altText != null) {
+            val props = PDPropertyList.create(
+                COSDictionary().apply { setItem(COSName.ALT, COSString(altText)) },
+            )
+            cs.beginMarkedContent(COSName.getPDFName("Figure"), props)
+            cs.drawImage(xObject, dst.x, fy(dst.y + dst.height), dst.width, dst.height)
+            cs.endMarkedContent()
+        } else {
+            cs.drawImage(xObject, dst.x, fy(dst.y + dst.height), dst.width, dst.height)
+        }
     }
 
     /**
@@ -354,8 +467,35 @@ internal class JvmPdfCanvas(
         buildRoundedRectPath(x, y, width, height, radius, radius, radius, radius)
 
     /** Sets the current alpha (stroking + non-stroking) via a cached ExtGState. */
+    override fun rotate(degrees: Float, pivotX: Float, pivotY: Float) {
+        // PdfKmp degrees are clockwise in top-left space; the PDF CTM is
+        // bottom-left, so the angle sign flips and the pivot's Y flips.
+        val radians = Math.toRadians(-degrees.toDouble())
+        val py = fy(pivotY)
+        cs.transform(Matrix.getTranslateInstance(pivotX, py))
+        cs.transform(Matrix.getRotateInstance(radians, 0f, 0f))
+        cs.transform(Matrix.getTranslateInstance(-pivotX, -py))
+    }
+
+    override fun beginTransparencyGroup(alpha: Float) {
+        // PdfBox content streams have no nestable group-alpha primitive,
+        // so the group alpha is folded into every subsequent draw call's
+        // per-draw alpha until the matching end call. Overlapping children
+        // therefore blend with each other — documented on the DSL.
+        groupAlphaStack.addLast(groupAlpha)
+        groupAlpha *= alpha.coerceIn(0f, 1f)
+    }
+
+    override fun endTransparencyGroup() {
+        groupAlpha = groupAlphaStack.removeLastOrNull() ?: 1f
+    }
+
+    /** Multiplier applied to every draw's alpha; see [beginTransparencyGroup]. */
+    private var groupAlpha = 1f
+    private val groupAlphaStack = ArrayDeque<Float>()
+
     private fun applyAlpha(alpha: Float) {
-        val a = alpha.coerceIn(0f, 1f)
+        val a = (alpha * groupAlpha).coerceIn(0f, 1f)
         val state = alphaStates.getOrPut(a) {
             PDExtendedGraphicsState().apply {
                 strokingAlphaConstant = a

@@ -1,16 +1,27 @@
 package com.conamobile.pdfkmp.layout
 
+import com.conamobile.pdfkmp.barcode.Code128Encoder
+import com.conamobile.pdfkmp.barcode.QrCodeGenerator
 import com.conamobile.pdfkmp.geometry.Constraints
 import com.conamobile.pdfkmp.geometry.Size
 import com.conamobile.pdfkmp.image.readImageInfo
+import com.conamobile.pdfkmp.node.AnchorNode
+import com.conamobile.pdfkmp.node.BarcodeNode
+import com.conamobile.pdfkmp.node.BookmarkNode
 import com.conamobile.pdfkmp.node.BoxNode
 import com.conamobile.pdfkmp.node.ColumnNode
 import com.conamobile.pdfkmp.node.ContainerDecoration
 import com.conamobile.pdfkmp.node.DividerNode
+import com.conamobile.pdfkmp.node.FormCheckBoxNode
+import com.conamobile.pdfkmp.node.FormTextFieldNode
 import com.conamobile.pdfkmp.node.ImageNode
+import com.conamobile.pdfkmp.node.InternalLinkNode
+import com.conamobile.pdfkmp.node.KeepTogetherNode
 import com.conamobile.pdfkmp.node.LazyNode
 import com.conamobile.pdfkmp.node.LinkNode
+import com.conamobile.pdfkmp.node.MultiColumnNode
 import com.conamobile.pdfkmp.node.PdfNode
+import com.conamobile.pdfkmp.node.QrCodeNode
 import com.conamobile.pdfkmp.node.RichTextNode
 import com.conamobile.pdfkmp.node.RowNode
 import com.conamobile.pdfkmp.node.ShapeNode
@@ -18,6 +29,7 @@ import com.conamobile.pdfkmp.node.SpacerNode
 import com.conamobile.pdfkmp.node.TableNode
 import com.conamobile.pdfkmp.node.TableRowNode
 import com.conamobile.pdfkmp.node.TextNode
+import com.conamobile.pdfkmp.node.TocNode
 import com.conamobile.pdfkmp.node.VectorNode
 import com.conamobile.pdfkmp.node.WeightNode
 import com.conamobile.pdfkmp.render.FontMetrics
@@ -53,6 +65,38 @@ public fun measure(
     is SpacerNode -> MeasuredBlock(
         size = Size(width = node.width.value, height = node.height.value),
     )
+
+    is FormTextFieldNode -> {
+        // Clamp to the available width like images / QR codes so a field
+        // wider than the slot doesn't spill past the page margin.
+        val requested = node.width.value
+        val width = if (requested > constraints.maxWidth && constraints.maxWidth > 0f) {
+            constraints.maxWidth
+        } else {
+            requested
+        }
+        // Field font size: leave a couple of points of vertical padding inside
+        // the box, capped so single-line fields stay legible.
+        val fontSizePt = (node.height.value - 8f).coerceIn(6f, 14f)
+        MeasuredFormTextField(
+            name = node.name,
+            value = node.value,
+            multiline = node.multiline,
+            fontSizePt = fontSizePt,
+            size = Size(width = width, height = node.height.value),
+        )
+    }
+
+    is FormCheckBoxNode -> {
+        val side = node.size.value.let { requested ->
+            if (requested > constraints.maxWidth && constraints.maxWidth > 0f) constraints.maxWidth else requested
+        }
+        MeasuredFormCheckBox(
+            name = node.name,
+            checked = node.checked,
+            size = Size(width = side, height = side),
+        )
+    }
 
     is DividerNode -> MeasuredDivider(
         thickness = node.thickness.value,
@@ -94,6 +138,40 @@ public fun measure(
     is LinkNode -> {
         val measuredChild = measure(node.child, constraints, metrics)
         MeasuredLink(url = node.url, child = measuredChild, size = measuredChild.size)
+    }
+
+    is QrCodeNode -> measureQrCode(node, constraints)
+
+    is BarcodeNode -> measureBarcode(node, constraints)
+
+    is BookmarkNode -> MeasuredBookmark(
+        title = node.title,
+        level = node.level,
+        size = Size(width = 0f, height = 0f),
+    )
+
+    is AnchorNode -> MeasuredAnchor(
+        id = node.id,
+        size = Size(width = 0f, height = 0f),
+    )
+
+    is InternalLinkNode -> {
+        val measuredChild = measure(node.child, constraints, metrics)
+        MeasuredInternalLink(anchorId = node.anchorId, child = measuredChild, size = measuredChild.size)
+    }
+
+    is TocNode -> error(
+        "tableOfContents() reached the layout engine without being expanded. " +
+            "The renderer expands it for page bodies before layout — headers, " +
+            "footers, and watermarks are rebuilt per physical page and cannot " +
+            "host a table of contents.",
+    )
+
+    is MultiColumnNode -> measureMultiColumn(node, constraints, metrics)
+
+    is KeepTogetherNode -> {
+        val measuredChild = measure(node.child, constraints, metrics)
+        MeasuredKeepTogether(child = measuredChild, size = measuredChild.size)
     }
 
     is LazyNode -> error(
@@ -278,6 +356,96 @@ private fun measureVector(node: VectorNode, constraints: Constraints): MeasuredV
 }
 
 /**
+ * Balances a [MultiColumnNode]'s children into equal-width columns and
+ * delegates the actual layout to the existing row + column measurement.
+ *
+ * Children are pre-measured at the column width to learn their heights,
+ * then partitioned greedily: each column receives children until it
+ * passes the ideal share (total height ÷ column count). Greedy keeps the
+ * source order intact — a quality requirement for flowing prose — at the
+ * cost of perfect balance, which is the same trade newspapers make.
+ */
+private fun measureMultiColumn(
+    node: MultiColumnNode,
+    constraints: Constraints,
+    metrics: FontMetrics,
+): MeasuredNode {
+    val gapTotal = node.gap.value * (node.count - 1)
+    val columnWidth = ((constraints.maxWidth - gapTotal) / node.count).coerceAtLeast(0f)
+    val childConstraints = Constraints(maxWidth = columnWidth)
+    val heights = node.children.map { measure(it, childConstraints, metrics).size.height }
+    val totalHeight = heights.sum() + node.spacing.value * (node.children.size - 1).coerceAtLeast(0)
+    val target = totalHeight / node.count
+
+    val buckets = List(node.count) { mutableListOf<PdfNode>() }
+    var bucket = 0
+    var bucketHeight = 0f
+    node.children.forEachIndexed { index, child ->
+        // Move to the next column once the current one has its share —
+        // but never strand the remaining children without columns.
+        if (bucketHeight > 0f && bucketHeight + heights[index] / 2f > target && bucket < node.count - 1) {
+            bucket++
+            bucketHeight = 0f
+        }
+        buckets[bucket] += child
+        bucketHeight += heights[index] + node.spacing.value
+    }
+
+    val row = RowNode(
+        children = buckets.map { columnChildren ->
+            WeightNode(1f, ColumnNode(children = columnChildren.toList(), spacing = node.spacing))
+        },
+        spacing = node.gap,
+    )
+    return measure(row, constraints, metrics)
+}
+
+/** Default rendered edge length for QR codes when the DSL passes no size. */
+private const val DEFAULT_QR_SIZE: Float = 100f
+
+/**
+ * Resolves a QR node's destination square and runs the encoder. The
+ * symbol is clamped to the available width — a clipped QR code would not
+ * scan, so shrinking is always the right call.
+ */
+private fun measureQrCode(node: QrCodeNode, constraints: Constraints): MeasuredQrCode {
+    val matrix = QrCodeGenerator.encode(node.data, node.errorCorrection)
+    val requested = node.size?.value ?: DEFAULT_QR_SIZE
+    val side = if (requested > constraints.maxWidth && constraints.maxWidth > 0f) {
+        constraints.maxWidth
+    } else {
+        requested
+    }
+    return MeasuredQrCode(
+        matrix = matrix,
+        color = node.color,
+        background = node.background,
+        size = Size(width = side, height = side),
+    )
+}
+
+/**
+ * Resolves a barcode's destination rectangle and runs the encoder. The
+ * natural width is one PDF point per module — already crisp at print
+ * resolution; explicit widths and the available slot both clamp it.
+ */
+private fun measureBarcode(node: BarcodeNode, constraints: Constraints): MeasuredBarcode {
+    val barcode = Code128Encoder.encode(node.data)
+    val requested = node.width?.value ?: barcode.totalModules.toFloat()
+    val width = if (requested > constraints.maxWidth && constraints.maxWidth > 0f) {
+        constraints.maxWidth
+    } else {
+        requested
+    }
+    return MeasuredBarcode(
+        barcode = barcode,
+        color = node.color,
+        background = node.background,
+        size = Size(width = width, height = node.height.value),
+    )
+}
+
+/**
  * Two-pass measurement for tables.
  *
  * Pass 1 — resolve column widths from the column specs:
@@ -323,6 +491,7 @@ private fun measureTable(
         borderWidth = borderWidth,
         cornerRadius = node.cornerRadius.value,
         size = Size(width = tableWidth, height = totalHeight),
+        repeatHeader = node.repeatHeader,
     )
 }
 
@@ -333,6 +502,20 @@ private fun resolveColumnWidths(columns: List<TableColumn>, tableWidth: Float): 
     val totalWeight = columns.sumOf {
         if (it is TableColumn.Weight) it.weight.toDouble() else 0.0
     }.toFloat()
+
+    // Fixed widths that exceed the slot would silently spill past the page
+    // margin. Shrinking every fixed column proportionally keeps the
+    // declared ratios while guaranteeing the table fits.
+    if (fixedTotal > tableWidth && tableWidth > 0f) {
+        val scale = tableWidth / fixedTotal
+        return columns.map { spec ->
+            when (spec) {
+                is TableColumn.Fixed -> spec.width.value * scale
+                is TableColumn.Weight -> 0f
+            }
+        }
+    }
+
     val remaining = (tableWidth - fixedTotal).coerceAtLeast(0f)
     return columns.map { spec ->
         when (spec) {
@@ -529,6 +712,7 @@ private fun measureImage(node: ImageNode, constraints: Constraints): MeasuredIma
         contentScale = node.contentScale,
         size = Size(width = finalWidth, height = finalHeight),
         allowDownScale = node.allowDownScale,
+        altText = node.altText,
     )
 }
 
@@ -865,6 +1049,16 @@ private fun MeasuredNode.withMinWidth(minWidth: Float): MeasuredNode = when (thi
     is MeasuredRichText -> copy(size = size.copy(width = maxOf(size.width, minWidth)))
     is MeasuredShape -> copy(size = size.copy(width = maxOf(size.width, minWidth)))
     is MeasuredLink -> copy(size = size.copy(width = maxOf(size.width, minWidth)))
+    is MeasuredQrCode -> copy(size = size.copy(width = maxOf(size.width, minWidth)))
+    is MeasuredBarcode -> copy(size = size.copy(width = maxOf(size.width, minWidth)))
+    is MeasuredBookmark -> this // Zero-size markers never stretch.
+    is MeasuredAnchor -> this
+    // Form widgets keep their declared box so the static fallback and the
+    // interactive widget rectangle stay aligned; weighted slots don't stretch them.
+    is MeasuredFormTextField -> this
+    is MeasuredFormCheckBox -> this
+    is MeasuredInternalLink -> copy(size = size.copy(width = maxOf(size.width, minWidth)))
+    is MeasuredKeepTogether -> copy(size = size.copy(width = maxOf(size.width, minWidth)))
 }
 
 /** Mirror of [withMinWidth] for the height axis. */
@@ -881,4 +1075,12 @@ private fun MeasuredNode.withMinHeight(minHeight: Float): MeasuredNode = when (t
     is MeasuredRichText -> copy(size = size.copy(height = maxOf(size.height, minHeight)))
     is MeasuredShape -> copy(size = size.copy(height = maxOf(size.height, minHeight)))
     is MeasuredLink -> copy(size = size.copy(height = maxOf(size.height, minHeight)))
+    is MeasuredQrCode -> copy(size = size.copy(height = maxOf(size.height, minHeight)))
+    is MeasuredBarcode -> copy(size = size.copy(height = maxOf(size.height, minHeight)))
+    is MeasuredBookmark -> this // Zero-size markers never stretch.
+    is MeasuredAnchor -> this
+    is MeasuredFormTextField -> this
+    is MeasuredFormCheckBox -> this
+    is MeasuredInternalLink -> copy(size = size.copy(height = maxOf(size.height, minHeight)))
+    is MeasuredKeepTogether -> copy(size = size.copy(height = maxOf(size.height, minHeight)))
 }

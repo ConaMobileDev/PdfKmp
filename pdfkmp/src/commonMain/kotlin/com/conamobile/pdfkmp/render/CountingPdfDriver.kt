@@ -20,21 +20,46 @@ import com.conamobile.pdfkmp.vector.PathCommand
  */
 internal class CountingPdfDriver(
     override val fontMetrics: FontMetrics,
+    private val trackDestinations: Boolean = false,
 ) : PdfDriver {
 
     var pageCount: Int = 0
         private set
 
-    private val canvas: PdfCanvas = NoOpPdfCanvas
+    /**
+     * Physical page number (1-based) of every named destination seen
+     * during the dry run. Only populated when [trackDestinations] is set
+     * — the table-of-contents expansion uses it to learn which page each
+     * bookmark's anchor lands on.
+     */
+    val destinationPages: MutableMap<String, Int> = mutableMapOf()
 
     override fun beginPage(size: PageSize): PdfCanvas {
         pageCount++
-        return canvas
+        return if (trackDestinations) {
+            DestinationTrackingCanvas(pageCount, destinationPages)
+        } else {
+            NoOpPdfCanvas
+        }
     }
 
     override fun endPage() = Unit
 
     override fun finish(): ByteArray = ByteArray(0)
+}
+
+/**
+ * Per-page canvas that records named-destination page numbers and
+ * swallows everything else. Each page needs its own instance because the
+ * destination's page is implicit in which canvas received the call.
+ */
+private class DestinationTrackingCanvas(
+    private val pageNumber: Int,
+    private val sink: MutableMap<String, Int>,
+) : PdfCanvas by NoOpPdfCanvas {
+    override fun namedDestination(name: String, y: Float) {
+        sink[name] = pageNumber
+    }
 }
 
 /** [PdfCanvas] that swallows every draw call. Used by [CountingPdfDriver]. */
@@ -64,6 +89,6 @@ private object NoOpPdfCanvas : PdfCanvas {
     override fun drawImage(
         bytes: ByteArray, x: Float, y: Float, width: Float, height: Float,
         contentScale: ContentScale, sourceTop: Float, sourceBottom: Float,
-        allowDownScale: Boolean,
+        allowDownScale: Boolean, altText: String?,
     ) = Unit
 }

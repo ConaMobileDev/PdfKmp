@@ -70,7 +70,22 @@ public data class PageSpec(
 public data class PageContext(
     val pageNumber: Int,
     val totalPages: Int,
-)
+) {
+    /** `true` on the document's first physical page — different chrome for cover pages. */
+    public val isFirst: Boolean get() = pageNumber == 1
+
+    /** `true` on the document's last physical page. */
+    public val isLast: Boolean get() = pageNumber == totalPages
+
+    /**
+     * `true` on even page numbers — book layouts mirror margins and swap
+     * header content between even (verso) and odd (recto) pages.
+     */
+    public val isEven: Boolean get() = pageNumber % 2 == 0
+
+    /** `true` on odd page numbers. See [isEven]. */
+    public val isOdd: Boolean get() = pageNumber % 2 == 1
+}
 
 /**
  * Sealed hierarchy of layout nodes. Every DSL element produces one of these.
@@ -153,6 +168,26 @@ public data class ContainerDecoration(
      * already clip to their rounded shape regardless of this flag.
      */
     val clipToBounds: Boolean = false,
+    /**
+     * Optional soft shadow drawn behind the container before its fill.
+     * See [com.conamobile.pdfkmp.style.DropShadow].
+     */
+    val dropShadow: com.conamobile.pdfkmp.style.DropShadow? = null,
+    /**
+     * Rotation in degrees (clockwise) applied to the whole container —
+     * fill, children, and border — around its centre at draw time.
+     * Layout still reserves the unrotated rectangle, so large rotations
+     * can paint outside the reserved slot (the watermark trade-off).
+     */
+    val rotation: Float = 0f,
+    /**
+     * Opacity (0–1) applied to the whole container as a group. `1f`
+     * (default) draws fully opaque. Note for the JVM backend: children
+     * are composited individually, so overlapping children blend with
+     * each other — visually close to, but not identical to, true group
+     * transparency.
+     */
+    val opacity: Float = 1f,
 ) {
     public companion object {
         public val None: ContainerDecoration = ContainerDecoration()
@@ -260,6 +295,9 @@ public sealed interface VectorStrokeMode {
  *   for sharp corners.
  * @property cellPadding default padding applied to every cell unless the
  *   cell overrides it.
+ * @property repeatHeader when the `Slice` page-break strategy splits the
+ *   table across pages, repeat [headerRow] at the top of every
+ *   continuation page.
  */
 public data class TableNode(
     val columns: List<TableColumn>,
@@ -268,6 +306,7 @@ public data class TableNode(
     val border: TableBorder,
     val cornerRadius: Dp,
     val cellPadding: Padding,
+    val repeatHeader: Boolean = true,
 ) : PdfNode
 
 /**
@@ -303,6 +342,41 @@ public data class TableCellNode(
 )
 
 /**
+ * Newspaper-style multi-column flow: children are measured at the column
+ * width and distributed left-to-right into [count] equal-width columns,
+ * balanced so the columns end up roughly the same height.
+ *
+ * Children keep their source order — the first children fill the first
+ * column. The whole block participates in page breaking as one unit
+ * (columns don't continue across pages); split long content into
+ * multiple `columns { }` blocks when it can exceed a page.
+ *
+ * @property count number of columns.
+ * @property gap horizontal space between adjacent columns.
+ * @property spacing vertical gap between items inside a column.
+ */
+public data class MultiColumnNode(
+    val children: List<PdfNode>,
+    val count: Int,
+    val gap: Dp,
+    val spacing: Dp,
+) : PdfNode
+
+/**
+ * Wrapper that forbids the page-break machinery from splitting [child]:
+ * under the `Slice` strategy the wrapped content behaves like
+ * `MoveToNextPage` — it moves to a fresh page whole instead of being cut
+ * at an arbitrary line. The CSS equivalent is `break-inside: avoid`.
+ *
+ * Content taller than a full page still overflows past the bottom margin
+ * (there is nowhere whole to move it); keep kept-together groups smaller
+ * than one page.
+ */
+public data class KeepTogetherNode(
+    val child: PdfNode,
+) : PdfNode
+
+/**
  * Wrapper that gives [child] a fractional share of the parent container's
  * remaining space along the main axis.
  *
@@ -320,6 +394,50 @@ public data class WeightNode(
 public data class SpacerNode(
     val width: Dp = Dp.Zero,
     val height: Dp = Dp.Zero,
+) : PdfNode
+
+/**
+ * An interactive AcroForm text input field.
+ *
+ * The renderer always paints a static visual fallback (a bordered, light-gray
+ * box with the [value] inside) so the document reads correctly on every
+ * backend. Only the JVM/Desktop backend additionally overlays a *real*
+ * interactive `PDTextField` widget at the same rectangle — Android's
+ * `PdfDocument` and iOS's Core Graphics PDF context expose no AcroForm API, so
+ * on those platforms the field is visual-only.
+ *
+ * @property name field name written into the AcroForm; collisions are
+ *   disambiguated with a `-2`, `-3`, … suffix by the backend.
+ * @property width rendered width of the field box.
+ * @property height rendered height of the field box.
+ * @property value initial text content of the field.
+ * @property multiline whether the field accepts multiple lines of input.
+ */
+public data class FormTextFieldNode(
+    val name: String,
+    val width: Dp,
+    val height: Dp,
+    val value: String = "",
+    val multiline: Boolean = false,
+) : PdfNode
+
+/**
+ * An interactive AcroForm checkbox.
+ *
+ * Like [FormTextFieldNode], the renderer always paints a static visual
+ * fallback (a bordered square, with an `X` drawn through it when [checked]),
+ * and only the JVM/Desktop backend overlays a real interactive `PDCheckBox`
+ * widget. Android and iOS show the visual-only square.
+ *
+ * @property name field name written into the AcroForm; collisions are
+ *   disambiguated with a `-2`, `-3`, … suffix by the backend.
+ * @property size edge length of the square checkbox.
+ * @property checked initial on/off state.
+ */
+public data class FormCheckBoxNode(
+    val name: String,
+    val size: Dp,
+    val checked: Boolean = false,
 ) : PdfNode
 
 /**
@@ -361,6 +479,12 @@ public data class ImageNode(
     val height: Dp?,
     val contentScale: ContentScale,
     val allowDownScale: Boolean = true,
+    /**
+     * Accessibility description of the image — consumed by backends that
+     * write tagged structure (`/Alt` entries) so screen readers can
+     * describe the picture. `null` marks it as decorative.
+     */
+    val altText: String? = null,
 ) : PdfNode {
     override fun equals(other: Any?): Boolean =
         other is ImageNode &&
@@ -368,6 +492,7 @@ public data class ImageNode(
             other.height == height &&
             other.contentScale == contentScale &&
             other.allowDownScale == allowDownScale &&
+            other.altText == altText &&
             other.bytes.contentEquals(bytes)
 
     override fun hashCode(): Int {
@@ -376,6 +501,7 @@ public data class ImageNode(
         result = 31 * result + (height?.hashCode() ?: 0)
         result = 31 * result + contentScale.hashCode()
         result = 31 * result + allowDownScale.hashCode()
+        result = 31 * result + (altText?.hashCode() ?: 0)
         return result
     }
 }

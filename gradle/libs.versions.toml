@@ -19,6 +19,7 @@ kotlinx-coroutines = "1.11.0"
 kotlinx-io = "0.9.0"
 
 pdfbox = "3.0.7"
+bouncycastle = "1.78.1"
 
 [libraries]
 androidx-activityCompose = { module = "androidx.activity:activity-compose", version.ref = "composeActivity" }
@@ -36,6 +37,14 @@ kotlinx-io-core = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version.re
 # and Linux. Only ever pulled into the `jvm` source sets — Android and iOS
 # keep their platform-native backends and never see this dependency.
 pdfbox = { module = "org.apache.pdfbox:pdfbox", version.ref = "pdfbox" }
+
+# BouncyCastle PKIX/CMS provider, used ONLY by the optional BC-backed
+# convenience path in PdfSigner (JVM/Desktop digital signatures). Declared
+# `compileOnly` in jvmMain so the ~9 MB jar is NOT bundled into the published
+# artifact — callers that use the keystore-based PdfSigner.sign(...) overload
+# must add BouncyCastle to their own runtime classpath. The callback-based
+# overload needs no BC at all.
+bouncycastle-bcpkix = { module = "org.bouncycastle:bcpkix-jdk18on", version.ref = "bouncycastle" }
 
 compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "compose-multiplatform" }
 compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "compose-multiplatform" }

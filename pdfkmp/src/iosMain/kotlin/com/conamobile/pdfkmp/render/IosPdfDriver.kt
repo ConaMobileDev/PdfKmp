@@ -1,18 +1,31 @@
 package com.conamobile.pdfkmp.render
 
 import com.conamobile.pdfkmp.geometry.PageSize
+import com.conamobile.pdfkmp.metadata.PdfEncryption
 import com.conamobile.pdfkmp.metadata.PdfMetadata
 import com.conamobile.pdfkmp.style.PdfFont
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.readBytes
+import platform.CoreFoundation.CFDictionaryRef
+import platform.CoreFoundation.CFRelease
+import platform.CoreGraphics.CGPDFContextSetOutline
 import platform.CoreGraphics.CGRectMake
+import platform.CoreGraphics.kCGPDFContextAllowsCopying
+import platform.CoreGraphics.kCGPDFContextAllowsPrinting
 import platform.CoreGraphics.kCGPDFContextAuthor
 import platform.CoreGraphics.kCGPDFContextCreator
 import platform.CoreGraphics.kCGPDFContextKeywords
+import platform.CoreGraphics.kCGPDFContextOwnerPassword
 import platform.CoreGraphics.kCGPDFContextSubject
 import platform.CoreGraphics.kCGPDFContextTitle
+import platform.CoreGraphics.kCGPDFContextUserPassword
+import platform.Foundation.CFBridgingRetain
+import platform.Foundation.NSMutableArray
 import platform.Foundation.NSMutableData
+import platform.Foundation.NSMutableDictionary
+import platform.Foundation.NSNumber
+import platform.Foundation.setValue
 import platform.UIKit.UIGraphicsBeginPDFContextToData
 import platform.UIKit.UIGraphicsBeginPDFPageWithInfo
 import platform.UIKit.UIGraphicsEndPDFContext
@@ -41,6 +54,7 @@ internal class IosPdfDriver(
     private val fonts = IosFontRegistry()
     private val backingData = NSMutableData()
     private val metricsImpl = IosFontMetrics(fonts)
+    private val navigation = IosNavigation()
     private var open: Boolean = true
     private var pageOpen: Boolean = false
 
@@ -65,7 +79,7 @@ internal class IosPdfDriver(
         pageOpen = true
         val ctx = UIGraphicsGetCurrentContext()
             ?: error("UIGraphicsGetCurrentContext returned null inside an open PDF page")
-        return IosPdfCanvas(ctx, fonts)
+        return IosPdfCanvas(ctx, fonts, navigation)
     }
 
     override fun endPage() {
@@ -79,6 +93,7 @@ internal class IosPdfDriver(
     override fun finish(): ByteArray {
         check(open) { "Driver already finished" }
         check(!pageOpen) { "endPage() must be called before finish()" }
+        attachOutline()
         UIGraphicsEndPDFContext()
         open = false
         try {
@@ -88,6 +103,55 @@ internal class IosPdfDriver(
         }
     }
 
+    /**
+     * Writes the collected bookmarks into the PDF context's outline before
+     * the context closes. Entries reference the synthetic named
+     * destinations that [IosPdfCanvas.bookmark] registered while pages
+     * were rendering — `CGPDFContextSetOutline` accepts destination names
+     * in its `Destination` entries.
+     */
+    private fun attachOutline() {
+        if (navigation.bookmarks.isEmpty()) return
+        val ctx = UIGraphicsGetCurrentContext() ?: return
+        val outline = buildOutlineDictionary()
+        val cfOutline = CFBridgingRetain(outline) as CFDictionaryRef?
+        try {
+            CGPDFContextSetOutline(ctx, cfOutline)
+        } finally {
+            cfOutline?.let { CFRelease(it) }
+        }
+    }
+
+    /**
+     * Builds the `{"Children": [{Title, Destination, Children}, …]}`
+     * dictionary `CGPDFContextSetOutline` expects, nesting entries by
+     * level the same way markdown headings build a tree.
+     */
+    private fun buildOutlineDictionary(): NSMutableDictionary {
+        val root = NSMutableDictionary()
+        val rootChildren = NSMutableArray()
+        root.setValue(rootChildren, forKey = "Children")
+
+        // (level, children-array-of-that-entry) — entries nest under the
+        // most recent entry with a smaller level.
+        val stack = ArrayDeque<Pair<Int, NSMutableArray>>()
+        for (bookmark in navigation.bookmarks) {
+            val entry = NSMutableDictionary()
+            entry.setValue(bookmark.title, forKey = "Title")
+            entry.setValue(bookmark.destination, forKey = "Destination")
+            val children = NSMutableArray()
+            entry.setValue(children, forKey = "Children")
+
+            while (stack.isNotEmpty() && stack.last().first >= bookmark.level) {
+                stack.removeLast()
+            }
+            val parent = stack.lastOrNull()?.second ?: rootChildren
+            parent.addObject(entry)
+            stack.addLast(bookmark.level to children)
+        }
+        return root
+    }
+
     private fun buildDocumentInfo(metadata: PdfMetadata): Map<Any?, Any>? {
         val attributes = mutableMapOf<Any?, Any>()
         metadata.title?.let { attributes[kCGPDFContextTitle] = it }
@@ -95,8 +159,58 @@ internal class IosPdfDriver(
         metadata.subject?.let { attributes[kCGPDFContextSubject] = it }
         metadata.keywords?.let { attributes[kCGPDFContextKeywords] = it }
         metadata.creator?.let { attributes[kCGPDFContextCreator] = it }
+        metadata.encryption?.let { applyEncryption(it, attributes) }
         return attributes.takeIf { it.isNotEmpty() }
     }
+
+    /**
+     * Folds [PdfEncryption] into the Core Graphics document-info dictionary.
+     *
+     * `UIGraphicsBeginPDFContextToData` encrypts when it sees the owner/user
+     * password keys and reads the printing/copying permissions from the
+     * matching boolean keys. There is no Core Graphics flag for "allow
+     * modification", so [PdfEncryption.allowModification] has no effect here —
+     * see the KDoc on [PdfEncryption].
+     *
+     * NOTE: iOS cannot be compiled on the Windows host this was authored on;
+     * verify on macOS that the produced document is encrypted and that the
+     * permission flags round-trip.
+     */
+    private fun applyEncryption(
+        encryption: PdfEncryption,
+        attributes: MutableMap<Any?, Any>,
+    ) {
+        attributes[kCGPDFContextOwnerPassword] = encryption.ownerPassword
+        if (encryption.userPassword.isNotEmpty()) {
+            attributes[kCGPDFContextUserPassword] = encryption.userPassword
+        }
+        // Core Graphics expects CFBoolean-compatible values for the permission
+        // keys; NSNumber bridges Kotlin's Boolean to the required object type.
+        attributes[kCGPDFContextAllowsPrinting] = NSNumber(bool = encryption.allowPrinting)
+        attributes[kCGPDFContextAllowsCopying] = NSNumber(bool = encryption.allowCopying)
+    }
+}
+
+/**
+ * Collects the bookmarks registered while pages render so
+ * [IosPdfDriver.finish] can attach them as the document outline. Internal
+ * links and user-defined anchors need no collection on iOS — UIKit's
+ * named-destination APIs handle forward references natively.
+ */
+internal class IosNavigation {
+
+    internal data class Bookmark(
+        val title: String,
+        val level: Int,
+        /** Synthetic named destination registered at the bookmark's position. */
+        val destination: String,
+    )
+
+    val bookmarks: MutableList<Bookmark> = mutableListOf()
+    private var counter = 0
+
+    /** Returns a fresh document-unique destination name for a bookmark. */
+    fun nextBookmarkDestination(): String = "__pdfkmp_bookmark_${counter++}"
 }
 
 /**

@@ -134,6 +134,26 @@ private class RecordingPdfCanvas(
         color: PdfColor, thickness: Float, style: LineStyle,
     ) = delegate.drawLine(x1, y1, x2, y2, color, thickness, style)
 
+    // Navigation calls must be forwarded explicitly — the interface
+    // defaults are no-ops, and losing them here would strip bookmarks and
+    // internal links from every document built through `pdf { }`.
+    override fun namedDestination(name: String, y: Float) =
+        delegate.namedDestination(name, y)
+
+    override fun linkToDestination(name: String, x: Float, y: Float, width: Float, height: Float) =
+        delegate.linkToDestination(name, x, y, width, height)
+
+    override fun bookmark(title: String, level: Int, y: Float) =
+        delegate.bookmark(title, level, y)
+
+    override fun rotate(degrees: Float, pivotX: Float, pivotY: Float) =
+        delegate.rotate(degrees, pivotX, pivotY)
+
+    override fun beginTransparencyGroup(alpha: Float) =
+        delegate.beginTransparencyGroup(alpha)
+
+    override fun endTransparencyGroup() = delegate.endTransparencyGroup()
+
     override fun saveState() = delegate.saveState()
 
     override fun restoreState() = delegate.restoreState()
@@ -157,8 +177,19 @@ private class RecordingPdfCanvas(
     override fun drawImage(
         bytes: ByteArray, x: Float, y: Float, width: Float, height: Float,
         contentScale: ContentScale, sourceTop: Float, sourceBottom: Float,
-        allowDownScale: Boolean,
+        allowDownScale: Boolean, altText: String?,
     ) = delegate.drawImage(
-        bytes, x, y, width, height, contentScale, sourceTop, sourceBottom, allowDownScale,
+        bytes, x, y, width, height, contentScale, sourceTop, sourceBottom, allowDownScale, altText,
     )
+
+    // Form-field calls must be forwarded explicitly — the interface defaults
+    // are no-ops, and losing them here would strip every interactive AcroForm
+    // field from documents built through `pdf { }`.
+    override fun formTextField(
+        name: String, x: Float, y: Float, width: Float, height: Float,
+        value: String, multiline: Boolean, fontSizePt: Float,
+    ) = delegate.formTextField(name, x, y, width, height, value, multiline, fontSizePt)
+
+    override fun formCheckBox(name: String, x: Float, y: Float, size: Float, checked: Boolean) =
+        delegate.formCheckBox(name, x, y, size, checked)
 }

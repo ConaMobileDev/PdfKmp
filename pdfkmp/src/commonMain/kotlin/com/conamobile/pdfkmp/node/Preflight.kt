@@ -35,6 +35,8 @@ private suspend fun PdfNode.resolve(): PdfNode = when (this) {
 
     is RowNode -> copy(children = children.map { it.resolve() })
 
+    is MultiColumnNode -> copy(children = children.map { it.resolve() })
+
     is BoxNode -> copy(
         children = children.map { it.copy(node = it.node.resolve()) },
     )
@@ -60,6 +62,10 @@ private suspend fun PdfNode.resolve(): PdfNode = when (this) {
 
     is LinkNode -> copy(child = child.resolve())
 
+    is InternalLinkNode -> copy(child = child.resolve())
+
+    is KeepTogetherNode -> copy(child = child.resolve())
+
     is TextNode,
     is ImageNode,
     is VectorNode,
@@ -67,5 +73,12 @@ private suspend fun PdfNode.resolve(): PdfNode = when (this) {
     is DividerNode,
     is RichTextNode,
     is ShapeNode,
+    is QrCodeNode,
+    is BarcodeNode,
+    is BookmarkNode,
+    is AnchorNode,
+    is FormTextFieldNode,
+    is FormCheckBoxNode,
+    is TocNode,
     -> this
 }

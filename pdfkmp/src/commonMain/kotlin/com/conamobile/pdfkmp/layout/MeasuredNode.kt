@@ -1,14 +1,34 @@
 package com.conamobile.pdfkmp.layout
 
+import com.conamobile.pdfkmp.barcode.Code128Barcode
+import com.conamobile.pdfkmp.barcode.QrMatrix
 import com.conamobile.pdfkmp.geometry.ContentScale
 import com.conamobile.pdfkmp.geometry.Size
 import com.conamobile.pdfkmp.node.ContainerDecoration
+import com.conamobile.pdfkmp.node.Shape
 import com.conamobile.pdfkmp.node.VectorStrokeMode
+import com.conamobile.pdfkmp.style.LineStyle
 import com.conamobile.pdfkmp.style.PdfColor
+import com.conamobile.pdfkmp.style.PdfPaint
 import com.conamobile.pdfkmp.style.TableBorder
 import com.conamobile.pdfkmp.style.TableCellStyle
+import com.conamobile.pdfkmp.style.TextDirection
 import com.conamobile.pdfkmp.style.TextStyle
 import com.conamobile.pdfkmp.vector.VectorImage
+
+/**
+ * One word positioned by full justification. The layout engine pre-computes
+ * the x-offset of every word so the renderer can draw justified lines with
+ * one `drawText` call per word and zero extra math.
+ */
+public data class JustifiedWord(
+    /** Characters of this word (no surrounding spaces). */
+    val text: String,
+    /** X-offset of the word's left edge relative to the line's left edge. */
+    val x: Float,
+    /** Advance width of [text] at the line's style. */
+    val width: Float,
+)
 
 /**
  * One word-wrapped segment of text plus the position of its baseline relative
@@ -23,6 +43,13 @@ public data class TextLine(
     val baseline: Float,
     /** Total height occupied by this line, including ascent + descent + line gap. */
     val height: Float,
+    /**
+     * Word slices with pre-computed x-offsets when this line is fully
+     * justified ([com.conamobile.pdfkmp.style.TextAlign.Justify]); empty
+     * for every other alignment and for the last line of a paragraph,
+     * which stays start-aligned by typographic convention.
+     */
+    val justifiedWords: List<JustifiedWord> = emptyList(),
 )
 
 /**
@@ -47,10 +74,41 @@ public data class MeasuredText(
     val style: TextStyle,
     override val size: Size,
     val paragraphWidth: Float = size.width,
+    /**
+     * Paragraph direction with [com.conamobile.pdfkmp.style.TextDirection.Auto]
+     * already resolved against the content. RTL paragraphs flip what
+     * `TextAlign.Start` / `End` anchor to.
+     */
+    val resolvedDirection: TextDirection = TextDirection.Ltr,
 ) : MeasuredNode
 
 /** Measurement result for a fixed-size block (e.g. a spacer). */
 public data class MeasuredBlock(
+    override val size: Size,
+) : MeasuredNode
+
+/**
+ * Measurement result for a [com.conamobile.pdfkmp.node.FormTextFieldNode].
+ *
+ * Carries the resolved name/value plus the font size the static fallback and
+ * the JVM widget's default appearance should both use, so the visual box and
+ * the interactive overlay stay in sync.
+ */
+public data class MeasuredFormTextField(
+    val name: String,
+    val value: String,
+    val multiline: Boolean,
+    val fontSizePt: Float,
+    override val size: Size,
+) : MeasuredNode
+
+/**
+ * Measurement result for a [com.conamobile.pdfkmp.node.FormCheckBoxNode] —
+ * always a square of `size × size`.
+ */
+public data class MeasuredFormCheckBox(
+    val name: String,
+    val checked: Boolean,
     override val size: Size,
 ) : MeasuredNode
 
@@ -64,7 +122,7 @@ public data class MeasuredBlock(
 public data class MeasuredDivider(
     val thickness: Float,
     val color: PdfColor,
-    val style: com.conamobile.pdfkmp.style.LineStyle,
+    val style: LineStyle,
     override val size: Size,
 ) : MeasuredNode
 
@@ -81,12 +139,15 @@ public data class MeasuredImage(
     val contentScale: ContentScale,
     override val size: Size,
     val allowDownScale: Boolean = true,
+    /** Accessibility description forwarded from [com.conamobile.pdfkmp.node.ImageNode.altText]. */
+    val altText: String? = null,
 ) : MeasuredNode {
     override fun equals(other: Any?): Boolean =
         other is MeasuredImage &&
             other.contentScale == contentScale &&
             other.size == size &&
             other.allowDownScale == allowDownScale &&
+            other.altText == altText &&
             other.bytes.contentEquals(bytes)
 
     override fun hashCode(): Int {
@@ -94,6 +155,7 @@ public data class MeasuredImage(
         result = 31 * result + contentScale.hashCode()
         result = 31 * result + size.hashCode()
         result = 31 * result + allowDownScale.hashCode()
+        result = 31 * result + (altText?.hashCode() ?: 0)
         return result
     }
 }
@@ -163,9 +225,9 @@ public data class MeasuredLink(
  * when the shape gets stretched by a weighted slot.
  */
 public data class MeasuredShape(
-    val shape: com.conamobile.pdfkmp.node.Shape,
-    val fill: com.conamobile.pdfkmp.style.PdfPaint?,
-    val strokeColor: com.conamobile.pdfkmp.style.PdfColor?,
+    val shape: Shape,
+    val fill: PdfPaint?,
+    val strokeColor: PdfColor?,
     val strokeWidth: Float,
     override val size: Size,
 ) : MeasuredNode
@@ -193,6 +255,9 @@ public data class MeasuredVector(
  * arithmetic.
  *
  * The header row, when present, is always at index 0 of [rows].
+ *
+ * @property repeatHeader when the `Slice` strategy splits this table
+ *   across pages, repeat the header row on each continuation page.
  */
 public data class MeasuredTable(
     val columnWidths: List<Float>,
@@ -202,6 +267,7 @@ public data class MeasuredTable(
     val borderWidth: Float,
     val cornerRadius: Float,
     override val size: Size,
+    val repeatHeader: Boolean = true,
 ) : MeasuredNode
 
 /** One measured row in a [MeasuredTable]. */
@@ -211,6 +277,68 @@ public data class MeasuredTableRow(
     val background: PdfColor?,
     val isHeader: Boolean,
 )
+
+/**
+ * Measurement result for a [com.conamobile.pdfkmp.node.QrCodeNode]. The
+ * module matrix is computed during measurement (pure common code) so the
+ * renderer only has to turn dark modules into filled rectangles.
+ */
+public data class MeasuredQrCode(
+    val matrix: QrMatrix,
+    val color: PdfColor,
+    val background: PdfColor?,
+    override val size: Size,
+) : MeasuredNode
+
+/**
+ * Measurement result for a [com.conamobile.pdfkmp.node.BarcodeNode].
+ * Carries the encoded bar/space module widths so the renderer can emit
+ * the bars without re-running the encoder.
+ */
+public data class MeasuredBarcode(
+    val barcode: Code128Barcode,
+    val color: PdfColor,
+    val background: PdfColor?,
+    override val size: Size,
+) : MeasuredNode
+
+/**
+ * Measurement result for a [com.conamobile.pdfkmp.node.BookmarkNode] —
+ * zero-size; the renderer registers the outline entry at its position.
+ */
+public data class MeasuredBookmark(
+    val title: String,
+    val level: Int,
+    override val size: Size,
+) : MeasuredNode
+
+/**
+ * Measurement result for an [com.conamobile.pdfkmp.node.AnchorNode] —
+ * zero-size; the renderer registers the named destination at its position.
+ */
+public data class MeasuredAnchor(
+    val id: String,
+    override val size: Size,
+) : MeasuredNode
+
+/**
+ * Measurement result for an [com.conamobile.pdfkmp.node.InternalLinkNode].
+ * Mirrors [MeasuredLink] but jumps to a named destination instead of a URL.
+ */
+public data class MeasuredInternalLink(
+    val anchorId: String,
+    val child: MeasuredNode,
+    override val size: Size,
+) : MeasuredNode
+
+/**
+ * Measurement result for a [com.conamobile.pdfkmp.node.KeepTogetherNode] —
+ * forwards the child's size; the renderer refuses to slice it.
+ */
+public data class MeasuredKeepTogether(
+    val child: MeasuredNode,
+    override val size: Size,
+) : MeasuredNode
 
 /** One measured cell in a [MeasuredTableRow]. */
 public data class MeasuredTableCell(

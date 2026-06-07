@@ -1,18 +1,28 @@
 package com.conamobile.pdfkmp.dsl
 
+import com.conamobile.pdfkmp.node.AnchorNode
+import com.conamobile.pdfkmp.node.BarcodeNode
+import com.conamobile.pdfkmp.node.BookmarkNode
 import com.conamobile.pdfkmp.node.BoxNode
 import com.conamobile.pdfkmp.node.ColumnNode
 import com.conamobile.pdfkmp.node.DividerNode
+import com.conamobile.pdfkmp.node.FormCheckBoxNode
+import com.conamobile.pdfkmp.node.FormTextFieldNode
 import com.conamobile.pdfkmp.node.ImageNode
+import com.conamobile.pdfkmp.node.InternalLinkNode
+import com.conamobile.pdfkmp.node.KeepTogetherNode
 import com.conamobile.pdfkmp.node.LazyNode
 import com.conamobile.pdfkmp.node.LinkNode
+import com.conamobile.pdfkmp.node.MultiColumnNode
 import com.conamobile.pdfkmp.node.PdfNode
+import com.conamobile.pdfkmp.node.QrCodeNode
 import com.conamobile.pdfkmp.node.RichTextNode
 import com.conamobile.pdfkmp.node.RowNode
 import com.conamobile.pdfkmp.node.ShapeNode
 import com.conamobile.pdfkmp.node.SpacerNode
 import com.conamobile.pdfkmp.node.TableNode
 import com.conamobile.pdfkmp.node.TextNode
+import com.conamobile.pdfkmp.node.TocNode
 import com.conamobile.pdfkmp.node.VectorNode
 import com.conamobile.pdfkmp.node.WeightNode
 import com.conamobile.pdfkmp.style.PdfFont
@@ -38,6 +48,7 @@ internal fun collectCustomFonts(node: PdfNode, sink: MutableSet<PdfFont.Custom>)
         }
         is ColumnNode -> node.children.forEach { collectCustomFonts(it, sink) }
         is RowNode -> node.children.forEach { collectCustomFonts(it, sink) }
+        is MultiColumnNode -> node.children.forEach { collectCustomFonts(it, sink) }
         is WeightNode -> collectCustomFonts(node.child, sink)
         is TableNode -> {
             node.headerRow?.cells?.forEach { collectCustomFonts(it.content, sink) }
@@ -47,7 +58,16 @@ internal fun collectCustomFonts(node: PdfNode, sink: MutableSet<PdfFont.Custom>)
         }
         is BoxNode -> node.children.forEach { collectCustomFonts(it.node, sink) }
         is LinkNode -> collectCustomFonts(node.child, sink)
-        is SpacerNode, is ImageNode, is VectorNode, is DividerNode, is ShapeNode -> Unit
+        is InternalLinkNode -> collectCustomFonts(node.child, sink)
+        is KeepTogetherNode -> collectCustomFonts(node.child, sink)
+        is TocNode -> {
+            val font = node.style.font
+            if (font is PdfFont.Custom) sink += font
+        }
+        is SpacerNode, is ImageNode, is VectorNode, is DividerNode, is ShapeNode,
+        is QrCodeNode, is BarcodeNode, is BookmarkNode, is AnchorNode,
+        is FormTextFieldNode, is FormCheckBoxNode,
+        -> Unit
         // LazyNodes are unresolved at this point; pdfAsync re-runs this
         // walk after preflight so any custom font referenced by the
         // resolved descendant gets picked up before rendering starts.

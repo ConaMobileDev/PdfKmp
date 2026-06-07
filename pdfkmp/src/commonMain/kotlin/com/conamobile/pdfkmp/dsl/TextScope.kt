@@ -5,6 +5,9 @@ import com.conamobile.pdfkmp.style.FontWeight
 import com.conamobile.pdfkmp.style.PdfColor
 import com.conamobile.pdfkmp.style.PdfFont
 import com.conamobile.pdfkmp.style.TextAlign
+import com.conamobile.pdfkmp.style.TextDirection
+import com.conamobile.pdfkmp.style.TextOverflow
+import com.conamobile.pdfkmp.style.TextScript
 import com.conamobile.pdfkmp.style.TextStyle
 import com.conamobile.pdfkmp.unit.Sp
 
@@ -52,6 +55,36 @@ public class TextScope internal constructor(parent: TextStyle) {
     public var align: TextAlign = parent.align
 
     /**
+     * Maximum number of wrapped lines; `null` keeps them all. Lines beyond
+     * the limit are dropped according to [overflow].
+     */
+    public var maxLines: Int? = parent.maxLines
+
+    /** What to do with lines dropped by [maxLines]. */
+    public var overflow: TextOverflow = parent.overflow
+
+    /**
+     * Superscript / subscript positioning. Only meaningful on spans inside
+     * `richText { }` — plain paragraphs ignore it.
+     */
+    public var script: TextScript = parent.script
+
+    /** Base paragraph direction; `Auto` detects RTL scripts from content. */
+    public var direction: TextDirection = parent.direction
+
+    /**
+     * Orphan control under the `Slice` strategy: minimum lines kept
+     * together at the bottom of a page before a break. `1` allows any split.
+     */
+    public var minLinesBeforeBreak: Int = parent.minLinesBeforeBreak
+
+    /**
+     * Widow control under the `Slice` strategy: minimum lines continuing
+     * on the next page after a break. `1` allows any split.
+     */
+    public var minLinesAfterBreak: Int = parent.minLinesAfterBreak
+
+    /**
      * Convenience flag that toggles between [FontWeight.Bold] and
      * [FontWeight.Normal]. Reading this returns `true` when [fontWeight] is
      * exactly [FontWeight.Bold].
@@ -80,5 +113,11 @@ public class TextScope internal constructor(parent: TextStyle) {
         underline = underline,
         strikethrough = strikethrough,
         align = align,
+        maxLines = maxLines,
+        overflow = overflow,
+        script = script,
+        direction = direction,
+        minLinesBeforeBreak = minLinesBeforeBreak,
+        minLinesAfterBreak = minLinesAfterBreak,
     )
 }

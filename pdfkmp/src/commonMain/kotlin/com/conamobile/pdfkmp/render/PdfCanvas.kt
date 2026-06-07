@@ -171,13 +171,72 @@ public interface PdfCanvas {
     ): Unit = Unit
 
     /**
-     * Vertically-sliced bitmap embed. See the deferred TODO inside the
-     * platform impls.
+     * Registers a named destination at the given vertical position on the
+     * current page. Internal links created with [linkToDestination]
+     * (possibly on other pages, before or after this one) jump here.
+     *
+     * Backends without navigation support (Android `PdfDocument`) default
+     * to a no-op.
+     */
+    public fun namedDestination(name: String, y: Float): Unit = Unit
+
+    /**
+     * Records an internal go-to link covering the given rectangle and
+     * jumping to the [namedDestination] registered under [name]. Forward
+     * references are fine — backends resolve names when the document is
+     * finished. Links whose name is never registered are silently inert.
+     */
+    public fun linkToDestination(
+        name: String,
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+    ): Unit = Unit
+
+    /**
+     * Adds an entry to the document's outline (the bookmark sidebar in
+     * PDF readers) pointing at the given vertical position on the current
+     * page. [level] nests entries: `0` is a top-level chapter, `1` a
+     * section inside the previous level-0 entry, and so on.
+     *
+     * Backends without outline support (Android `PdfDocument`) default to
+     * a no-op.
+     */
+    public fun bookmark(title: String, level: Int, y: Float): Unit = Unit
+
+    /**
+     * Rotates all subsequent drawing by [degrees] (clockwise, in the
+     * top-left coordinate space) around the pivot point. Effective until
+     * the next [restoreState] — always wrap in [saveState] /
+     * [restoreState] pairs, which is what the renderer does for rotated
+     * containers.
+     */
+    public fun rotate(degrees: Float, pivotX: Float, pivotY: Float): Unit = Unit
+
+    /**
+     * Starts a transparency group: subsequent drawing is composited at
+     * [alpha] opacity until the matching [endTransparencyGroup]. Backends
+     * without group support default to a no-op (content draws opaque).
+     */
+    public fun beginTransparencyGroup(alpha: Float): Unit = Unit
+
+    /** Closes the group opened by [beginTransparencyGroup]. */
+    public fun endTransparencyGroup(): Unit = Unit
+
+    /**
+     * Draws a bitmap, optionally embedding only a vertical window of the
+     * source — `sourceTop` / `sourceBottom` are normalized (0..1) offsets
+     * used by the page-break slicer to continue a tall image across pages.
      *
      * @param allowDownScale when `true` (default), the backend subsamples
      *   the source bitmap so its pixel dimensions roughly match the
      *   destination at 200 DPI before drawing. Pass `false` to feed every
      *   source pixel through the platform decoder.
+     * @param altText accessibility description of the image. When non-null
+     *   and the backend writes tagged structure (the JVM backend wraps the
+     *   draw in a `/Figure` marked-content sequence carrying `/Alt`), screen
+     *   readers can describe the picture. Backends without tagging ignore it.
      */
     public fun drawImage(
         bytes: ByteArray,
@@ -189,5 +248,44 @@ public interface PdfCanvas {
         sourceTop: Float = 0f,
         sourceBottom: Float = 1f,
         allowDownScale: Boolean = true,
+        altText: String? = null,
     )
+
+    /**
+     * Records an interactive AcroForm text input field covering the given
+     * rectangle.
+     *
+     * Only backends with an AcroForm API honour this (the JVM/Desktop
+     * PdfBox backend creates a real `PDTextField`). Android and iOS default
+     * to a no-op — the renderer has already drawn a static visual fallback
+     * so the box is still visible there, just not editable.
+     *
+     * @param fontSizePt font size, in points, for the field's default
+     *   appearance — matches the static fallback so the two look alike.
+     */
+    public fun formTextField(
+        name: String,
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        value: String,
+        multiline: Boolean,
+        fontSizePt: Float,
+    ): Unit = Unit
+
+    /**
+     * Records an interactive AcroForm checkbox covering the given square.
+     *
+     * Like [formTextField], only AcroForm-capable backends (JVM/Desktop)
+     * create a real `PDCheckBox`; Android and iOS default to a no-op and
+     * rely on the static visual square the renderer drew.
+     */
+    public fun formCheckBox(
+        name: String,
+        x: Float,
+        y: Float,
+        size: Float,
+        checked: Boolean,
+    ): Unit = Unit
 }

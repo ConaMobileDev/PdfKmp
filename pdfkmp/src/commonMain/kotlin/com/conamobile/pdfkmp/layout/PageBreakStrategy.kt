@@ -16,9 +16,10 @@ public enum class PageBreakStrategy {
      * continue the rest at the top of a new page.
      *
      * For text the split happens at line boundaries — never in the middle of
-     * a word. For images the visible bottom of the image is drawn on the
-     * current page and the remainder on the next page (TODO: image slicing
-     * is not implemented yet; see [com.conamobile.pdfkmp.render.PdfCanvas.drawImage]).
+     * a word. For images the visible top portion is drawn on the current
+     * page and the remainder continues on the next page via the
+     * source-window parameters of
+     * [com.conamobile.pdfkmp.render.PdfCanvas.drawImage].
      *
      * Use this when partial display is acceptable, e.g. long body text or
      * tall photographs in a magazine layout.

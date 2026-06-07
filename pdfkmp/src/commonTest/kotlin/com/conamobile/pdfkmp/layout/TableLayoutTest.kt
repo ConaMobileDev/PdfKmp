@@ -24,6 +24,23 @@ class TableLayoutTest {
     private val metrics = FixedWidthFontMetrics()
 
     @Test
+    fun overWideFixedColumns_shrinkProportionallyToFit() {
+        val table = simpleTable(
+            columns = listOf(
+                TableColumn.Fixed(300.dp),
+                TableColumn.Fixed(100.dp),
+            ),
+            rows = listOf(makeRow(cellHeight = 10f, cellCount = 2)),
+        )
+        // Slot is half the declared fixed total — widths scale by 0.5 so
+        // the table never spills past the page margin.
+        val measured = measure(table, Constraints(maxWidth = 200f), metrics) as MeasuredTable
+
+        assertEquals(listOf(150f, 50f), measured.columnWidths)
+        assertEquals(200f, measured.size.width)
+    }
+
+    @Test
     fun fixedAndWeightedColumns_resolveToExpectedWidths() {
         val table = simpleTable(
             columns = listOf(

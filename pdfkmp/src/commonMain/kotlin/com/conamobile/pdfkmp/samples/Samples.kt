@@ -1,6 +1,7 @@
 package com.conamobile.pdfkmp.samples
 
 import com.conamobile.pdfkmp.PdfDocument
+import com.conamobile.pdfkmp.barcode.QrErrorCorrection
 import com.conamobile.pdfkmp.geometry.ContentScale
 import com.conamobile.pdfkmp.geometry.PageSize
 import com.conamobile.pdfkmp.geometry.Padding
@@ -14,6 +15,7 @@ import com.conamobile.pdfkmp.pdf
 import com.conamobile.pdfkmp.style.BorderSides
 import com.conamobile.pdfkmp.style.BorderStroke
 import com.conamobile.pdfkmp.style.CornerRadius
+import com.conamobile.pdfkmp.style.DropShadow
 import com.conamobile.pdfkmp.style.FontWeight
 import com.conamobile.pdfkmp.style.LineStyle
 import com.conamobile.pdfkmp.style.PdfColor
@@ -21,6 +23,8 @@ import com.conamobile.pdfkmp.style.PdfPaint
 import com.conamobile.pdfkmp.style.TableBorder
 import com.conamobile.pdfkmp.style.TableColumn
 import com.conamobile.pdfkmp.style.TextAlign
+import com.conamobile.pdfkmp.style.TextOverflow
+import com.conamobile.pdfkmp.style.TextScript
 import com.conamobile.pdfkmp.style.TextStyle
 import com.conamobile.pdfkmp.unit.dp
 import com.conamobile.pdfkmp.node.VectorStrokeMode
@@ -1504,7 +1508,11 @@ public object Samples {
             }
 
             text("Strikethrough and underline") { strikethrough = true }
-            text("Justified body — but Justify falls back to Start in v1.") {
+            text(
+                "Justified body text stretches the inter-word spaces of every " +
+                    "line except the paragraph's last, producing the flush " +
+                    "left and right edges familiar from print typography.",
+            ) {
                 align = TextAlign.Justify
             }
 
@@ -1640,6 +1648,387 @@ public object Samples {
             }
             text("If your platform is missing the listed system font, register a TTF via PdfFont.Custom.") {
                 fontSize = 10.sp; italic = true; color = PdfColor.Gray
+            }
+        }
+    }
+
+    /**
+     * A table far taller than one page, sliced between rows with the
+     * header repeated at the top of every continuation page — the classic
+     * multi-page invoice / inventory listing.
+     */
+    public fun longTable(): PdfDocument = pdf {
+        metadata { title = "PdfKmp – Long Table" }
+        defaultPageBreakStrategy = PageBreakStrategy.Slice
+        page {
+            spacing = 10.dp
+            header { ctx ->
+                text("Inventory — page ${ctx.pageNumber} of ${ctx.totalPages}") {
+                    fontSize = 11.sp; color = PdfColor.Gray
+                }
+            }
+
+            text("80-row inventory") { fontSize = 22.sp; bold = true }
+            text("The header row repeats automatically on every page the table flows onto.") {
+                color = PdfColor.Gray
+            }
+
+            table(
+                columns = listOf(
+                    TableColumn.Fixed(50.dp),
+                    TableColumn.Weight(2f),
+                    TableColumn.Weight(1f),
+                ),
+                border = TableBorder(color = PdfColor.LightGray, width = 0.5.dp),
+            ) {
+                header {
+                    cell("#") { bold = true }
+                    cell("Item") { bold = true }
+                    cell("Price") { bold = true }
+                }
+                repeat(80) { i ->
+                    row(background = if (i % 2 == 0) null else PdfColor(0.96f, 0.96f, 0.98f)) {
+                        cell("${i + 1}")
+                        cell("Catalogue item ${i + 1}")
+                        cell("$${(i + 1) * 3}.00")
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Advanced text features on one page: full justification, line
+     * clamping with ellipsis, soft-hyphen breaks, and superscript /
+     * subscript spans.
+     */
+    public fun textAdvanced(): PdfDocument = pdf {
+        metadata { title = "PdfKmp – Advanced Text" }
+        page {
+            spacing = 10.dp
+
+            text("Advanced Text") { fontSize = 24.sp; bold = true }
+            divider(thickness = 1.dp, color = PdfColor.Black)
+
+            text("Full justification") { bold = true }
+            text(LOREM + LOREM) { align = TextAlign.Justify }
+
+            text("maxLines = 2 with ellipsis") { bold = true }
+            text(LOREM + LOREM) {
+                maxLines = 2
+                overflow = TextOverflow.Ellipsis
+                color = PdfColor.DarkGray
+            }
+
+            text("Soft hyphens (U+00AD) break long words gracefully") { bold = true }
+            box(width = 150.dp, border = BorderStroke(0.5.dp, PdfColor.LightGray)) {
+                // The soft hyphens are invisible unless the wrap lands on
+                // one — then a real "-" appears at the line end.
+                text("Donau­dampf­schiff­fahrts­gesellschaft is famously unwrappable without them.")
+            }
+
+            text("Superscript and subscript spans") { bold = true }
+            richText {
+                span("Pythagoras: a")
+                span("2") { script = TextScript.Superscript }
+                span(" + b")
+                span("2") { script = TextScript.Superscript }
+                span(" = c")
+                span("2") { script = TextScript.Superscript }
+                span("   ·   Chemistry: H")
+                span("2") { script = TextScript.Subscript }
+                span("O")
+            }
+        }
+    }
+
+    /**
+     * AcroForm fields and accessibility metadata: text fields, a
+     * checkbox, image alt text, and best-effort PDF/A identification.
+     * Fields are interactive in Desktop readers; Android and iOS render
+     * consistent static visuals.
+     */
+    public fun formsAndAccessibility(): PdfDocument = pdf {
+        metadata {
+            title = "PdfKmp – Forms & Accessibility"
+            language = "en"
+            pdfACompliance = true
+        }
+        page {
+            spacing = 10.dp
+
+            text("Registration") { fontSize = 24.sp; bold = true }
+            text("Fields below are fillable in Desktop PDF readers; on Android and iOS they render as static boxes.") {
+                fontSize = 10.sp; color = PdfColor.Gray
+            }
+
+            text("Full name") { bold = true }
+            textField("fullName", width = 300.dp)
+
+            text("Email") { bold = true }
+            textField("email", width = 300.dp, value = "user@example.com")
+
+            text("Notes") { bold = true }
+            textField("notes", width = 420.dp, height = 80.dp, multiline = true)
+
+            row(spacing = 8.dp, verticalAlignment = VerticalAlignment.Center) {
+                checkBox("agree", checked = true)
+                text("I agree to the terms and conditions")
+            }
+
+            spacer(height = 8.dp)
+            text("This document also carries PDF/A-2b identification, a document language, and tagged image alt text — see the pdfA / language metadata options.") {
+                fontSize = 9.sp; italic = true; color = PdfColor.Gray
+            }
+        }
+    }
+
+    /**
+     * Newspaper-style layout: a wide headline over balanced multi-column
+     * body text, plus right-to-left paragraphs that auto-detect their
+     * direction from the content.
+     */
+    public fun newsletter(): PdfDocument = pdf {
+        metadata { title = "PdfKmp – Newsletter" }
+        page {
+            spacing = 12.dp
+
+            text("The PdfKmp Gazette") { fontSize = 30.sp; bold = true; align = TextAlign.Center }
+            divider(thickness = 2.dp, color = PdfColor.Black)
+
+            columns(count = 2, gap = 18.dp, spacing = 8.dp) {
+                text("Two columns, one flow") { bold = true; fontSize = 14.sp }
+                text(LOREM + LOREM) { align = TextAlign.Justify; fontSize = 10.sp }
+                text(LOREM) { align = TextAlign.Justify; fontSize = 10.sp }
+                text("Height-balanced columns") { bold = true; fontSize = 14.sp }
+                text(LOREM + LOREM) { align = TextAlign.Justify; fontSize = 10.sp }
+            }
+
+            divider(thickness = 0.5.dp, color = PdfColor.LightGray)
+
+            text("Right-to-left paragraphs:") { bold = true }
+            // Direction auto-detects from the content; Start anchors to the
+            // right edge for RTL scripts.
+            text("שלום עולם — זהו טקסט בעברית הנצמד לימין") { fontSize = 14.sp }
+            text("مرحبا بالعالم — هذا نص عربي يلتصق باليمين") {
+                fontSize = 14.sp
+                font = com.conamobile.pdfkmp.style.PdfFont.SystemArabic
+            }
+        }
+    }
+
+    /**
+     * Book-style page chrome — no header on the cover, mirrored headers
+     * on even/odd pages via [com.conamobile.pdfkmp.node.PageContext]'s
+     * parity helpers — plus a landscape page mixed into a portrait
+     * document.
+     */
+    public fun pageTemplates(): PdfDocument = pdf {
+        metadata { title = "PdfKmp – Page Templates" }
+        defaultPageBreakStrategy = PageBreakStrategy.Slice
+        page(PageSize.A5) {
+            spacing = 10.dp
+            header { ctx ->
+                when {
+                    // Cover page: no chrome at all.
+                    ctx.isFirst -> Unit
+                    // Verso (even) pages carry the title on the left…
+                    ctx.isEven -> row(horizontalArrangement = HorizontalArrangement.SpaceBetween) {
+                        text("Page Templates") { fontSize = 10.sp; color = PdfColor.Gray }
+                        text("${ctx.pageNumber}") { fontSize = 10.sp; color = PdfColor.Gray }
+                    }
+                    // …recto (odd) pages mirror it to the right.
+                    else -> row(horizontalArrangement = HorizontalArrangement.SpaceBetween) {
+                        text("${ctx.pageNumber}") { fontSize = 10.sp; color = PdfColor.Gray }
+                        text("Page Templates") { fontSize = 10.sp; color = PdfColor.Gray }
+                    }
+                }
+            }
+            text("Cover") { fontSize = 32.sp; bold = true }
+            text("Headers start on page 2 and mirror between even and odd pages, the way books do.")
+            repeat(8) { text(LOREM + LOREM) }
+        }
+        page(PageSize.A5.landscape) {
+            spacing = 10.dp
+            text("Landscape interlude") { fontSize = 22.sp; bold = true }
+            text("Mixed orientations need no special setup — every page(size) call carries its own dimensions.")
+        }
+    }
+
+    /**
+     * Bookmarks, a clickable auto-generated table of contents, and
+     * internal cross-reference links. Open the result in a desktop reader
+     * to see the outline sidebar and jump between chapters.
+     */
+    public fun navigation(): PdfDocument = pdf {
+        metadata { title = "PdfKmp – Navigation" }
+        page {
+            spacing = 12.dp
+            text("Contents") { fontSize = 26.sp; bold = true }
+            divider(thickness = 1.dp, color = PdfColor.Black)
+            tableOfContents()
+            text("Every row above is clickable and jumps to its chapter (iOS / Desktop).") {
+                fontSize = 10.sp; italic = true; color = PdfColor.Gray
+            }
+        }
+        page {
+            spacing = 10.dp
+            bookmark("Introduction")
+            anchor("intro")
+            text("1. Introduction") { fontSize = 22.sp; bold = true }
+            text(LOREM + LOREM)
+            bookmark("Motivation", level = 1)
+            text("1.1 Motivation") { fontSize = 16.sp; bold = true }
+            text(LOREM)
+        }
+        page {
+            spacing = 10.dp
+            bookmark("Deep Dive")
+            text("2. Deep Dive") { fontSize = 22.sp; bold = true }
+            text(LOREM)
+            linkToAnchor(anchor = "intro") {
+                text("← Back to the introduction") {
+                    color = PdfColor.Blue
+                    underline = true
+                }
+            }
+        }
+    }
+
+    /**
+     * Decoration extras: drop shadows, dashed / dotted borders, the
+     * free-draw vector DSL, and the uniform grid container.
+     */
+    public fun designExtras(): PdfDocument = pdf {
+        metadata { title = "PdfKmp – Design Extras" }
+        page {
+            spacing = 14.dp
+
+            text("Design Extras") { fontSize = 24.sp; bold = true }
+            divider(thickness = 1.dp, color = PdfColor.Black)
+
+            text("Cards with drop shadows:") { bold = true }
+            row(spacing = 16.dp) {
+                weighted(1f) {
+                    card(dropShadow = DropShadow()) {
+                        text("Default elevation") { bold = true }
+                        text("Soft 6pt blur, 2pt drop.") { fontSize = 10.sp; color = PdfColor.Gray }
+                    }
+                }
+                weighted(1f) {
+                    card(
+                        dropShadow = DropShadow(
+                            color = PdfColor(0f, 0f, 0.6f, 0.30f),
+                            offsetY = 4.dp,
+                            blur = 10.dp,
+                        ),
+                    ) {
+                        text("Tinted, deeper") { bold = true }
+                        text("Blue 10pt blur, 4pt drop.") { fontSize = 10.sp; color = PdfColor.Gray }
+                    }
+                }
+            }
+
+            text("Dashed and dotted borders:") { bold = true }
+            row(spacing = 16.dp) {
+                weighted(1f) {
+                    card(
+                        cornerRadius = 0.dp,
+                        border = BorderStroke(1.dp, PdfColor.Gray, LineStyle.Dashed),
+                    ) {
+                        text("Dashed outline — coupon style.")
+                    }
+                }
+                weighted(1f) {
+                    card(
+                        cornerRadius = 0.dp,
+                        border = BorderStroke(1.5.dp, PdfColor.Blue, LineStyle.Dotted),
+                    ) {
+                        text("Dotted outline.")
+                    }
+                }
+            }
+
+            text("freeDraw — custom vector shapes:") { bold = true }
+            row(spacing = 24.dp, verticalAlignment = VerticalAlignment.Center) {
+                // Warning triangle.
+                freeDraw(width = 60.dp, height = 60.dp) {
+                    path(
+                        fill = PdfColor(1f, 0.8f, 0.2f),
+                        strokeColor = PdfColor.Black,
+                        strokeWidth = 2f,
+                    ) {
+                        moveTo(30f, 4f); lineTo(56f, 52f); lineTo(4f, 52f); close()
+                    }
+                    path(fill = PdfColor.Black) {
+                        rect(27f, 20f, 6f, 18f)
+                        rect(27f, 42f, 6f, 6f)
+                    }
+                }
+                // Simple bolt.
+                freeDraw(width = 40.dp, height = 60.dp) {
+                    path(fill = PdfColor(0.95f, 0.6f, 0.1f)) {
+                        moveTo(24f, 0f); lineTo(6f, 34f); lineTo(18f, 34f)
+                        lineTo(14f, 60f); lineTo(34f, 24f); lineTo(21f, 24f); close()
+                    }
+                }
+            }
+
+            text("grid(columns = 3) — equal-width cells, row-major flow:") { bold = true }
+            grid(columns = 3, spacing = 10.dp) {
+                repeat(5) { i ->
+                    card(background = PdfColor(0.95f, 0.96f, 1f), cornerRadius = 6.dp) {
+                        text("Cell ${i + 1}") { bold = true }
+                        text("Last row pads out automatically.") {
+                            fontSize = 8.sp; color = PdfColor.Gray
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Machine-readable codes: QR symbols at several error-correction
+     * levels plus Code 128 barcodes — all pure vector, no rasterisation,
+     * no external dependencies.
+     */
+    public fun barcodes(): PdfDocument = pdf {
+        metadata { title = "PdfKmp – QR & Barcodes" }
+        page {
+            spacing = 12.dp
+
+            text("QR Codes & Barcodes") { fontSize = 24.sp; bold = true }
+            divider(thickness = 1.dp, color = PdfColor.Black)
+
+            text("Vector QR codes — scan straight off the page:") { bold = true }
+            row(spacing = 24.dp, verticalAlignment = VerticalAlignment.Top) {
+                column(spacing = 4.dp) {
+                    qrCode("https://github.com/conamobiledev/PdfKmp", size = 110.dp)
+                    text("EC level M (default)") { fontSize = 9.sp; color = PdfColor.Gray }
+                }
+                column(spacing = 4.dp) {
+                    qrCode(
+                        data = "https://github.com/conamobiledev/PdfKmp",
+                        size = 110.dp,
+                        errorCorrection = QrErrorCorrection.H,
+                        color = PdfColor(0.1f, 0.2f, 0.5f),
+                    )
+                    text("EC level H, brand colour") { fontSize = 9.sp; color = PdfColor.Gray }
+                }
+            }
+
+            spacer(height = 8.dp)
+
+            text("Code 128 — invoice and parcel numbers:") { bold = true }
+            column(spacing = 4.dp) {
+                barcode("INV-2026-00042", height = 50.dp)
+                text("INV-2026-00042") { fontSize = 10.sp; align = TextAlign.Start }
+            }
+            column(spacing = 4.dp) {
+                // All-digit payloads compress via code set C automatically.
+                barcode("4006381333931", height = 50.dp)
+                text("4006381333931") { fontSize = 10.sp }
             }
         }
     }
