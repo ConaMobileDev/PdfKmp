@@ -108,10 +108,17 @@ fun main() {
         ) {
             MaterialTheme {
                 var selected by remember { mutableStateOf<DesktopSample?>(null) }
+                var playground by remember { mutableStateOf(false) }
 
                 val current = selected
-                if (current == null) {
-                    SampleList(all, onPick = { selected = it })
+                if (playground) {
+                    PlaygroundScreen(onBack = { playground = false })
+                } else if (current == null) {
+                    SampleList(
+                        all,
+                        onPick = { selected = it },
+                        onPlayground = { playground = true },
+                    )
                 } else {
                     // `remember(current)` rebuilds the document only when the
                     // selection changes, not on every recomposition.
@@ -136,7 +143,11 @@ fun main() {
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun SampleList(samples: List<DesktopSample>, onPick: (DesktopSample) -> Unit) {
+private fun SampleList(
+    samples: List<DesktopSample>,
+    onPick: (DesktopSample) -> Unit,
+    onPlayground: () -> Unit,
+) {
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.fillMaxSize()) {
             Text(
@@ -155,6 +166,31 @@ private fun SampleList(samples: List<DesktopSample>, onPick: (DesktopSample) -> 
                 modifier = Modifier.fillMaxSize().padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                item {
+                    // Highlighted entry: the live-preview DSL playground.
+                    Card(
+                        onClick = onPlayground,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = androidx.compose.material3.CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        ),
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                            Text(
+                                "▶ Playground (live preview)",
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                            Text(
+                                "Tweak DSL parameters and watch the PDF re-render live.",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                        }
+                    }
+                }
                 items(samples) { sample ->
                     Card(
                         onClick = { onPick(sample) },
