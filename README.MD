@@ -27,10 +27,10 @@ PdfKmp lets you build PDF documents from a Compose-style DSL that runs identical
 
 **What's in the box:**
 
-- **Rich text engine** — full justification, `maxLines` + ellipsis, soft-hyphen + mid-word breaking, super/subscript spans, right-to-left support with bidi reorder + Arabic shaping, and orphan/widow control.
+- **Rich text engine** — full justification, automatic hyphenation, `maxLines` + ellipsis, soft-hyphen + mid-word breaking, super/subscript spans, right-to-left support with bidi reorder + Arabic shaping (incl. kashida justification), and orphan/widow control.
 - **Layout & pagination** — column / row / box / card, weighted children, recursive column slicing, table row slicing with repeating headers, `keepTogether`, multi-column (`columns`) and uniform `grid`, mixed page orientations.
 - **Tables, lists, dividers, circles & ellipses**, plus a free-form vector DSL (`freeDraw`).
-- **Graphics** — QR codes, Code 128 barcodes, bar / line / pie / donut charts — all pure vector, no external dependencies.
+- **Graphics** — QR codes, Code 128 / EAN-13 / UPC-A barcodes, Data Matrix, and bar / stacked-bar / (multi-series) line / pie / donut charts — all pure vector, no external dependencies.
 - **Decorations** — backgrounds, per-corner radii, per-side borders, dashed / dotted borders, gradients, drop shadows, rotation, and group opacity.
 - **Navigation & document features** — bookmarks / outline, internal links + auto table of contents, hyperlinks, AcroForm fields, encryption, file attachments, best-effort PDF/A, and JVM digital signing.
 - **Images & vectors** — PNG / JPEG / WebP / HEIF, Android `<vector>` and W3C `<svg>` (kept vector inside the PDF).
@@ -108,12 +108,18 @@ PdfKmp is published to **Maven Central**. The library exposes:
 The browser exposes no PDF engine to Wasm, so the web target renders
 through PdfKmp's own pure-Kotlin PDF writer. Everything vector works
 exactly like the other platforms — text layout, tables, shapes,
-gradients, QR codes, barcodes, charts, freeDraw, bookmarks/TOC, links —
-plus JPEG and 8-bit RGB/grayscale PNG images. Current limits (each
-warned through `PdfLog` and skipped): text renders in the Standard-14
-Helvetica family (custom fonts are not embedded yet, so non-Latin
-scripts need a later release), palette/alpha PNGs, interactive form
-widgets, encryption, and attachments.
+gradients, QR codes, barcodes, Data Matrix, charts, freeDraw,
+bookmarks/TOC, links — plus JPEG and 8-bit RGB/grayscale PNG images.
+The web backend now **embeds fonts**: a `PdfFont.Custom` is embedded as
+a TrueType subset, and non-WinAnsi text with no custom font falls back to
+a bundled-Inter subset, so **Cyrillic works in the browser out of the
+box** (plain Latin still uses Standard-14 Helvetica); content streams are
+Flate-compressed. Remaining honest font limits: CFF/OTF custom fonts fall
+back to Helvetica, single-face customs get no synthetic bold/italic, and
+coverage is gated by the font's own glyphs (CJK/Arabic generally need a
+`PdfFont.Custom`). Other current limits (each warned through `PdfLog` and
+skipped): palette/alpha PNGs, interactive form widgets, encryption, and
+attachments.
 
 Viewing on the web needs no library at all — browsers ship excellent
 PDF viewers, so hand them the bytes:
@@ -279,7 +285,7 @@ val document = pdf {
 // 2. Pick what to do with it:
 val bytes: ByteArray = document.toByteArray()              // raw bytes
 // or
-val saved = document.save(StorageLocation.Cache, "hello.pdf")  // suspend, returns SavedPdf
+val saved = document.save(StorageLocation.Cache, "hello.pdf")  // returns SavedPdf (synchronous)
 println(saved.path)  // absolute filesystem path you can hand to a viewer / share intent
 ```
 
@@ -297,7 +303,7 @@ pdf {
         title = "Quarterly Report"
         author = "PdfKmp"
         subject = "Sales summary for Q1"
-        keywords = listOf("sales", "q1", "report")
+        keywords = "sales, q1, report"   // String?, comma-separated — not a List
     }
 
     // Defaults inherited by every page until overridden inside the page block.
@@ -369,6 +375,14 @@ Long words wrap gracefully: a **soft hyphen** (`U+00AD`) is an invisible break o
 text("Donau­dampf­schiff­fahrts­gesellschaft")  // breaks on the soft hyphens
 ```
 
+Opt into **automatic hyphenation** with `hyphenation`: a too-long word breaks at legal points (Liang's algorithm, as in TeX) before any hard cut, rendering the same visible `-` as a soft hyphen and never overriding author-supplied ones:
+
+```kotlin
+text(longParagraph) { align = TextAlign.Justify; hyphenation = Hyphenators.EnUs }
+```
+
+> **Reduced pattern set.** `Hyphenators.EnUs` embeds a curated, **genuine subset** of Liang's `hyphen.tex` patterns (the canonical list is ~4400 entries). Common vocabulary hyphenates correctly (`hy-phen-ation`, `com-put-er`); long-tail words may miss some valid breaks — the algorithm never invents a wrong break, it just offers fewer. No fabricated patterns are included.
+
 ### Orphan / widow control
 
 Under the `Slice` page-break strategy, keep a minimum number of paragraph lines together at a page boundary:
@@ -391,6 +405,12 @@ text("English forced RTL") { direction = TextDirection.Rtl }
 ```
 
 Android and iOS shape glyphs (bidi reorder + Arabic contextual forms) natively; the Desktop/JVM backend runs its own bidi reorder + Arabic shaping pass (presentation forms, lam-alef ligatures) because PDFBox does neither.
+
+For justified Arabic, set `kashidaJustify = true` so `TextAlign.Justify` elongates words at cursive joining points with tatweel (`U+0640`) before widening word gaps — the way Arabic typography expects. It only applies to justified right-to-left lines and is ignored for LTR text:
+
+```kotlin
+text(arabicParagraph) { direction = TextDirection.Rtl; align = TextAlign.Justify; kashidaJustify = true; font = PdfFont.SystemArabic }
+```
 
 > **Mixed-style RTL limitation:** inside a single `richText { }` paragraph, RTL spans keep their authored (source) order rather than being reordered as one visual run. Author a whole RTL paragraph as a single `text(...)` (or one span) when visual segment order matters.
 
@@ -734,6 +754,25 @@ table(
 
 Cells can wrap arbitrary node trees — stack a title + subtitle, embed an icon, etc. Border configuration: `TableBorder.None`, or set `showOutline / showHorizontalLines / showVerticalLines` independently.
 
+### Merged cells — `colSpan` / `rowSpan`
+
+Both `cell` overloads take `colSpan` / `rowSpan` (default `1`) for HTML-style merging. `colSpan > 1` merges the cell across the next `colSpan - 1` columns of the same row; `rowSpan > 1` extends it downward across the next `rowSpan - 1` rows, with the remaining cells shifting to fill the free columns:
+
+```kotlin
+table(columns = listOf(TableColumn.Weight(1f), TableColumn.Weight(1f), TableColumn.Weight(1f))) {
+    row(background = PdfColor.fromRgb(0xECEFF1)) {
+        cell("Quarterly summary", horizontalAlignment = HorizontalAlignment.Center, colSpan = 3) { bold = true }
+    }
+    row {
+        cell("H1", verticalAlignment = VerticalAlignment.Center, rowSpan = 2) { bold = true }  // spans both body rows
+        cell("Q1"); cell("+4%", horizontalAlignment = HorizontalAlignment.End)
+    }
+    row { cell("Q2"); cell("+7%", horizontalAlignment = HorizontalAlignment.End) }
+}
+```
+
+The layout tracks merges on an occupancy grid: separators never cross a merged region, row heights grow to fit spanning content, and page slicing keeps a `rowSpan` block atomic (the joined rows move to the next page together). A span of `1` is bit-for-bit identical to the old single-cell layout, and the merge renders the same on every platform.
+
 ### Row slicing & repeating headers
 
 Under `PageBreakStrategy.Slice`, a table taller than a page splits between rows, and the header row repeats at the top of every continuation page (`repeatHeader = true`, the default). Over-wide fixed columns also shrink proportionally to fit the page instead of spilling past the margin.
@@ -858,16 +897,34 @@ qrCode(
 )
 ```
 
-`barcode(data)` is Code 128 (printable ASCII 32–126) with automatic code-set-C digit compression and the mod-103 checksum appended for you. The human-readable caption is not drawn automatically — add a `text(data)` below when you need one:
+`barcode(data, symbology = …)` draws a 1D barcode as pure vector bars. Pick the encoding via the `symbology` parameter (`BarcodeSymbology`, default `Code128`). The human-readable caption is not drawn automatically — add a `text(data)` below when you need one:
 
 ```kotlin
 column(spacing = 4.dp) {
-    barcode("INV-2026-00042", height = 50.dp)
+    barcode("INV-2026-00042", height = 50.dp)                                  // Code 128 — the default
     text("INV-2026-00042") { fontSize = 10.sp }
 }
+
+// 12 digits → EAN-13 check digit computed (13 → verified); 11 → UPC-A computed (12 → verified):
+barcode("400638133393", symbology = BarcodeSymbology.Ean13, height = 50.dp)
+barcode("036000291452", symbology = BarcodeSymbology.UpcA, height = 50.dp)
 ```
 
-Leave a quiet zone around either symbol (page padding or a padded container usually suffices). Both render identically on Android, iOS, and Desktop.
+| `BarcodeSymbology` | Payload |
+|---|---|
+| `Code128` (default) | Printable ASCII 32–126; digit runs compress via code set C, mod-103 checksum appended |
+| `Ean13` | 12 digits (check computed) or 13 (check verified) |
+| `UpcA` | 11 digits (check computed) or 12 (check verified) — rendered as the equivalent EAN-13 symbol |
+
+`dataMatrix(data)` draws a 2D Data Matrix (ECC 200) symbol — ASCII encodation only (bytes above 127 are rejected), smallest fitting square (10×10 … 52×52) chosen automatically:
+
+```kotlin
+dataMatrix("SN-2026-00042", size = 90.dp, color = PdfColor(0.1f, 0.2f, 0.5f))
+```
+
+Leave a quiet zone around any symbol (page padding or a padded container usually suffices). All render identically on Android, iOS, Desktop, and Web.
+
+> **PDF417 is not offered.** PdfKmp ships QR, Code 128, EAN-13/UPC-A, and Data Matrix. PDF417 was evaluated and deliberately not shipped — its 2,787-entry cluster tables can't be reproduced reliably without the spec at hand, and a wrong table would render unscannable symbols.
 
 ---
 
@@ -888,7 +945,27 @@ pieChart(series, diameter = 160.dp)                         // swatch + percenta
 donutChart(series, diameter = 160.dp, holeRatio = 0.55f)
 ```
 
-Empty data (or all-zero / all-negative values) draws nothing rather than throwing. Charts render identically on every platform.
+`barChart` and `lineChart` take `showAxis` (baseline axis, default `true`) and `gridLines` (faint value-grid lines, default `0` = none) with optional `axisColor` / `gridColor`. Two more chart shapes ship: a **stacked bar chart** with a per-segment legend, and a **multi-series line chart** (one `LineSeries` per line, scaled against the combined min/max, with a legend):
+
+```kotlin
+stackedBarChart(
+    groups = listOf(
+        StackedBarGroup("Q1", listOf(StackedBarSegment("Web", 8f, PdfColor.Blue), StackedBarSegment("App", 4f, PdfColor.Green))),
+        StackedBarGroup("Q2", listOf(StackedBarSegment("Web", 6f, PdfColor.Blue), StackedBarSegment("App", 9f, PdfColor.Green))),
+    ),
+    width = 300.dp, height = 160.dp, gridLines = 4,
+)
+
+lineChart(
+    series = listOf(
+        LineSeries("2025", listOf(3f, 7f, 4f, 9f), PdfColor.Blue),
+        LineSeries("2026", listOf(5f, 6f, 8f, 7f), PdfColor.Red),
+    ),
+    width = 300.dp, height = 140.dp, gridLines = 4,
+)
+```
+
+Empty data (or all-zero / all-negative values) draws nothing rather than throwing; a `lineChart` needs at least two points. Charts render identically on every platform.
 
 ---
 
@@ -1109,6 +1186,29 @@ val signed = PdfSigner.sign(pdfBytes, name = "Jane Doe", reason = "Approved") { 
 val signed2 = PdfSigner.sign(pdfBytes, keyStore, alias = "mykey", password = pwd.toCharArray())
 ```
 
+### Post-processing & Factur-X — `PdfTools` (JVM/Desktop)
+
+`PdfTools` (a **JVM/Desktop-only** object in `jvmMain`, backed by PdfBox) post-processes **already-encoded PDF bytes** — from PdfKmp or any other producer. Android, iOS, and Web expose only PDF-*writing* APIs, so there is no counterpart there; every method reads the input, operates in memory, and returns fresh bytes (inputs are never mutated). It offers `merge`, `split`, `extractPages`, `addWatermarkText`, `overlay`, `validatePdfABasics`, and `attachFacturX`:
+
+```kotlin
+import com.conamobile.pdfkmp.tools.PdfTools
+import com.conamobile.pdfkmp.zugferd.FacturXInvoice
+
+val merged  = PdfTools.merge(coverBytes, bodyBytes)
+val stamped = PdfTools.addWatermarkText(merged, "CONFIDENTIAL")    // diagonal, 45°, semi-transparent
+
+// Build a Factur-X / ZUGFeRD MINIMUM-profile invoice (common code) and attach it:
+val invoice = FacturXInvoice(
+    invoiceNumber = "INV-2026-00042", issueDateYyyymmdd = "20260607",
+    sellerName = "Acme GmbH", buyerName = "Beispiel AG", currencyCode = "EUR",
+    taxBasisTotal = "100.00", taxTotal = "19.00", grandTotal = "119.00", duePayable = "119.00",
+    sellerVatId = "DE123456789", sellerCountryCode = "DE",
+)
+val facturX = PdfTools.attachFacturX(stamped, invoice)
+```
+
+> **Honest scope:** `FacturXInvoice` is common-code and models the **MINIMUM** profile only (no line items, no semantic validation). `attachFacturX` embeds `factur-x.xml` with the spec-mandated `/AFRelationship /Data` but does **not** add or verify the PDF/A conformance Factur-X also needs — produce the base PDF with PDF/A enabled and run a real Factur-X validator before relying on it.
+
 ---
 
 ## Markdown — `pdfkmp-markdown`
@@ -1163,6 +1263,8 @@ PdfLog.logger = { message -> println("PdfKmp: $message") }
 PdfKmp ships **Inter** for Latin text. For non-Latin scripts on **Android and iOS**, use the cross-platform `PdfFont.System*` references — each one is a comma-separated candidate chain that resolves to whichever font the running platform has installed:
 
 > **Desktop (JVM) caveat:** there is no system font-registry lookup on Desktop, so `PdfFont.System*` falls back to bundled Inter and non-Latin code points are dropped from the output. On Desktop, supply a `PdfFont.Custom` with the right script coverage (see below) to render CJK / Arabic / Persian.
+
+> **Web (Kotlin/Wasm):** the web backend **embeds fonts** — a `PdfFont.Custom` is embedded as a TrueType subset, and non-WinAnsi text with no custom font falls back to a bundled-Inter subset, so Latin + Cyrillic render in the browser out of the box. Honest limits: CFF/OTF custom fonts fall back to Helvetica, single-face customs get no synthetic bold/italic, and CJK/Arabic need a `PdfFont.Custom` (Inter has no such glyphs). See [Web (Kotlin/Wasm)](#web-kotlinwasm).
 
 ```kotlin
 text("漢字、ひらがな、カタカナ — 中文 / 日本語 / 한국어") {
@@ -1352,6 +1454,20 @@ Both APIs accept four input shapes — pick whichever matches what your code alr
 - **Text selection** — invisible `SelectionContainer` overlay backed by the captured glyph positions. Long-press → drag handles → Copy.
 - **Gestures** — pinch zoom (1× → 5×), single-finger pan when zoomed, free 2D pan, double-tap toggle, focal-point anchoring. On **Desktop**: macOS trackpad pinch, Ctrl/⌘ + mouse-wheel, and optional on-screen ＋ / − controls (`showZoomControls`).
 - **Page indicator** — auto-fades pill that switches to the next page once it crosses the viewport midpoint.
+- **Annotations** — opt-in `showAnnotationTools` highlighter (drag to highlight, tap to delete; state via `initialAnnotations` / `onAnnotationsChanged`). On **Desktop** the highlights can be **written into the PDF**: while the tools are active, the download action exports real `Highlight` annotations in the bytes; Android and iOS stay overlay-only.
+- **Page layout** — `pageLayout = PdfPageLayout.TwoPageBook` arranges pages as side-by-side book spreads (cover alone, then verso/recto pairs); default `PdfPageLayout.Single` is one page per row.
+- **Password-protected PDFs** — pass `password = "…"` to open an encrypted document. A missing / wrong password shows an inline message and fires `onDocumentError(PdfViewerError.PasswordRequired)` (which also distinguishes `CannotOpen` / `LoadFailed`) instead of crashing:
+
+```kotlin
+KmpPdfViewer(
+    source = PdfSource.auto("file:///path/to/encrypted.pdf"),
+    password = "letmein",
+    pageLayout = PdfPageLayout.TwoPageBook,
+    onDocumentError = { if (it == PdfViewerError.PasswordRequired) promptForPassword() },
+)
+```
+
+> **Android can't open encrypted PDFs.** `password` works on **Desktop** and **iOS**; on **Android** it is terminal regardless of the password, because `android.graphics.pdf.PdfRenderer` has no password API.
 
 Every action button has a matching `showSearch` / `showShare` / `showDownload` / `showBack` / `showPageIndicator` Boolean — pass `false` to hide individual affordances without un-wiring callbacks. Behaviour toggles `zoomEnabled`, `doubleTapToZoom`, `textSelectable`, `hyperlinksEnabled` follow the same shape.
 
@@ -1390,17 +1506,15 @@ val doc = pdf { /* ... */ }
 
 val saved = doc.save(StorageLocation.Cache, filename = "report.pdf")
 println(saved.path)     // absolute filesystem path
-println(saved.name)     // "report.pdf"
-println(saved.location) // StorageLocation.Cache
+println(saved.uri)      // Android MediaStore content URI on public writes, null elsewhere
 ```
 
-`save` is a `suspend fun` — call it from a coroutine on Android, an `async` on iOS, or wrap it in `runBlocking` for one-shot scripts. It returns a `SavedPdf` with three fields:
+`save` is a regular (non-suspend) function — call it from anywhere, no coroutine required. It returns a `SavedPdf` with two fields:
 
 | Field | Type | Description |
 |---|---|---|
-| `path` | `String` | Absolute path to the file on disk. Use this for `File(path)` / `URL(fileURLWithPath:)`. |
-| `name` | `String` | The filename you supplied (e.g. `"report.pdf"`). |
-| `location` | `StorageLocation` | The location you saved to — useful when the same code branches by destination. |
+| `path` | `String` | Absolute path to the file on disk. Always populated (on Android Q+ MediaStore writes it is the resolved path behind the content URI). Use this for `File(path)` / `URL(fileURLWithPath:)`. |
+| `uri` | `String?` | The content URI on Android Q+ MediaStore writes (`null` on iOS and on legacy Android writes). Pass this to `Intent.ACTION_VIEW` directly without going through `FileProvider`. |
 
 ### 2. `toByteArray()` — raw PDF bytes
 
@@ -1423,17 +1537,17 @@ val data: NSData = doc.toNSData()
 
 | Location | Android | iOS | Desktop (JVM) | Use case |
 |---|---|---|---|---|
-| `Cache` | app-internal cache | `Caches/` | `java.io.tmpdir` | temporary preview, can be cleaned by the OS |
-| `AppFiles` | app-internal files | `Library/` | `~/.pdfkmp` | persistent, app-private |
-| `AppExternalFiles` | scoped external (no permission) | falls back to `Documents/` | `~/.pdfkmp` | larger files, app-scoped |
-| `Downloads` | shared `Downloads/` via MediaStore | shared Files app `Downloads/` | `~/Downloads` | user can find it from system file manager |
-| `Documents` | shared `Documents/` | iCloud `Documents/` | `~/Documents` | user-visible documents |
-| `Temp` | `cacheDir/tmp/` | `tmp/` | `java.io.tmpdir` | one-shot temp file you'll delete after sharing |
+| `Cache` | app-internal cache | `Library/Caches/` | `java.io.tmpdir` | temporary preview, can be cleaned by the OS |
+| `AppFiles` | app-internal files | `Library/Application Support/` | `~/.pdfkmp` | persistent, app-private |
+| `AppExternalFiles` | scoped external (no permission) | falls back to app `Documents/` | `~/.pdfkmp` | larger files, app-scoped |
+| `Downloads` | shared `Downloads/` via MediaStore | app `Documents/` (no public Downloads — surface via share sheet) | `~/Downloads` | user can find it from system file manager |
+| `Documents` | shared `Documents/` | app `Documents/` | `~/Documents` | user-visible documents |
+| `Temp` | `cacheDir/tmp/` | `NSTemporaryDirectory()` | `java.io.tmpdir` | one-shot temp file you'll delete after sharing |
 | `Custom("/abs/path/dir")` | any writable directory | any writable directory | any writable directory | full control |
 
 > **Android storage permissions:** `Cache`, `AppFiles`, `AppExternalFiles`, and `Temp` need **no permission** on any Android version. `Downloads` / `Documents` use the system MediaStore on Android 10+ which also needs no permission. For `Custom` paths outside your app sandbox, you supply your own permissions / Storage Access Framework handling.
 
-> **iOS sandboxing:** Every `StorageLocation` resolves inside your app's sandbox; iCloud `Documents` requires the `iCloud Documents` capability in your Xcode project.
+> **iOS sandboxing:** Every `StorageLocation` resolves inside your app's sandbox — iOS has no public Downloads folder, so `Downloads` / `Documents` both land in the app's `Documents/` directory. To let the user pick the file up from the Files app, advertise `UIFileSharingEnabled` + `LSSupportsOpeningDocumentsInPlace` in your `Info.plist`, or hand the file to a `UIActivityViewController` share sheet.
 
 > **Desktop:** locations resolve against the current user's home and the JVM temp directory — the full filesystem is reachable, so `Downloads` / `Documents` land in the real `~/Downloads` / `~/Documents` folders.
 
@@ -1640,8 +1754,11 @@ Set the document-wide default via `defaultPageBreakStrategy`, override per page 
 
 The core layout, text, graphics, charts, QR / barcodes, and decorations render **identically on all three platforms**. Document-level navigation and security features differ because the native PDF generators expose different capabilities. On **Android**, metadata, clickable links, internal links, and the outline are produced by a pure-Kotlin **post-processor** that applies an incremental update to the bytes `android.graphics.pdf.PdfDocument` produces (it has no API for any of them); the patcher returns the original bytes unchanged on any parse surprise.
 
+> A Web (Kotlin/Wasm) column is covered in the docs site's [platform parity](https://conamobiledev.github.io/PdfKmp/guides/platform-parity/) page; the table below is the three native backends.
+
 | Feature | Android | iOS | Desktop (JVM) |
 |---|---|---|---|
+| Table `colSpan` / `rowSpan` merging | ✅ | ✅ | ✅ |
 | Info dictionary (title / author / …) | ✅ via post-processor | ✅ | ✅ |
 | Hyperlink annotations (`link`) | ✅ via post-processor | ✅ | ✅ |
 | Internal links (`anchor` / `linkToAnchor`) | ✅ via post-processor | ✅ | ✅ |
@@ -1651,11 +1768,16 @@ The core layout, text, graphics, charts, QR / barcodes, and decorations render *
 | Forms interactivity (`textField` / `checkBox`) | ⚠️ static visual only | ⚠️ static visual only | ✅ interactive |
 | PDF/A (best-effort) + tagged image `/Alt` | ❌ ignored | ❌ ignored | ⚠️ best-effort |
 | Digital signing (`PdfSigner`) | ❌ | ❌ | ✅ |
-| RTL bidi + Arabic shaping | ✅ native | ✅ native | ✅ own bidi + shaping pass |
+| `PdfTools` (merge / split / watermark / overlay) | ❌ | ❌ | ✅ |
+| Factur-X / ZUGFeRD attach (`attachFacturX`) | ❌ | ❌ | ✅ (`FacturXInvoice` builder is common code) |
+| RTL bidi + Arabic shaping (+ kashida justify) | ✅ native | ✅ native | ✅ own bidi + shaping pass |
+| Viewer: annotation export to PDF | ❌ overlay-only | ❌ overlay-only | ✅ real `Highlight` annotations |
+| Viewer: open password-protected PDF | ❌ no `PdfRenderer` API | ✅ | ✅ |
+| Viewer: two-page book layout | ✅ | ✅ | ✅ |
 
 ✅ supported · ⚠️ partial / best-effort (see the feature section) · ❌ not supported on that platform.
 
-In the viewer, highlight annotations are **overlay-only** — they live in the viewer's UI state (`initialAnnotations` / `onAnnotationsChanged`) and are not written into the PDF bytes.
+In the viewer, highlight annotations are overlay-only on Android and iOS (UI state via `initialAnnotations` / `onAnnotationsChanged`). On **Desktop** they can be written into the PDF as real `Highlight` annotations — the download action then exports the annotated bytes.
 
 ---
 
@@ -1670,7 +1792,7 @@ In the viewer, highlight annotations are **overlay-only** — they live in the v
 | `Samples.typography()` | Text styling + decorations + alignment + `richText` spans |
 | `Samples.rowAndColumn()` | Layout primitives with `weighted` children |
 | `Samples.columnSpaceBetween()` | Column with `VerticalArrangement.SpaceBetween` |
-| `Samples.tableShowcase()` | Tables, bullet lists, numbered lists |
+| `Samples.tableShowcase()` | Tables (incl. a `colSpan` banner + `rowSpan` label merge), bullet lists, numbered lists |
 | `Samples.vectorShowcase()` | Vector / SVG icons + circles + ellipses |
 | `Samples.vectorAdvanced()` | Gradient fills, elliptical arcs, group transforms |
 | `Samples.customDesigns(imageBytes)` | Cards with gradients, corner radii, per-side borders |
@@ -1683,7 +1805,7 @@ In the viewer, highlight annotations are **overlay-only** — they live in the v
 | `Samples.showcase()` | Every v1 feature in a single PDF |
 | `Samples.textAdvanced()` | Justification, `maxLines` + ellipsis, soft hyphens, super/subscript |
 | `Samples.longTable()` | Table row slicing with a repeating header row |
-| `Samples.barcodes()` | Vector QR codes (EC levels) + Code 128 barcodes |
+| `Samples.barcodes()` | Vector QR codes (EC levels), Code 128, EAN-13 / UPC-A, Data Matrix |
 | `Samples.designExtras()` | Drop shadows, dashed / dotted borders, `freeDraw`, `grid` |
 | `Samples.navigation()` | Bookmarks, clickable auto-TOC, internal cross-reference links |
 | `Samples.newsletter()` | Multi-column flow + auto-detected right-to-left paragraphs |

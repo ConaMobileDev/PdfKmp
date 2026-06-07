@@ -128,6 +128,56 @@ an actively settling surface.
 - **Adaptive cache** — `Auto` strategy switches to a forward-biased
   window on 200+-page documents.
 
+### Added — second feature wave
+
+- **TrueType subsetting + embedding on the pure-Kotlin backend.** The
+  web/wasm target now embeds `PdfFont.Custom` fonts and falls back to a
+  subset of the bundled Inter for non-WinAnsi text — Cyrillic works in
+  the browser out of the box. Full TTF parser/subsetter in common code
+  (composite-glyph closure, fresh cmap, corrected checksums),
+  CIDFontType2/Identity-H with a ToUnicode CMap (text extraction
+  verified via PDFBox). Content streams are now **Flate-compressed**
+  by a pure-Kotlin DEFLATE (LZ77 + fixed Huffman + Adler-32).
+- **Table `colSpan` / `rowSpan`** — HTML-style cell merging with an
+  occupancy grid: separators never cross a merged region, row heights
+  grow to fit spanning content, and page slicing keeps a rowspan block
+  atomic. Spans of 1 are bit-for-bit identical to the old layout.
+- **EAN-13 / UPC-A and Data Matrix (ECC 200)** symbologies —
+  `barcode(data, symbology = Ean13)` and `dataMatrix(data)`, both pure
+  vector with known-vector tests. (PDF417 was evaluated and deliberately
+  not shipped: its 2,787-entry cluster tables can't be reproduced
+  reliably without the spec at hand — wrong tables would render
+  unscannable symbols.)
+- **Chart upgrades** — `stackedBarChart` with per-segment legends,
+  multi-series `lineChart`, value grid lines and axis labels on bar and
+  line charts.
+- **Automatic hyphenation** — `hyphenation = Hyphenators.EnUs`: Liang's
+  algorithm over a hand-verified reduced `hyphen.tex` pattern subset;
+  breaks render the same visible `-` as soft hyphens and never override
+  author-supplied ones.
+- **Kashida justification** — `kashidaJustify = true` elongates justified
+  RTL lines at cursive joining points with tatweel (U+0640) before
+  widening word gaps, the way Arabic typography expects.
+- **`PdfTools` (JVM)** — post-process existing PDFs: `merge`, `split`,
+  `extractPages`, diagonal `addWatermarkText`, page `overlay`, plus
+  `validatePdfABasics`. **Factur-X/ZUGFeRD**: build a MINIMUM-profile
+  `FacturXInvoice` XML in common code and attach it with the right
+  `AFRelationship` via `PdfTools.attachFacturX`.
+- **Viewer** — highlights can now be **written into the PDF** on
+  Desktop (real `Highlight` annotations; the download action exports
+  the annotated bytes); **password-protected PDFs** open via
+  `password = ...` with a typed `PdfViewerError` instead of a generic
+  failure (Desktop + iOS; Android's `PdfRenderer` has no password API);
+  **two-page book layout** via `pageLayout = PdfPageLayout.TwoPageBook`
+  (cover alone, then verso/recto pairs).
+- **Documentation site** — Material for MkDocs (20 hand-written pages)
+  + the aggregated Dokka API reference under `/api`, deployed to GitHub
+  Pages by a new `docs.yml` workflow. A 6-agent audit verified coverage
+  page-by-page and caught four long-standing README accuracy bugs
+  (`SavedPdf` fields, `save()` wrongly described as suspend, an
+  imaginary iOS iCloud mapping, a non-compiling `keywords` snippet) —
+  all fixed in both places.
+
 ### Added — Web (Kotlin/Wasm) target
 
 - **`pdfkmp`, `pdfkmp-compose-resources`, and `pdfkmp-markdown` now ship
