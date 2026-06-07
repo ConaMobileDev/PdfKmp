@@ -1,0 +1,58 @@
+name: Tests
+
+# Runs the canonical test surfaces from CLAUDE.md on every push / PR so
+# regressions are caught before they reach a release tag. publish.yml only
+# fires on Release publication, so without this gate breaking changes could
+# land on master unnoticed.
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  jvm:
+    # Fast feedback: common + the PdfBox backend need no simulator, so this
+    # job reports in a few minutes on the cheap runner.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: corretto
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: JVM tests
+        run: ./gradlew :pdfkmp:jvmTest :pdfkmp-viewer:jvmTest --stacktrace
+
+  ios:
+    # Canonical surface: exercises common code AND the iOS platform layer.
+    # macOS is also the only host that can link the iOS frameworks, so the
+    # release-checklist assemble runs here too.
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: corretto
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: iOS Simulator tests
+        run: ./gradlew :pdfkmp:iosSimulatorArm64Test :pdfkmp-viewer:iosSimulatorArm64Test --stacktrace
+
+      - name: Assemble all artefacts
+        # Keep native link concurrency low — the arm64 macOS runners have
+        # limited RAM and parallel iOS links are memory-hungry (see CLAUDE.md).
+        run: ./gradlew :pdfkmp:assemble :pdfkmp-compose-resources:assemble :pdfkmp-viewer:assemble --max-workers=3 --stacktrace
