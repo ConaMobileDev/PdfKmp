@@ -6,6 +6,162 @@ versions follow [Semantic Versioning](https://semver.org). Pre-1.0
 minor versions may break public API; alpha / beta / rc tags signal
 an actively settling surface.
 
+## [Unreleased]
+
+> ⚠️ This wave was developed and verified on Windows (`:pdfkmp:jvmTest`,
+> `:pdfkmp-viewer:jvmTest`, `:pdfkmp-markdown:jvmTest`, Android compile,
+> and iOS *metadata* compile all green). Run the canonical iOS Simulator
+> suites on macOS before cutting the release.
+
+### Added — text engine (`pdfkmp`)
+
+- **Full justification.** `TextAlign.Justify` now distributes inter-word
+  slack on every line except the paragraph's last, in both `text` and
+  `richText` (stretched space segments). Previously fell back to `Start`.
+- **`maxLines` + `TextOverflow { Clip, Ellipsis }`** on `text { }` —
+  clamp a paragraph and ellipsize the cut line.
+- **Soft hyphens (U+00AD)** are invisible break opportunities; a real
+  `-` renders only when a wrap lands on one.
+- **Mid-word breaking.** Words wider than their slot now split into
+  fitting chunks instead of overflowing horizontally.
+- **Superscript / subscript** rich-text spans via
+  `span("2") { script = TextScript.Superscript }` — auto-shrunk and
+  baseline-shifted.
+- **Right-to-left support.** `TextDirection { Auto, Ltr, Rtl }` on
+  `TextStyle` (default `Auto` detects Hebrew/Arabic from content):
+  `Start`/`End`/`Justify` anchor to the correct edge. The JVM backend
+  additionally runs its own bidi reorder + Arabic contextual shaping
+  (presentation forms, lam-alef ligatures) since PDFBox does neither;
+  Android and iOS shape natively.
+- **Orphan / widow control.** `minLinesBeforeBreak` / `minLinesAfterBreak`
+  on `text { }` govern how `Slice` may split a paragraph.
+
+### Added — layout & pagination (`pdfkmp`)
+
+- **Recursive column slicing.** Undecorated `column { }`s now slice
+  across pages child-by-child under `Slice` (previously moved whole).
+- **Table row slicing with repeating headers.** Tables taller than a
+  page split between rows; the header row repeats on every continuation
+  page (`table(repeatHeader = true)`, the default).
+- **`keepTogether { }`** — `break-inside: avoid` for any group.
+- **`columns(count, gap)`** — newspaper-style multi-column flow with
+  height balancing.
+- **`grid(columns)`** — row-major equal-width cell grid.
+- Over-wide fixed table columns now shrink proportionally to fit the
+  page instead of spilling past the margin.
+- Images/vectors taller than a full page scale down to fit under
+  `MoveToNextPage` instead of overflowing the bottom margin.
+- **Mixed orientations** documented + `PageSize.landscape` / `.portrait`
+  helpers; `PageContext` gains `isFirst` / `isLast` / `isEven` / `isOdd`
+  for book-style mirrored chrome.
+
+### Added — graphics & content (`pdfkmp`)
+
+- **QR codes** — `qrCode(data)`: full ISO 18004 Model 2 generator in
+  pure common Kotlin (versions 1–40, EC L/M/Q/H, Reed-Solomon, all 8
+  masks), rendered as crisp vector squares.
+- **Code 128 barcodes** — `barcode(data)`: code sets B/C with automatic
+  digit compression and mod-103 checksum, pure vector bars.
+- **Charts** — `barChart`, `lineChart`, `pieChart`, `donutChart`
+  extension DSL (pure vector, with legends and value captions).
+- **`freeDraw { path { moveTo/lineTo/quadTo/cubicTo/rect/close } }`** —
+  free-form vector drawing in a local coordinate space.
+- **Drop shadows** — `card(dropShadow = DropShadow(...))`, vector-
+  approximated blur.
+- **Dashed / dotted borders** — `BorderStroke(style = LineStyle.Dashed)`
+  on sharp-cornered containers and per-side borders.
+- **Rotation & opacity** — `rotation` (degrees, about the centre) and
+  `opacity` (group transparency) on `column` / `row` / `box` / `card`.
+- **Full SVG file support.** The vector parser now handles `<rect>`
+  (incl. rounded), `<circle>`, `<ellipse>`, `<line>`, `<polyline>`,
+  `<polygon>`, nested `<g>` transforms, inline `style=""`, opacity
+  attributes, `rgb()` and ~20 named colors, and viewBox offsets.
+- **`image(altText = ...)`** — accessibility description carried to
+  backends that write tagged structure.
+
+### Added — navigation & document features (`pdfkmp`)
+
+- **Bookmarks / outline** — `bookmark("Chapter 1", level = 0)` populates
+  the reader's outline sidebar (all three platforms — Android via the
+  new post-processor).
+- **Internal links** — `anchor("id")` + `linkToAnchor(anchor = "id")`
+  for clickable cross-references; forward references resolve at finish.
+- **Automatic table of contents** — `tableOfContents()` expands into
+  clickable rows (title, dotted leader, resolved page number) using a
+  dry-run pagination pass; level filtering and indentation included.
+- **Encryption** — `encryption { ownerPassword = ...; userPassword = ...;
+  allowPrinting/allowCopying/allowModification }`; AES-256 on JVM,
+  Core Graphics passwords on iOS (Android documented unsupported).
+- **File attachments** — `attachment(name, bytes, mimeType)` embeds
+  files on JVM (ZUGFeRD/Factur-X-style invoices).
+- **AcroForm fields** — `textField(name, ...)` / `checkBox(name, ...)`:
+  interactive on Desktop, consistent static visuals on Android/iOS.
+- **PDF/A (best-effort) + tagged-PDF basics** on JVM — XMP identification,
+  sRGB output intent, MarkInfo, image `/Alt` entries.
+- **Digital signing** — `PdfSigner` (JVM) signs finished documents.
+- **`PdfLog`** — opt-in diagnostics hook surfacing silently-handled
+  conditions (undecodable images, font fallbacks).
+
+### Added — Android backend parity (`pdfkmp`)
+
+- **Metadata, clickable links, internal links, and the outline now work
+  on Android.** `android.graphics.pdf.PdfDocument` exposes none of
+  these, so `finish()` now post-processes the produced bytes with a
+  pure-Kotlin PDF incremental update (`/Info` dictionary, `/Link`
+  annotations with URI/GoTo actions, `/Outlines` tree). Defensive: any
+  parse surprise returns the original bytes unchanged.
+
+### Added — viewer (`pdfkmp-viewer`)
+
+- **Print** — `showPrint` topbar action (Android `PrintManager`, iOS
+  `UIPrintInteractionController`, Desktop `PrinterJob` + PDFBox).
+- **Dark mode** — `invertColors` renders pages colour-inverted, cache-aware.
+- **Search in external PDFs** — text-extraction fallback on iOS
+  (PDFKit `findString`) and Desktop (PDFBox `PDFTextStripper`);
+  PdfKmp-authored docs keep the fast textRuns path. Android external
+  docs remain unsearchable (`PdfRenderer` has no text API).
+- **Highlight annotations** — `showAnnotationTools` + drag-to-highlight
+  overlay with `initialAnnotations` / `onAnnotationsChanged` for
+  persistence (overlay-only; not written into the PDF bytes).
+- **Clipboard** — `pdfViewerCopyToClipboard(text)` on all platforms;
+  text selection confirmed working from common code on iOS.
+- **Adaptive cache** — `Auto` strategy switches to a forward-biased
+  window on 200+-page documents.
+
+### Added — ecosystem
+
+- **New module `pdfkmp-markdown`** (`io.github.conamobiledev:pdfkmp-markdown`)
+  — renders a CommonMark-lite subset (headings, emphasis, code, lists,
+  tables, blockquotes, links, rules) through the PdfKmp DSL via
+  `markdown(text, theme)`.
+- **CI test workflow** (`test.yml`) — `jvmTest` on Ubuntu + the iOS
+  Simulator suites and full assemble on macOS for every push/PR.
+- **Desktop playground** — a live-preview screen in `sample-desktop`
+  that rebuilds a real `pdf { }` document as you tweak controls.
+- New samples: `textAdvanced`, `longTable`, `barcodes`, `designExtras`,
+  `navigation`, `newsletter`, `pageTemplates`.
+
+### Fixed
+
+- `TextAlign.Justify` no longer silently falls back to start alignment.
+- Decorated containers no longer get sliced mid-decoration (they move
+  whole, by design).
+- Stale documentation: image slicing TODO, "Justify falls back" sample
+  copy, inline fully-qualified names in the renderer.
+- Adversarial-review pass over the wave itself (11 fixes):
+  `tableOfContents()` / `bookmark()` now work inside `columns { }` and
+  `keepTogether { }` (previously crashed / silently dropped); a sliced
+  table with `repeatHeader = false` no longer loses its header when it
+  starts low on a page; split tables drop their corner radius instead of
+  re-rounding every fragment; multiline form-field fallbacks draw each
+  line instead of stacking them on one baseline; rich-text justification
+  reaches the right margin exactly (trailing invisible spaces no longer
+  count); blank rich-text lines take their owning span's height; a
+  double-space can no longer overflow a line; and the Android
+  post-processor writes byte-exact xref offsets, keeps the sign of
+  near-zero negative coordinates, and never leaks object numbers for
+  unresolved anchors.
+
 ## [1.1.1] — 2026-05-30
 
 ### Fixed — `pdfkmp-viewer`

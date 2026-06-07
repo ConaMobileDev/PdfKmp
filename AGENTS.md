@@ -21,7 +21,7 @@ The library bundles the **Inter** font for Latin text. Non-Latin scripts (CJK, A
 - User is already in a Compose/SwiftUI mental model and wants similar primitives.
 - User has Compose Multiplatform `Res.drawable.*` assets and wants to embed them in a PDF without a manual byte-loading dance — pair the core `pdfkmp` artifact with `pdfkmp-compose-resources` (see below).
 
-Not a fit for: parsing/editing existing PDFs, OCR, form filling, complex typography (RTL bidi, ligature shaping, hyphenation are minimal in v1).
+Not a fit for: parsing/editing existing PDFs, OCR, or filling someone else's PDF form. (It *can* author AcroForm fields — interactive on Desktop, static visuals on Android/iOS.) Right-to-left text is supported (bidi reorder + Arabic shaping); ligature shaping for Latin and automatic hyphenation are still out of scope (soft hyphens `U+00AD` give you manual break points).
 
 ## Companion artifact: `pdfkmp-compose-resources`
 
@@ -44,25 +44,49 @@ It exposes:
 | `image(resource = Res.drawable.x, …)` | Inline DSL extension when the asset is known raster. **Requires `pdfAsync { }`.** |
 | `drawable(drawable = pdfDrawable, …)` | Eager DSL extension that takes an already-loaded `PdfDrawable`. Works inside synchronous `pdf { }`. |
 
+## Companion artifact: `pdfkmp-markdown`
+
+Opt-in module that renders a CommonMark-lite subset through the PdfKmp DSL. Add it alongside the core dependency:
+
+```kotlin
+implementation("io.github.conamobiledev:pdfkmp:<version>")
+implementation("io.github.conamobiledev:pdfkmp-markdown:<version>")
+```
+
+It exposes one extension on `ContainerScope`: `markdown(text, theme = MarkdownTheme())`. Supports ATX headings, inline `**bold**` / `*italic*` / `` `code` `` / `~~strike~~` / `[text](url)`, ordered & unordered lists, fenced code, blockquotes, horizontal rules, and GitHub pipe tables; anything else degrades to plain text (never throws). Standalone links are clickable; inline links are styled-only; code has no bundled monospace face.
+
 ## Mental model — the DSL is a tree
 
 A document is a **tree of nodes**. Top-down:
 
 ```
 pdf {                          // → DocumentSpec
-    metadata { … }             // optional
+    metadata { … }             // optional (title/author/subject/keywords/language/pdfACompliance)
+    encryption { … }           // optional — password protection (full JVM, partial iOS, no-op Android)
+    attachment(name, bytes)    // optional — embed a file (JVM only)
+    pdfA(true)                 // optional — best-effort PDF/A-2b (JVM only)
     page {                     // → PageSpec
         text("…")              // → TextNode
         column {                // → ColumnNode
             row { … }          // → RowNode
             box { … }          // → BoxNode (Z-stack)
             table { … }        // → TableNode
+            columns(2) { … }   // newspaper-style balanced columns
+            grid(3) { … }      // row-major equal-width cells
+            keepTogether { … } // break-inside: avoid
             image(bytes)       // → ImageNode
             vector(svg)        // → VectorNode
             circle(…)          // → ShapeNode
+            qrCode("…")        // QR symbol (vector)
+            barcode("…")       // Code 128 (vector)
+            barChart(series, …) / lineChart(…) / pieChart(…) / donutChart(…)
+            freeDraw(w, h) { path { … } }  // free-form vector
             divider()          // → DividerNode
             link(url) { … }    // → LinkNode (wraps content)
-            richText { span(…) } // → RichTextNode
+            anchor("id") / linkToAnchor("id") { … }  // internal cross-references
+            bookmark("…", level) / tableOfContents()  // outline + auto-TOC
+            textField("name", …) / checkBox("name", …)  // AcroForm fields
+            richText { span(…) } // → RichTextNode (script = Super/Subscript spans)
             bulletList(…)
             numberedList(…)
         }
@@ -90,11 +114,22 @@ The DSL is closed (sealed) — every node maps 1:1 to a `MeasuredNode` produced 
 | `CornerRadius` | Per-corner override. `CornerRadius.top(16.dp)`, `CornerRadius.all(8.dp)`. |
 | `BorderSides` | Per-side border override. |
 | `PdfPaint` | `PdfPaint.Solid`, `PdfPaint.linearGradient(…)`, `PdfPaint.radialGradient(…)`. |
-| `LineStyle` | `Solid`, `Dashed`, `Dotted` for dividers. |
-| `TextAlign` | `Start`, `Center`, `End`, `Justify`. |
+| `LineStyle` | `Solid`, `Dashed`, `Dotted` for dividers and borders. Dashed/dotted borders fall back to solid on rounded corners. |
+| `TextAlign` | `Start`, `Center`, `End`, `Justify` (real word-spacing distribution). |
+| `TextOverflow` | `Clip` / `Ellipsis` — paired with `maxLines` on `text { }`. |
+| `TextScript` | `None` / `Superscript` / `Subscript` — only on `richText` spans. |
+| `TextDirection` | `Auto` (default, detects RTL) / `Ltr` / `Rtl` — on `TextStyle`. |
+| `DropShadow` | `DropShadow(color, offsetX, offsetY, blur)` — on any container. |
+| `QrErrorCorrection` | `L` / `M` (default) / `Q` / `H` for `qrCode(...)`. |
+| `ChartSeries` | `ChartSeries(label, value, color)` — datum for bar/pie/donut charts. |
+| `PdfEncryption` | Built by `encryption { ownerPassword = …; userPassword = …; allowPrinting/Copying/Modification }`. |
+| `PdfSigner` | JVM-only object — `PdfSigner.sign(bytes, …)` signs finished PDF bytes. |
+| `PdfLog` | `PdfLog.logger = { msg -> … }` surfaces silently-handled conditions. |
+| `MarkdownTheme` | Theme for `markdown(text, theme)` (from `pdfkmp-markdown`). |
 | `PageBreakStrategy` | `MoveToNextPage` (default) or `Slice`. |
+| `PageSize` | `A4`/`A5`/`A3`/`Letter`/`Legal`/`custom(w,h)`, plus `.landscape` / `.portrait`. |
 | `StorageLocation` | `Cache`, `AppFiles`, `Downloads`, `Documents`, `Temp`, `Custom(path)`. |
-| `PageContext` | Passed to `header { ctx -> … }` / `footer { … }`. Has `pageNumber`, `totalPages`. |
+| `PageContext` | Passed to `header { ctx -> … }` / `footer { … }`. Has `pageNumber`, `totalPages`, `isFirst`, `isLast`, `isEven`, `isOdd`. |
 
 ## Top 6 patterns (copy-paste templates)
 
@@ -248,16 +283,85 @@ suspend fun buildReport(): PdfDocument {
 
 For vector-only or raster-only call sites, use the typed `vector(resource = …)` / `image(resource = …)` overloads instead — same preflight model, but the format is fixed at the call site.
 
+## DSL surface reference (one-liners)
+
+Every entry below is a function/property on a container scope (`page` / `column` / `row` / `box` / `card`) unless noted. Copy canonical usage from `Samples.kt`.
+
+### Text & rich text
+
+| Call | What it does |
+|---|---|
+| `text(s) { align = TextAlign.Justify }` | Real word-spacing justification (last line stays ragged). |
+| `text(s) { maxLines = 2; overflow = TextOverflow.Ellipsis }` | Clamp to N lines; `Clip` or `Ellipsis` the cut. |
+| `text(s) { direction = TextDirection.Rtl }` | Force RTL; `Auto` (default) detects Hebrew/Arabic. |
+| `text(s) { minLinesBeforeBreak = 2; minLinesAfterBreak = 2 }` | Orphan/widow control under `Slice`. |
+| Soft hyphen `­` in a word | Invisible break point; renders `-` only when wrapped on. |
+| `richText { span("2") { script = TextScript.Superscript } }` | Super/subscript span (also `Subscript`). |
+
+### Layout & pagination
+
+| Call | What it does |
+|---|---|
+| `columns(count = 2, gap = 18.dp) { … }` | Newspaper-style balanced multi-column flow (single page unit). |
+| `grid(columns = 3, spacing = 10.dp) { … }` | Row-major equal-width cells; last row padded. |
+| `keepTogether { … }` | `break-inside: avoid` — group moves whole under `Slice`. |
+| `table(…, repeatHeader = true) { … }` | Header repeats on every continuation page under `Slice` (default). |
+| `page(PageSize.A4.landscape) { … }` | Mixed orientations — each `page(size)` carries its own size. |
+| `ctx.isFirst / isLast / isEven / isOdd` | `PageContext` parity helpers for book-style chrome. |
+
+### Decorations (on column/row/box/card)
+
+| Call | What it does |
+|---|---|
+| `card(dropShadow = DropShadow(...))` | Vector-approximated soft shadow. |
+| `border = BorderStroke(1.dp, color, LineStyle.Dashed)` | Dashed/dotted border (sharp corners only — rounded falls back to solid). |
+| `rotation = -8f` | Rotate the container (degrees, clockwise, about centre). |
+| `opacity = 0.85f` | Group transparency, `0f`–`1f`. |
+
+### Graphics & content
+
+| Call | What it does |
+|---|---|
+| `qrCode(data, size, errorCorrection = QrErrorCorrection.M)` | Vector QR symbol (ISO 18004 Model 2). |
+| `barcode(data, height)` | Vector Code 128 (auto code-set-C + mod-103 checksum). |
+| `barChart(series, width, height)` / `lineChart(points, …)` / `pieChart(slices, diameter)` / `donutChart(…)` | Pure-vector charts; bars/pie/donut take `List<ChartSeries>`. |
+| `freeDraw(w, h) { path(fill=…, strokeColor=…) { moveTo/lineTo/quadTo/cubicTo/rect/close } }` | Free-form vector in a local coordinate space. |
+| `image(bytes, width, altText = "…")` | Image with accessibility alt text (tagged backends). |
+
+### Navigation & document features
+
+| Call | What it does |
+|---|---|
+| `bookmark("title", level = 0)` | Outline entry (all platforms — Android via post-processor). |
+| `anchor("id")` + `linkToAnchor(anchor = "id") { … }` | Internal clickable cross-reference (forward refs resolve at finish). |
+| `tableOfContents(maxLevel = 1)` | Auto-TOC from bookmarks; clickable, dry-run page numbers. Page body only. |
+| `textField("name", width, multiline)` / `checkBox("name", checked)` | AcroForm fields — interactive on Desktop, static on Android/iOS. |
+| `encryption { ownerPassword = … }` (document scope) | Password protection (full JVM, partial iOS, no-op Android). |
+| `attachment(name, bytes, mimeType)` (document scope) | Embed a file (JVM only). |
+| `pdfA(true)` / `metadata { pdfACompliance = true; language = "en" }` | Best-effort PDF/A-2b + `/Lang` (JVM only). |
+| `PdfSigner.sign(bytes, …)` (JVM, `jvmMain`) | Sign finished PDF bytes (incremental update). |
+| `PdfLog.logger = { … }` | Surface silently-handled conditions (image/font fallbacks). |
+
+### Markdown (`pdfkmp-markdown` artifact)
+
+| Call | What it does |
+|---|---|
+| `markdown(text, theme = MarkdownTheme())` | Render a CommonMark-lite subset through the DSL. Standalone links clickable; inline links styled-only; code has no monospace face. |
+
 ## Common pitfalls
 
 - **Do not import classes by their fully-qualified name inline.** The repo style requires `import com.conamobile.pdfkmp.style.PdfColor` then short usage. (See CLAUDE.md.)
 - **`explicitApi()` is on for `:pdfkmp`** — every new declaration in the library must be `public` or `internal`. Sample apps don't have this constraint.
 - **Coordinates are in PDF points** with a top-left origin (Y grows downward). The Android, iOS, and Desktop backends translate to their native conventions internally.
-- **`TextAlign.Justify` falls back to `Start` in v1** — per-word spacing isn't implemented. Use `Center` / `End` for now.
-- **Hyperlinks click only on iOS.** Android's `PdfDocument` lacks annotation APIs; the rectangle is recorded but readers can't dispatch clicks. Visual styling (`color = Blue; underline = true`) conveys the link affordance.
+- **`TextAlign.Justify` distributes real word spacing** on every line except a paragraph's last (also stretches space runs in `richText`).
+- **Hyperlinks, internal links, and the outline now click on all three platforms.** Android has no native annotation API, so `finish()` post-processes the bytes with a pure-Kotlin incremental update to add the info dict, link/GoTo annotations, and outline; any parse surprise returns the original bytes unchanged.
 - **Layout sizing is intrinsic.** A `text("foo")` measures to its glyph advance, NOT to the parent's full width. Use `weighted(1f)` to claim leftover space, or wrap in a `box(width = …)`.
 - **`image(..., allowDownScale = true)` is the default.** The platform decoder subsamples raster bytes so they roughly match the rendered size at 200 DPI before drawing — keeps heap and PDF size sane when consumers paste 4000-px smartphone photos into 200-pt thumbnails. Pass `allowDownScale = false` for archival/print workflows where every original pixel must survive into the output.
 - **Container size grows from children** unless you set explicit width/height. `card { … }` wraps tight to its content.
+- **Forms are interactive only on Desktop/JVM.** `textField` / `checkBox` render as static visuals on Android and iOS (no native AcroForm API).
+- **Encryption: full on JVM, partial on iOS (no "allow modification"), no-op on Android.** Attachments, PDF/A, and `PdfSigner` are JVM-only.
+- **Dashed/dotted borders need sharp corners.** A non-zero `cornerRadius` falls back to a solid outline (the dash phase can't follow the arc).
+- **Mixed-style RTL in `richText` keeps source span order**, not visual reorder — author a whole RTL paragraph as one `text(...)` when segment order matters.
 - **Page break strategy** — `MoveToNextPage` (default) leaves whole elements intact; `Slice` cuts text at line boundaries and images at the page edge. Set on `PageScope.pageBreakStrategy` or document-wide via `defaultPageBreakStrategy`.
 - **Headers and footers fire once per physical page** — they get a `PageContext(pageNumber, totalPages)`. The renderer does a counting dry-run beforehand so `totalPages` is exact.
 - **Watermark renders behind the body**, not in front. To put a "DRAFT" stamp visible above content, draw it at the end of the body or use `box` with a top child.
@@ -270,8 +374,11 @@ For vector-only or raster-only call sites, use the typed `vector(resource = …)
 - [README.md](README.md) — full feature tour.
 - `pdfkmp/src/commonMain/kotlin/com/conamobile/pdfkmp/samples/Samples.kt` — every feature exercised end-to-end.
 - `:sample` (Android) and `iosApp/` (iOS) sample apps render every `Samples.*` function.
-- `pdfkmp/src/commonMain/kotlin/com/conamobile/pdfkmp/dsl/ContainerScope.kt` — full list of DSL functions on `column { … }` / `row { … }` / `box { … }`.
+- `pdfkmp/src/commonMain/kotlin/com/conamobile/pdfkmp/dsl/ContainerScope.kt` — full list of DSL functions on `column { … }` / `row { … }` / `box { … }` (text fields, checkboxes, QR/barcodes, bookmarks, anchors, TOC, columns, grid, keepTogether, freeDraw).
+- `pdfkmp/src/commonMain/kotlin/com/conamobile/pdfkmp/dsl/Charts.kt` — `barChart` / `lineChart` / `pieChart` / `donutChart` + `ChartSeries`.
+- `pdfkmp/src/commonMain/kotlin/com/conamobile/pdfkmp/dsl/DocumentScope.kt` — document-level `encryption { }`, `attachment(...)`, `pdfA(...)`, `metadata { }`.
 - `pdfkmp-compose-resources/src/commonMain/kotlin/com/conamobile/pdfkmp/composeresources/` — DSL extensions and `DrawableResource` helpers shipped by the companion artifact.
+- `pdfkmp-markdown/src/commonMain/kotlin/com/conamobile/pdfkmp/markdown/Markdown.kt` — `markdown(...)` + `MarkdownTheme`.
 
 ## Powered by Claude
 
