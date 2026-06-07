@@ -1,8 +1,12 @@
 # wasmJs target — feasibility plan
 
-*Written 2026-06. Status: researched and planned; implementation
-deferred to its own release because it requires a pure-Kotlin PDF
-writer.*
+*Written 2026-06. Status: **SHIPPED** — phases 1–2 below were
+implemented (`kmpwriter` package + `wasmJs` targets on `pdfkmp`,
+`pdfkmp-compose-resources`, `pdfkmp-markdown`; 176 common tests green
+on Wasm under Node; PDFBox-validated on the JVM). Remaining from the
+plan: TrueType subsetting for custom-font embedding (phase 3) and
+Flate-compressed content streams. The rest of this document is kept as
+the original analysis.*
 
 ## Why it doesn't exist yet
 
@@ -45,9 +49,14 @@ one more driver pair. Two recent pieces shrink the gap considerably:
    (the TTF parser from 2c also yields metrics).
 4. **Targets wiring** — add `wasmJs()` to `:pdfkmp` (core is
    dependency-free in common, so only the new backend gates this);
-   `:pdfkmp-compose-resources` follows for free (pure common);
-   `:pdfkmp-viewer` needs a separate rendering story (no PdfBox/PDFKit
-   in the browser — likely pdf.js interop) and should ship later.
+   `:pdfkmp-compose-resources` and `:pdfkmp-markdown` follow for free
+   (pure common). `:pdfkmp-viewer` deliberately stays off the web
+   target: browsers ship excellent native PDF viewers (PDFium in
+   Chrome/Edge, PDF.js built into Firefox), so web viewing is handled
+   by handing the bytes to the browser (`openInNewTab()` / download).
+   A pdf.js-based embedded viewer was considered and **rejected** — it
+   would drag in an npm dependency and still render worse than the
+   browser's own viewer.
 
 ## Estimate
 

@@ -29,7 +29,12 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: JVM tests
-        run: ./gradlew :pdfkmp:jvmTest :pdfkmp-viewer:jvmTest --stacktrace
+        run: ./gradlew :pdfkmp:jvmTest :pdfkmp-viewer:jvmTest :pdfkmp-markdown:jvmTest --stacktrace
+
+      - name: Wasm tests (Node)
+        # The whole common suite re-runs on actual WebAssembly through the
+        # pure-Kotlin kmpwriter backend; Gradle downloads Node by itself.
+        run: ./gradlew :pdfkmp:wasmJsNodeTest :pdfkmp-markdown:wasmJsNodeTest --stacktrace
 
   ios:
     # Canonical surface: exercises common code AND the iOS platform layer.

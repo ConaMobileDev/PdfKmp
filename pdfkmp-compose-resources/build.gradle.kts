@@ -47,6 +47,12 @@ kotlin {
         }
     }
 
+    // Web (Kotlin/Wasm) — pure common code over the core's wasm backend;
+    // components-resources ships a wasmJs variant since Compose 1.7.
+    wasmJs {
+        nodejs()
+    }
+
     sourceSets {
         commonMain.dependencies {
             api(project(":pdfkmp"))

@@ -97,9 +97,32 @@ PdfKmp is published to **Maven Central**. The library exposes:
 - an Android `aar` (`io.github.conamobiledev:pdfkmp-android`),
 - an iOS framework named `PdfKmp` for arm64 (device) and simulator-arm64 (Apple-Silicon simulator),
 - a Desktop / JVM `jar` (`io.github.conamobiledev:pdfkmp-jvm`) for macOS, Windows, and Linux,
+- a Web / Kotlin-Wasm klib (`io.github.conamobiledev:pdfkmp-wasm-js`) — see [Web (Kotlin/Wasm)](#web-kotlinwasm) for what the browser backend covers,
 - common Kotlin metadata (`io.github.conamobiledev:pdfkmp`),
-- an optional Compose Multiplatform Resources companion (`io.github.conamobiledev:pdfkmp-compose-resources`, with `-android` / `-jvm` platform variants),
-- an optional Compose Multiplatform PDF viewer screen (`io.github.conamobiledev:pdfkmp-viewer`, with `-android` / `-jvm` platform variants).
+- an optional Compose Multiplatform Resources companion (`io.github.conamobiledev:pdfkmp-compose-resources`, with `-android` / `-jvm` / `-wasm-js` platform variants),
+- an optional Markdown renderer (`io.github.conamobiledev:pdfkmp-markdown`, same platform variants),
+- an optional Compose Multiplatform PDF viewer screen (`io.github.conamobiledev:pdfkmp-viewer`, with `-android` / `-jvm` platform variants — not on web; see below).
+
+### Web (Kotlin/Wasm)
+
+The browser exposes no PDF engine to Wasm, so the web target renders
+through PdfKmp's own pure-Kotlin PDF writer. Everything vector works
+exactly like the other platforms — text layout, tables, shapes,
+gradients, QR codes, barcodes, charts, freeDraw, bookmarks/TOC, links —
+plus JPEG and 8-bit RGB/grayscale PNG images. Current limits (each
+warned through `PdfLog` and skipped): text renders in the Standard-14
+Helvetica family (custom fonts are not embedded yet, so non-Latin
+scripts need a later release), palette/alpha PNGs, interactive form
+widgets, encryption, and attachments.
+
+Viewing on the web needs no library at all — browsers ship excellent
+PDF viewers, so hand them the bytes:
+
+```kotlin
+val doc = pdf { page { text("Hello, Wasm!") } }
+doc.openInNewTab()                                  // browser's own viewer
+doc.save(StorageLocation.Downloads, "hello.pdf")    // browser download
+```
 
 Make sure Maven Central is in your repository list:
 

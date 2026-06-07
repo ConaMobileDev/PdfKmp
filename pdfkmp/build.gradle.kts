@@ -140,6 +140,16 @@ kotlin {
         }
     }
 
+    // Web (Kotlin/Wasm). Browsers expose no PDF-writing API to Wasm, so this
+    // target renders through the pure-Kotlin `kmpwriter` backend (Standard-14
+    // Helvetica, vector everything, JPEG/PNG passthrough). The published klib
+    // is environment-agnostic — consumers use it from browser apps; nodejs()
+    // here only selects where the library's own tests execute (Node downloads
+    // automatically, no Chrome/karma needed on CI or Windows).
+    wasmJs {
+        nodejs()
+    }
+
     sourceSets {
         commonMain {
             kotlin.srcDir(generateBundledFonts)

@@ -47,6 +47,12 @@ kotlin {
         }
     }
 
+    // Web (Kotlin/Wasm) — the module is pure common Kotlin, so it rides the
+    // core's wasm backend for free. nodejs() only selects the test runner.
+    wasmJs {
+        nodejs()
+    }
+
     sourceSets {
         commonMain.dependencies {
             api(project(":pdfkmp"))

@@ -128,6 +128,28 @@ an actively settling surface.
 - **Adaptive cache** — `Auto` strategy switches to a forward-biased
   window on 200+-page documents.
 
+### Added — Web (Kotlin/Wasm) target
+
+- **`pdfkmp`, `pdfkmp-compose-resources`, and `pdfkmp-markdown` now ship
+  a `wasmJs` target** — PdfKmp runs in the browser. Browsers expose no
+  PDF engine to Wasm, so a new pure-Kotlin PDF 1.7 writer
+  (`kmpwriter`, common code) backs the target: Standard-14 Helvetica
+  text (WinAnsi/Latin), every vector feature (shapes, gradients, QR,
+  barcodes, charts, freeDraw, rotation/opacity), JPEG and 8-bit
+  RGB/gray PNG embedding without decoding, links, named destinations,
+  outline, and the info dictionary. The identical writer is validated
+  on the JVM by re-parsing and rasterising its output with PDFBox, and
+  the full common test suite (176 tests) also runs on actual Wasm
+  under Node.
+- **`PdfDocument.openInNewTab()`** (web) — hands the bytes to the
+  browser's own PDF viewer via a Blob URL; `save(...)` becomes a
+  browser download. No embedded web viewer is planned — browsers ship
+  better ones than a page could.
+- Not yet on the web backend (warned via `PdfLog`, skipped): custom
+  font embedding (falls back to Helvetica), non-WinAnsi glyphs,
+  palette/alpha PNGs, interactive form widgets, encryption,
+  attachments.
+
 ### Added — ecosystem
 
 - **New module `pdfkmp-markdown`** (`io.github.conamobiledev:pdfkmp-markdown`)
