@@ -74,4 +74,6 @@ nav:
       - Architecture: internals/architecture.md
       - Streaming & memory: streaming-and-memory.md
       - Wasm feasibility: wasm-feasibility.md
-  - API Reference: api/index.html
+  # Absolute URL: the Dokka output is copied into site/api AFTER `mkdocs
+  # build`, so a relative link would fail strict-mode validation.
+  - API Reference: https://conamobiledev.github.io/PdfKmp/api/

@@ -70,7 +70,7 @@ See [Platform parity](guides/platform-parity.md) for what each backend supports.
 - [Getting started](getting-started.md) — install coordinates, hello-world, save & share.
 - [Guides](guides/text.md) — feature-by-feature walkthroughs.
 - [Samples](samples.md) — every bundled `Samples.*` document.
-- [API Reference](api/index.html) — generated Dokka KDoc.
+- [API Reference](https://conamobiledev.github.io/PdfKmp/api/) — generated Dokka KDoc.
 
 ---
 
