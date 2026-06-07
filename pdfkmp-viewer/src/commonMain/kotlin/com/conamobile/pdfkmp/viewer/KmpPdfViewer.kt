@@ -17,7 +17,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -153,6 +155,30 @@ import com.conamobile.pdfkmp.PdfDocument
  *   every time the user adds or removes a highlight, so the host can
  *   persist them. `null` (the default) drops the changes — annotations
  *   then live only for the composition's lifetime.
+ * @param pageLayout how pages are arranged: [PdfPageLayout.Single]
+ *   (default — continuous one-per-row scroll) or
+ *   [PdfPageLayout.TwoPageBook] (side-by-side book spreads, cover alone,
+ *   best on Desktop / tablet). There is no topbar toggle — this is a
+ *   parameter-only choice; the host flips it.
+ * @param password unlocks an encrypted PDF. `null` (default) for an
+ *   unencrypted document. With a missing / wrong password the viewer shows
+ *   an inline "password protected" message instead of crashing and fires
+ *   [onDocumentError]. **Desktop** opens it with the right password;
+ *   **iOS** unlocks via PDFKit (pending macOS verification); **Android
+ *   cannot open encrypted PDFs at all** (`PdfRenderer` has no password
+ *   API) so the error is terminal there.
+ * @param onDocumentError invoked when the document can't be opened — see
+ *   [PdfViewerError]. The inline message is shown regardless; this lets the
+ *   host react (e.g. re-prompt for a password). `null` by default.
+ *
+ * **Annotation export on save:** when [showAnnotationTools] is on, there is
+ * at least one highlight, and the platform can write annotations (Desktop
+ * via PdfBox — see [pdfViewerSupportsAnnotationExport]), the existing
+ * download / save action writes the highlights INTO the saved PDF (real
+ * `Highlight` annotations, visible in any reader) instead of the originals.
+ * Share / print still export the untouched original, and on Android / iOS
+ * (no writable PDF API) save also keeps exporting the original — highlights
+ * stay overlay-only there.
  */
 @Composable
 public fun KmpPdfViewer(
@@ -179,6 +205,9 @@ public fun KmpPdfViewer(
     showAnnotationTools: Boolean = false,
     initialAnnotations: List<PdfViewerAnnotation> = emptyList(),
     onAnnotationsChanged: ((List<PdfViewerAnnotation>) -> Unit)? = null,
+    pageLayout: PdfPageLayout = PdfPageLayout.Single,
+    password: String? = null,
+    onDocumentError: ((PdfViewerError) -> Unit)? = null,
     backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
     pageBackgroundColor: Color = Color.White,
     contentPadding: PaddingValues = PaddingValues(0.dp),
@@ -200,6 +229,7 @@ public fun KmpPdfViewer(
             bytes = source.loadBytes()
         } catch (t: Throwable) {
             loadError = t.message ?: t::class.simpleName ?: "Unknown error"
+            onDocumentError?.invoke(PdfViewerError.LoadFailed)
         }
     }
 
@@ -209,6 +239,7 @@ public fun KmpPdfViewer(
     val shareAction = if (showShare) rememberPdfShareAction() else null
     val saveAction = if (showDownload) rememberPdfSaveAction() else null
     val printAction = if (showPrint) rememberPdfPrintAction() else null
+    val exportScope = rememberCoroutineScope()
 
     var searchOpen by remember(source) { mutableStateOf(false) }
     var searchQuery by remember(source) { mutableStateOf("") }
@@ -269,6 +300,14 @@ public fun KmpPdfViewer(
         resolvedBytes?.let { "PDF · ${formatFileSize(it.size)}" } ?: "PDF · loading"
     }
 
+    // Whether the download/save action should write the in-viewer highlights
+    // INTO the saved bytes rather than handing over the originals: only when
+    // the annotation tool is surfaced, there is at least one highlight to
+    // burn in, and the platform can actually write annotations (Desktop).
+    // Otherwise highlights stay overlay-only and save exports the original.
+    val exportAnnotationsOnSave =
+        showAnnotationTools && annotations.isNotEmpty() && pdfViewerSupportsAnnotationExport
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -316,7 +355,20 @@ public fun KmpPdfViewer(
                     },
                     onDownload = {
                         val ready = resolvedBytes
-                        if (ready != null) saveAction?.invoke(ready, fileName)
+                        if (ready != null) {
+                            if (exportAnnotationsOnSave) {
+                                // Burn the highlights into the bytes first, then
+                                // save the annotated copy. If the write fails for
+                                // any reason, fall back to the original bytes so
+                                // the user still gets a saved file.
+                                exportScope.launch {
+                                    val annotated = writeAnnotationsIntoPdf(ready, annotations.toList())
+                                    saveAction?.invoke(annotated ?: ready, fileName)
+                                }
+                            } else {
+                                saveAction?.invoke(ready, fileName)
+                            }
+                        }
                     },
                     onAnnotate = { annotationMode = !annotationMode },
                     showBack = showBack,
@@ -389,6 +441,9 @@ public fun KmpPdfViewer(
                     hyperlinksEnabled = hyperlinksEnabled,
                     invertColors = invertColors,
                     showPageIndicator = showPageIndicator,
+                    pageLayout = pageLayout,
+                    password = password,
+                    onDocumentError = onDocumentError,
                     cacheStrategy = cacheStrategy,
                     searchHighlights = highlights,
                     activeSearchHighlightIndex = activeMatchIndex,
@@ -441,6 +496,9 @@ public fun KmpPdfViewer(
     showAnnotationTools: Boolean = false,
     initialAnnotations: List<PdfViewerAnnotation> = emptyList(),
     onAnnotationsChanged: ((List<PdfViewerAnnotation>) -> Unit)? = null,
+    pageLayout: PdfPageLayout = PdfPageLayout.Single,
+    password: String? = null,
+    onDocumentError: ((PdfViewerError) -> Unit)? = null,
     backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
     pageBackgroundColor: Color = Color.White,
     contentPadding: PaddingValues = PaddingValues(0.dp),
@@ -473,6 +531,9 @@ public fun KmpPdfViewer(
         showAnnotationTools = showAnnotationTools,
         initialAnnotations = initialAnnotations,
         onAnnotationsChanged = onAnnotationsChanged,
+        pageLayout = pageLayout,
+        password = password,
+        onDocumentError = onDocumentError,
         backgroundColor = backgroundColor,
         pageBackgroundColor = pageBackgroundColor,
         contentPadding = contentPadding,
@@ -515,6 +576,9 @@ public fun KmpPdfViewer(
     showAnnotationTools: Boolean = false,
     initialAnnotations: List<PdfViewerAnnotation> = emptyList(),
     onAnnotationsChanged: ((List<PdfViewerAnnotation>) -> Unit)? = null,
+    pageLayout: PdfPageLayout = PdfPageLayout.Single,
+    password: String? = null,
+    onDocumentError: ((PdfViewerError) -> Unit)? = null,
     backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
     pageBackgroundColor: Color = Color.White,
     contentPadding: PaddingValues = PaddingValues(0.dp),
@@ -547,6 +611,9 @@ public fun KmpPdfViewer(
         showAnnotationTools = showAnnotationTools,
         initialAnnotations = initialAnnotations,
         onAnnotationsChanged = onAnnotationsChanged,
+        pageLayout = pageLayout,
+        password = password,
+        onDocumentError = onDocumentError,
         backgroundColor = backgroundColor,
         pageBackgroundColor = pageBackgroundColor,
         contentPadding = contentPadding,
@@ -611,6 +678,9 @@ public fun KmpPdfViewer(
     showAnnotationTools: Boolean = false,
     initialAnnotations: List<PdfViewerAnnotation> = emptyList(),
     onAnnotationsChanged: ((List<PdfViewerAnnotation>) -> Unit)? = null,
+    pageLayout: PdfPageLayout = PdfPageLayout.Single,
+    password: String? = null,
+    onDocumentError: ((PdfViewerError) -> Unit)? = null,
     backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
     pageBackgroundColor: Color = Color.White,
     contentPadding: PaddingValues = PaddingValues(0.dp),
@@ -643,6 +713,9 @@ public fun KmpPdfViewer(
         showAnnotationTools = showAnnotationTools,
         initialAnnotations = initialAnnotations,
         onAnnotationsChanged = onAnnotationsChanged,
+        pageLayout = pageLayout,
+        password = password,
+        onDocumentError = onDocumentError,
         backgroundColor = backgroundColor,
         pageBackgroundColor = pageBackgroundColor,
         contentPadding = contentPadding,

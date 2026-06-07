@@ -94,22 +94,31 @@ internal actual class PdfPageRenderer private constructor(
     }
 
     internal companion object {
-        suspend fun open(bytes: ByteArray): PdfPageRenderer? = withContext(Dispatchers.IO) {
-            if (bytes.isEmpty()) return@withContext null
-            val context = ViewerContextHolder.get()
-            val tempFile = File(context.cacheDir, "pdfkmp-viewer-${UUID.randomUUID()}.pdf")
-            tempFile.writeBytes(bytes)
-            try {
-                val descriptor = ParcelFileDescriptor.open(tempFile, ParcelFileDescriptor.MODE_READ_ONLY)
-                val renderer = PdfRenderer(descriptor)
-                PdfPageRenderer(descriptor, tempFile, renderer)
-            } catch (e: Throwable) {
-                tempFile.delete()
-                null
+        suspend fun open(bytes: ByteArray, password: String?): PdfOpenResult =
+            withContext(Dispatchers.IO) {
+                if (bytes.isEmpty()) return@withContext PdfOpenResult.CannotOpen
+                val context = ViewerContextHolder.get()
+                val tempFile = File(context.cacheDir, "pdfkmp-viewer-${UUID.randomUUID()}.pdf")
+                tempFile.writeBytes(bytes)
+                try {
+                    val descriptor = ParcelFileDescriptor.open(tempFile, ParcelFileDescriptor.MODE_READ_ONLY)
+                    val renderer = PdfRenderer(descriptor)
+                    PdfOpenResult.Success(PdfPageRenderer(descriptor, tempFile, renderer))
+                } catch (e: SecurityException) {
+                    // PdfRenderer throws SecurityException for a
+                    // password-protected file — it has NO password API, so this
+                    // is terminal on Android regardless of [password]. Surface it
+                    // as PasswordRequired so the host can explain why (rather than
+                    // a generic "broken file") even though no password will help.
+                    tempFile.delete()
+                    PdfOpenResult.PasswordRequired
+                } catch (e: Throwable) {
+                    tempFile.delete()
+                    PdfOpenResult.CannotOpen
+                }
             }
-        }
     }
 }
 
-internal actual suspend fun openPdfRenderer(bytes: ByteArray): PdfPageRenderer? =
-    PdfPageRenderer.open(bytes)
+internal actual suspend fun openPdfRenderer(bytes: ByteArray, password: String?): PdfOpenResult =
+    PdfPageRenderer.open(bytes, password)

@@ -8,6 +8,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.apache.pdfbox.Loader
 import org.apache.pdfbox.pdmodel.PDDocument
+import org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException
 import org.apache.pdfbox.rendering.ImageType
 import org.apache.pdfbox.rendering.PDFRenderer
 import kotlin.math.max
@@ -66,20 +67,40 @@ internal actual class PdfPageRenderer private constructor(
     }
 
     internal companion object {
-        suspend fun open(bytes: ByteArray): PdfPageRenderer? = withContext(Dispatchers.IO) {
-            if (bytes.isEmpty()) return@withContext null
-            runCatching {
-                val document = Loader.loadPDF(bytes)
-                if (document.numberOfPages == 0) {
-                    document.close()
-                    null
-                } else {
-                    PdfPageRenderer(document)
+        suspend fun open(bytes: ByteArray, password: String?): PdfOpenResult =
+            withContext(Dispatchers.IO) {
+                if (bytes.isEmpty()) return@withContext PdfOpenResult.CannotOpen
+                try {
+                    // PdfBox accepts an empty string for an unencrypted document
+                    // and uses the password to unlock an encrypted one. A wrong
+                    // / missing password throws InvalidPasswordException, which we
+                    // map to a distinct PasswordRequired result.
+                    val document = Loader.loadPDF(bytes, password ?: "")
+                    if (document.numberOfPages == 0) {
+                        document.close()
+                        PdfOpenResult.CannotOpen
+                    } else {
+                        // For an encrypted document opened with the USER password,
+                        // PdfBox enforces the access permissions — which can block
+                        // PDFRenderer from extracting content to rasterise. We only
+                        // ever render to an on-screen bitmap (never re-save this
+                        // in-memory document), so lift the restrictions so the
+                        // preview works regardless of the copy/print flags. The
+                        // share / save bytes the viewer hands out are the original
+                        // encrypted file, untouched.
+                        if (document.isEncrypted) {
+                            document.setAllSecurityToBeRemoved(true)
+                        }
+                        PdfOpenResult.Success(PdfPageRenderer(document))
+                    }
+                } catch (e: InvalidPasswordException) {
+                    PdfOpenResult.PasswordRequired
+                } catch (t: Throwable) {
+                    PdfOpenResult.CannotOpen
                 }
-            }.getOrNull()
-        }
+            }
     }
 }
 
-internal actual suspend fun openPdfRenderer(bytes: ByteArray): PdfPageRenderer? =
-    PdfPageRenderer.open(bytes)
+internal actual suspend fun openPdfRenderer(bytes: ByteArray, password: String?): PdfOpenResult =
+    PdfPageRenderer.open(bytes, password)

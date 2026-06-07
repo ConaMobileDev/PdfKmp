@@ -40,6 +40,10 @@ import kotlin.math.max
  *
  * `close()` is a no-op because Kotlin/Native ARC releases
  * `PDFDocument` automatically when the handle drops out of scope.
+ *
+ * NOTE: the password-unlock path (`isLocked` / `unlockWithPassword`) targets
+ * the Apple toolchain and cannot be compiled on a non-macOS host — it needs
+ * verification on macOS / a simulator.
  */
 internal actual class PdfPageRenderer private constructor(
     private val document: PDFDocument,
@@ -81,23 +85,35 @@ internal actual class PdfPageRenderer private constructor(
     }
 
     internal companion object {
-        suspend fun open(bytes: ByteArray): PdfPageRenderer? = withContext(Dispatchers.Default) {
-            if (bytes.isEmpty()) return@withContext null
-            val nsData: NSData = bytes.usePinned { pinned ->
-                NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong())
+        suspend fun open(bytes: ByteArray, password: String?): PdfOpenResult =
+            withContext(Dispatchers.Default) {
+                if (bytes.isEmpty()) return@withContext PdfOpenResult.CannotOpen
+                val nsData: NSData = bytes.usePinned { pinned ->
+                    NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong())
+                }
+                // Kotlin/Native exposes `PDFDocument(data:)` as non-null even
+                // though the Objective-C initializer is failable. Guarding on
+                // pageCount catches a "successfully" returned but malformed
+                // document — a freshly-allocated empty document reports 0.
+                val document = PDFDocument(data = nsData)
+                // An encrypted document opens "locked": pageCount is reported but
+                // rendering fails until unlocked. unlockWithPassword(_:) returns
+                // false for the wrong password.
+                if (document.isLocked) {
+                    val unlocked = password != null && document.unlockWithPassword(password)
+                    if (!unlocked) return@withContext PdfOpenResult.PasswordRequired
+                }
+                if (document.pageCount.toInt() == 0) {
+                    PdfOpenResult.CannotOpen
+                } else {
+                    PdfOpenResult.Success(PdfPageRenderer(document))
+                }
             }
-            // Kotlin/Native exposes `PDFDocument(data:)` as non-null even
-            // though the Objective-C initializer is failable. Guarding on
-            // pageCount catches a "successfully" returned but malformed
-            // document — a freshly-allocated empty document reports 0.
-            val document = PDFDocument(data = nsData)
-            if (document.pageCount.toInt() == 0) null else PdfPageRenderer(document)
-        }
     }
 }
 
-internal actual suspend fun openPdfRenderer(bytes: ByteArray): PdfPageRenderer? =
-    PdfPageRenderer.open(bytes)
+internal actual suspend fun openPdfRenderer(bytes: ByteArray, password: String?): PdfOpenResult =
+    PdfPageRenderer.open(bytes, password)
 
 /**
  * Returns a colour-inverted copy of [image] for the viewer's dark-mode

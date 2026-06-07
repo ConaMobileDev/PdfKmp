@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -224,6 +225,24 @@ private const val DENSITY_REFRESH_DELAY_MS: Long = 250L
  *   bitmap.
  * @param showPageIndicator toggles the bottom-centre `n / total`
  *   chip. `true` by default.
+ * @param pageLayout how pages are arranged in the scroll list:
+ *   [PdfPageLayout.Single] (default — one page per row, byte-identical to
+ *   the prior behaviour) or [PdfPageLayout.TwoPageBook] (side-by-side
+ *   verso/recto spreads, cover alone, best on Desktop / tablet). Both share
+ *   the same zoom / pan, search highlights, and annotations.
+ * @param password unlocks an encrypted PDF. `null` (default) is fine for an
+ *   unencrypted document; an encrypted one with a missing / wrong password
+ *   shows a "password protected" message instead of crashing (and fires
+ *   [onDocumentError] with [PdfViewerError.PasswordRequired]). **Android
+ *   cannot open encrypted PDFs at all** — its `PdfRenderer` has no password
+ *   API — so an encrypted document always surfaces the error there
+ *   regardless of [password].
+ * @param onDocumentError invoked when the document can't be opened —
+ *   encrypted with no/wrong password ([PdfViewerError.PasswordRequired]),
+ *   corrupt ([PdfViewerError.CannotOpen]), or a byte-fetch failure
+ *   ([PdfViewerError.LoadFailed]). The viewer still shows an inline message;
+ *   this hook lets the host react (e.g. prompt for a password). `null` by
+ *   default.
  * @param shareButtonAlignment positions the built-in share FAB inside
  *   the outer [Box]. Defaults to [Alignment.BottomEnd] to match
  *   Material 3 guidance.
@@ -269,6 +288,9 @@ public fun PdfViewer(
     hyperlinksEnabled: Boolean = true,
     invertColors: Boolean = false,
     showPageIndicator: Boolean = true,
+    pageLayout: PdfPageLayout = PdfPageLayout.Single,
+    password: String? = null,
+    onDocumentError: ((PdfViewerError) -> Unit)? = null,
     shareButtonAlignment: Alignment = Alignment.BottomEnd,
     shareButtonPadding: PaddingValues = PaddingValues(16.dp),
     searchHighlights: List<PdfSearchHighlight> = emptyList(),
@@ -291,6 +313,7 @@ public fun PdfViewer(
             bytes = source.loadBytes()
         } catch (t: Throwable) {
             loadError = t.message ?: t::class.simpleName ?: "Unknown error"
+            onDocumentError?.invoke(PdfViewerError.LoadFailed)
         }
     }
 
@@ -302,11 +325,14 @@ public fun PdfViewer(
     }
     val urlLauncher = if (hyperlinksEnabled) rememberPdfUrlLauncher() else null
 
-    // Stage 2 — renderer. Re-opens whenever the resolved bytes change.
+    // Stage 2 — renderer. Re-opens whenever the resolved bytes (or the
+    // password) change.
     val currentBytes = bytes
-    var renderer by remember(currentBytes) { mutableStateOf<PdfPageRenderer?>(null) }
-    var loading by remember(currentBytes) { mutableStateOf(currentBytes != null) }
-    var error by remember(currentBytes) { mutableStateOf(false) }
+    var renderer by remember(currentBytes, password) { mutableStateOf<PdfPageRenderer?>(null) }
+    var loading by remember(currentBytes, password) { mutableStateOf(currentBytes != null) }
+    // Typed open failure (encrypted / corrupt). `null` while loading or once
+    // a renderer is in hand. Distinct from [loadError] (byte-fetch failure).
+    var openError by remember(currentBytes, password) { mutableStateOf<PdfViewerError?>(null) }
 
     // Bitmap cache survives LazyColumn item recomposition, which is
     // the whole point: scroll-back to a previously viewed page is a
@@ -318,14 +344,34 @@ public fun PdfViewer(
 
     val scope = rememberCoroutineScope()
 
-    DisposableEffect(currentBytes) {
+    DisposableEffect(currentBytes, password) {
         if (currentBytes == null) return@DisposableEffect onDispose { }
         var openedRenderer: PdfPageRenderer? = null
         val job = scope.launch {
-            val opened = openPdfRenderer(currentBytes)
-            openedRenderer = opened
-            renderer = opened
-            error = opened == null || opened.pageCount == 0
+            when (val result = openPdfRenderer(currentBytes, password)) {
+                is PdfOpenResult.Success -> {
+                    openedRenderer = result.renderer
+                    renderer = result.renderer
+                    openError = if (result.renderer.pageCount == 0) {
+                        onDocumentError?.invoke(PdfViewerError.CannotOpen)
+                        PdfViewerError.CannotOpen
+                    } else {
+                        null
+                    }
+                }
+
+                PdfOpenResult.PasswordRequired -> {
+                    renderer = null
+                    openError = PdfViewerError.PasswordRequired
+                    onDocumentError?.invoke(PdfViewerError.PasswordRequired)
+                }
+
+                PdfOpenResult.CannotOpen -> {
+                    renderer = null
+                    openError = PdfViewerError.CannotOpen
+                    onDocumentError?.invoke(PdfViewerError.CannotOpen)
+                }
+            }
             loading = false
         }
         onDispose {
@@ -397,8 +443,10 @@ public fun PdfViewer(
 
     Box(modifier = modifier.fillMaxSize().background(backgroundColor)) {
         when {
-            loadError != null || error || (currentBytes != null && current == null && !loading) ->
+            loadError != null || openError != null ||
+                (currentBytes != null && current == null && !loading) ->
                 PdfViewerErrorState(
+                    error = openError,
                     modifier = Modifier.align(Alignment.Center),
                 )
 
@@ -422,6 +470,7 @@ public fun PdfViewer(
                     pageBackgroundColor = pageBackgroundColor,
                     contentPadding = contentPadding,
                     pageSpacing = pageSpacing,
+                    pageLayout = pageLayout,
                     textRunsByPage = textRunsByPage,
                     hyperlinksByPage = hyperlinksByPage,
                     urlLauncher = urlLauncher,
@@ -445,7 +494,7 @@ public fun PdfViewer(
             }
         }
 
-        if (shareAction != null && current != null && currentBytes != null && !error) {
+        if (shareAction != null && current != null && currentBytes != null && openError == null) {
             FloatingActionButton(
                 onClick = { shareAction(currentBytes, shareFileName) },
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -488,6 +537,9 @@ public fun PdfViewer(
     hyperlinksEnabled: Boolean = true,
     invertColors: Boolean = false,
     showPageIndicator: Boolean = true,
+    pageLayout: PdfPageLayout = PdfPageLayout.Single,
+    password: String? = null,
+    onDocumentError: ((PdfViewerError) -> Unit)? = null,
     shareButtonAlignment: Alignment = Alignment.BottomEnd,
     shareButtonPadding: PaddingValues = PaddingValues(16.dp),
     searchHighlights: List<PdfSearchHighlight> = emptyList(),
@@ -516,6 +568,9 @@ public fun PdfViewer(
         hyperlinksEnabled = hyperlinksEnabled,
         invertColors = invertColors,
         showPageIndicator = showPageIndicator,
+        pageLayout = pageLayout,
+        password = password,
+        onDocumentError = onDocumentError,
         shareButtonAlignment = shareButtonAlignment,
         shareButtonPadding = shareButtonPadding,
         searchHighlights = searchHighlights,
@@ -550,6 +605,9 @@ public fun PdfViewer(
     showZoomControls: Boolean = true,
     invertColors: Boolean = false,
     showPageIndicator: Boolean = true,
+    pageLayout: PdfPageLayout = PdfPageLayout.Single,
+    password: String? = null,
+    onDocumentError: ((PdfViewerError) -> Unit)? = null,
     shareButtonAlignment: Alignment = Alignment.BottomEnd,
     shareButtonPadding: PaddingValues = PaddingValues(16.dp),
     searchHighlights: List<PdfSearchHighlight> = emptyList(),
@@ -576,6 +634,9 @@ public fun PdfViewer(
         showZoomControls = showZoomControls,
         invertColors = invertColors,
         showPageIndicator = showPageIndicator,
+        pageLayout = pageLayout,
+        password = password,
+        onDocumentError = onDocumentError,
         shareButtonAlignment = shareButtonAlignment,
         shareButtonPadding = shareButtonPadding,
         searchHighlights = searchHighlights,
@@ -626,6 +687,7 @@ private fun PdfPagesContent(
     pageBackgroundColor: Color,
     contentPadding: PaddingValues,
     pageSpacing: Dp,
+    pageLayout: PdfPageLayout,
     textRunsByPage: Map<Int, List<PdfTextRun>>,
     hyperlinksByPage: Map<Int, List<PdfHyperlink>>,
     urlLauncher: PdfUrlLauncher?,
@@ -637,14 +699,29 @@ private fun PdfPagesContent(
     onAnnotationDeleted: ((Int) -> Unit)?,
     scope: CoroutineScope,
 ) {
+    // Row layout: in Single mode each row is one page (row index == page
+    // index, so all existing math is byte-identical); in TwoPageBook mode a
+    // row holds a verso/recto pair (cover alone first). Computed once per
+    // page count so the LazyColumn items() and the prefetch loop agree.
+    val rows = remember(renderer.pageCount, pageLayout) {
+        when (pageLayout) {
+            PdfPageLayout.Single -> (0 until renderer.pageCount).map { listOf(it) }
+            PdfPageLayout.TwoPageBook -> bookPagePairs(renderer.pageCount)
+        }
+    }
+
     // Prefetch loop — keeps the requested window around the currently
     // visible page warm so the user never sees a fresh-rasterisation
     // delay when scrolling within the window. `collectLatest` cancels
     // the prior pass on every scroll, so a fast flick doesn't queue
     // up renders for pages the user is already past.
-    LaunchedEffect(renderer, cache, cacheStrategy, effectiveDensity, invertColors) {
+    LaunchedEffect(renderer, cache, cacheStrategy, effectiveDensity, invertColors, rows) {
         snapshotFlow { listState.firstVisibleItemIndex }
-            .collectLatest { visible ->
+            .collectLatest { visibleRow ->
+                // Anchor the window on the first PAGE in the visible row so
+                // the math below stays in page space (identical to Single mode,
+                // where row index already equals page index).
+                val visible = rows.getOrNull(visibleRow)?.firstOrNull() ?: visibleRow
                 val (before, after) = cacheStrategy.window(renderer.pageCount)
                 val start = (visible - before).coerceAtLeast(0)
                 val end = (visible + after).coerceAtMost(renderer.pageCount - 1)
@@ -885,29 +962,63 @@ private fun PdfPagesContent(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     items(
-                        count = renderer.pageCount,
-                        key = { it },
-                    ) { index ->
-                        PdfPageItem(
-                            renderer = renderer,
-                            cache = cache,
-                            index = index,
-                            pageSize = renderer.pageSizes.getOrNull(index)
-                                ?: PageSize(widthPoints = 1f, heightPoints = 1f),
-                            pageBackgroundColor = pageBackgroundColor,
-                            renderDensity = effectiveDensity,
-                            invertColors = invertColors,
-                            textRuns = textRunsByPage[index].orEmpty(),
-                            hyperlinks = hyperlinksByPage[index].orEmpty(),
-                            urlLauncher = urlLauncher,
-                            searchHighlights = searchHighlightsByPage[index].orEmpty(),
-                            activeSearchHighlight = activeSearchHighlight
-                                ?.takeIf { it.pageIndex == index },
-                            annotations = annotationsByPage[index].orEmpty(),
-                            annotationMode = annotationMode,
-                            onAnnotationCreated = onAnnotationCreated,
-                            onAnnotationDeleted = onAnnotationDeleted,
-                        )
+                        count = rows.size,
+                        // Key on the row's first page so list identity is
+                        // stable across a layout toggle (and identical to the
+                        // old `key = { it }` in Single mode, where row == page).
+                        key = { rowIndex -> rows[rowIndex].first() },
+                    ) { rowIndex ->
+                        val pagesInRow = rows[rowIndex]
+                        if (pagesInRow.size == 1) {
+                            // Single page — full content width. Byte-identical
+                            // to the pre-two-page-mode layout for Single mode.
+                            PdfPageItemForIndex(
+                                pageIndex = pagesInRow.first(),
+                                renderer = renderer,
+                                cache = cache,
+                                pageBackgroundColor = pageBackgroundColor,
+                                effectiveDensity = effectiveDensity,
+                                invertColors = invertColors,
+                                textRunsByPage = textRunsByPage,
+                                hyperlinksByPage = hyperlinksByPage,
+                                urlLauncher = urlLauncher,
+                                searchHighlightsByPage = searchHighlightsByPage,
+                                activeSearchHighlight = activeSearchHighlight,
+                                annotationsByPage = annotationsByPage,
+                                annotationMode = annotationMode,
+                                onAnnotationCreated = onAnnotationCreated,
+                                onAnnotationDeleted = onAnnotationDeleted,
+                            )
+                        } else {
+                            // Two pages side by side, each taking half the row
+                            // so the spread reads like an open book.
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(pageSpacing * zoom.value),
+                            ) {
+                                pagesInRow.forEach { pageIndex ->
+                                    Box(modifier = Modifier.weight(1f)) {
+                                        PdfPageItemForIndex(
+                                            pageIndex = pageIndex,
+                                            renderer = renderer,
+                                            cache = cache,
+                                            pageBackgroundColor = pageBackgroundColor,
+                                            effectiveDensity = effectiveDensity,
+                                            invertColors = invertColors,
+                                            textRunsByPage = textRunsByPage,
+                                            hyperlinksByPage = hyperlinksByPage,
+                                            urlLauncher = urlLauncher,
+                                            searchHighlightsByPage = searchHighlightsByPage,
+                                            activeSearchHighlight = activeSearchHighlight,
+                                            annotationsByPage = annotationsByPage,
+                                            annotationMode = annotationMode,
+                                            onAnnotationCreated = onAnnotationCreated,
+                                            onAnnotationDeleted = onAnnotationDeleted,
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -952,6 +1063,51 @@ private fun ZoomControlButton(label: String, onClick: () -> Unit) {
     ) {
         Text(text = label, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
     }
+}
+
+/**
+ * Thin wrapper that resolves the per-page slices (page size, text runs,
+ * hyperlinks, highlights, annotations) for [pageIndex] and forwards to
+ * [PdfPageItem]. Factored out so both the single-page row and each cell of a
+ * two-page row share one call site without duplicating the lookups.
+ */
+@Composable
+private fun PdfPageItemForIndex(
+    pageIndex: Int,
+    renderer: PdfPageRenderer,
+    cache: PdfBitmapCache,
+    pageBackgroundColor: Color,
+    effectiveDensity: Float,
+    invertColors: Boolean,
+    textRunsByPage: Map<Int, List<PdfTextRun>>,
+    hyperlinksByPage: Map<Int, List<PdfHyperlink>>,
+    urlLauncher: PdfUrlLauncher?,
+    searchHighlightsByPage: Map<Int, List<PdfSearchHighlight>>,
+    activeSearchHighlight: PdfSearchHighlight?,
+    annotationsByPage: Map<Int, List<IndexedValue<PdfViewerAnnotation>>>,
+    annotationMode: Boolean,
+    onAnnotationCreated: ((PdfViewerAnnotation) -> Unit)?,
+    onAnnotationDeleted: ((Int) -> Unit)?,
+) {
+    PdfPageItem(
+        renderer = renderer,
+        cache = cache,
+        index = pageIndex,
+        pageSize = renderer.pageSizes.getOrNull(pageIndex)
+            ?: PageSize(widthPoints = 1f, heightPoints = 1f),
+        pageBackgroundColor = pageBackgroundColor,
+        renderDensity = effectiveDensity,
+        invertColors = invertColors,
+        textRuns = textRunsByPage[pageIndex].orEmpty(),
+        hyperlinks = hyperlinksByPage[pageIndex].orEmpty(),
+        urlLauncher = urlLauncher,
+        searchHighlights = searchHighlightsByPage[pageIndex].orEmpty(),
+        activeSearchHighlight = activeSearchHighlight?.takeIf { it.pageIndex == pageIndex },
+        annotations = annotationsByPage[pageIndex].orEmpty(),
+        annotationMode = annotationMode,
+        onAnnotationCreated = onAnnotationCreated,
+        onAnnotationDeleted = onAnnotationDeleted,
+    )
 }
 
 @Composable
@@ -1506,10 +1662,18 @@ private fun PdfPageIndicator(
 }
 
 @Composable
-private fun PdfViewerErrorState(modifier: Modifier = Modifier) {
+private fun PdfViewerErrorState(
+    error: PdfViewerError?,
+    modifier: Modifier = Modifier,
+) {
+    val message = when (error) {
+        PdfViewerError.PasswordRequired ->
+            "This PDF is password protected.\nCheck the password and try again."
+        else -> "Could not display this PDF."
+    }
     Text(
-        text = "Could not display this PDF.",
-        modifier = modifier,
+        text = message,
+        modifier = modifier.padding(24.dp),
         color = MaterialTheme.colorScheme.onSurface,
         fontSize = 14.sp,
     )

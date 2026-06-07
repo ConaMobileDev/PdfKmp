@@ -1,6 +1,6 @@
 # pdfkmp-viewer
 
-Compose Multiplatform PDF viewer with **document-wide pinch zoom**, **text selection** (Android / iOS / Desktop), **hyperlinks**, **search**, **highlight annotations**, **share**, and **save to Downloads** — works on Android (`android.graphics.pdf.PdfRenderer`), iOS (`PDFKit`), and Desktop (PdfBox).
+Compose Multiplatform PDF viewer with **document-wide pinch zoom**, **text selection** (Android / iOS / Desktop), **hyperlinks**, **search**, **highlight annotations** (with Desktop export into the PDF), **password-protected documents** (Desktop / iOS), **two-page book mode**, **share**, and **save to Downloads** — works on Android (`android.graphics.pdf.PdfRenderer`), iOS (`PDFKit`), and Desktop (PdfBox).
 
 > **Looking for the document generator?** That lives in the sibling [`:pdfkmp`](../pdfkmp) module. This module renders any PDF — but text selection and hyperlinks only light up for documents authored through the PdfKmp DSL.
 
@@ -216,7 +216,63 @@ KmpPdfViewer(
 
 Each highlight is a `PdfViewerAnnotation(pageIndex, x, y, width, height, color)` in PDF points (top-left origin, Y down) — the same coordinate space as `PdfTextRun` / `PdfSearchHighlight`, so it lines up with the rasterised page at any zoom. Two pure helpers back the gesture logic and are reusable / unit-testable: `hitTestAnnotation(...)` (which highlight a tap landed on) and `buildAnnotationFromDrag(...)` (normalise + clamp a drag into a box).
 
-> **Honest scope — overlay only.** Highlights are painted *on top of* the rasterised page; they are **not** written back into the PDF bytes. The bytes handed to share / save / print are the untouched original, so a highlight won't appear if the same PDF is opened in another reader. Persist the `PdfViewerAnnotation` list yourself (via `onAnnotationsChanged`) and restore it through `initialAnnotations`.
+> **Overlay by default; export on Desktop.** Highlights are painted *on top of* the rasterised page and are **not** written into the PDF bytes for share / print. On **Desktop**, the **save / download** action burns them in — see [Exporting highlights into the PDF](#exporting-highlights-into-the-pdf-desktop). On Android / iOS highlights stay overlay-only (no writable PDF API). Persist the `PdfViewerAnnotation` list yourself (via `onAnnotationsChanged`) and restore it through `initialAnnotations`.
+
+### Exporting highlights into the PDF (Desktop)
+
+On **Desktop** the viewer can burn the in-viewer highlights into the saved PDF as real `Highlight` (text-markup) annotations — so they show up when the file is reopened in any standard reader, not just this viewer. The behaviour is wired into the existing save action automatically: when `showAnnotationTools = true`, there is at least one highlight, and the platform supports export, the **download / save** action writes the **annotated** bytes instead of the originals.
+
+```kotlin
+KmpPdfViewer(
+    document = doc,
+    showAnnotationTools = true,
+    // Desktop: tapping the topbar download/save button now saves a PDF with
+    // the highlights embedded. Share / print still export the original.
+)
+```
+
+Per-platform support:
+
+| | Android | iOS | Desktop |
+|---|---|---|---|
+| Burn highlights into saved PDF | ❌ (read-only `PdfRenderer`, no writable PDF API) | ❌ (PDFKit write deferred — overlay only for now) | ✅ (PdfBox `PDAnnotationHighlight`) |
+
+On Android / iOS, save still exports the untouched original — highlights remain overlay-only there. The low-level helpers behind this are `pdfViewerSupportsAnnotationExport` / `writeAnnotationsIntoPdf(...)` (internal; the wiring above is the public path). Each exported highlight carries the annotation's colour and a constant ~0.4 interior opacity, and the box is flipped from the viewer's top-left-origin coordinates into the PDF's bottom-left space.
+
+### Password-protected PDFs
+
+Pass `password` to open an encrypted document. With a missing or wrong password the viewer shows an inline "password protected" message instead of crashing, and fires `onDocumentError(PdfViewerError.PasswordRequired)` so the host can re-prompt.
+
+```kotlin
+KmpPdfViewer(
+    bytes = encryptedBytes,
+    password = "letmein",
+    onDocumentError = { error ->
+        when (error) {
+            PdfViewerError.PasswordRequired -> promptForPassword()
+            PdfViewerError.CannotOpen, PdfViewerError.LoadFailed -> showGenericError()
+        }
+    },
+)
+```
+
+Per-platform support:
+
+| | Android | iOS | Desktop |
+|---|---|---|---|
+| Open password-protected PDF | ❌ (`PdfRenderer` has **no** password API — always errors) | ✅ (PDFKit `unlockWithPassword`, pending macOS verification) | ✅ (PdfBox `Loader.loadPDF(bytes, password)`) |
+
+> **Android cannot open encrypted PDFs at all.** `android.graphics.pdf.PdfRenderer` throws on a password-protected file and exposes no unlock API, so an encrypted document surfaces `PdfViewerError.PasswordRequired` there regardless of the password you pass — it's terminal. Show your own messaging / fall back to an external viewer.
+
+### Two-page book mode
+
+Pass `pageLayout = PdfPageLayout.TwoPageBook` to lay pages out as side-by-side spreads, like an open book — the cover sits alone first, then verso/recto pairs (`2-3`, `4-5`, …); a trailing odd page sits alone. Best on Desktop / tablet. Zoom, pan, search highlights, and annotations all map to the correct page. The default `PdfPageLayout.Single` (continuous one-page-per-row scroll) is unchanged.
+
+```kotlin
+KmpPdfViewer(document = doc, pageLayout = PdfPageLayout.TwoPageBook)
+```
+
+There is no built-in topbar toggle — `pageLayout` is parameter-only; flip it from your own UI if you want a switch.
 
 ### Share
 
@@ -355,6 +411,8 @@ PdfViewer(
 | `PdfShareIcon` / `PdfSaveIcon` | Inline `ImageVector`s — reuse for visual consistency in your own toolbars |
 | `PdfViewerAnnotation(pageIndex, x, y, width, height, color)` | One overlay highlight, in PDF points |
 | `hitTestAnnotation(...)` / `buildAnnotationFromDrag(...)` | Pure annotation helpers (tap hit-test / drag → box) |
+| `PdfPageLayout.{Single, TwoPageBook}` | Page arrangement for the viewer's `pageLayout` |
+| `PdfViewerError.{PasswordRequired, CannotOpen, LoadFailed}` | Why a document couldn't open, surfaced via `onDocumentError` |
 | `pdfViewerCopyToClipboard(text)` | Writes text to the platform pasteboard (Android / iOS / Desktop) |
 
 `PdfViewer` parameters (defaults shown):
@@ -375,6 +433,9 @@ PdfViewer(
 | `hyperlinksEnabled: Boolean` | `true` | Clickable link overlay |
 | `invertColors: Boolean` | `false` | Dark-mode page rendering — bitmaps are colour-inverted (white → near-black, black text → white); the encoded PDF and the share / save / print bytes are untouched |
 | `showPageIndicator: Boolean` | `true` | Bottom-centre `n / total` chip |
+| `pageLayout: PdfPageLayout` | `Single` | `Single` (one page per row) or `TwoPageBook` (side-by-side book spreads, cover alone). Shares zoom / pan / search / annotations |
+| `password: String?` | `null` | Unlocks an encrypted PDF. Wrong / missing → inline "password protected" message + `onDocumentError`. Android can't open encrypted PDFs at all |
+| `onDocumentError: ((PdfViewerError) -> Unit)?` | `null` | Fired when a document can't open: `PasswordRequired` / `CannotOpen` / `LoadFailed` |
 | `shareButtonAlignment` | `BottomEnd` | Default share FAB anchor (ignored once `overlay` is non-empty) |
 | `shareButtonPadding` | `16.dp` | Default share FAB inset |
 | `annotations: List<PdfViewerAnnotation>` | `emptyList()` | Highlight annotations painted over the pages (overlay only) |
@@ -387,9 +448,12 @@ PdfViewer(
 
 | Parameter | Default | Purpose |
 |---|---|---|
-| `showAnnotationTools: Boolean` | `false` | Surfaces the highlighter toggle in the topbar |
+| `showAnnotationTools: Boolean` | `false` | Surfaces the highlighter toggle in the topbar. When on + ≥1 highlight + Desktop, the save action exports the **annotated** PDF |
 | `initialAnnotations: List<PdfViewerAnnotation>` | `emptyList()` | Highlights restored into viewer state on first composition |
 | `onAnnotationsChanged: ((List<PdfViewerAnnotation>) -> Unit)?` | `null` | Fired with the full list on every add / delete, for persistence |
+| `pageLayout: PdfPageLayout` | `Single` | `Single` or `TwoPageBook` (side-by-side book spreads). Parameter-only — no topbar toggle |
+| `password: String?` | `null` | Unlocks an encrypted PDF (Desktop / iOS). Android can't open encrypted PDFs |
+| `onDocumentError: ((PdfViewerError) -> Unit)?` | `null` | Fired when the document can't open (`PasswordRequired` / `CannotOpen` / `LoadFailed`) |
 
 ## Architecture
 
@@ -422,7 +486,8 @@ The recording driver is a transparent decorator around the platform `PdfDriver` 
 - **Text selection / hyperlinks only on PdfKmp-built documents.** External PDFs (network, file picker, etc.) are bitmap-only for *selection* and *hyperlinks* — those overlays need the captured text-position metadata that only the PdfKmp DSL produces. **Search**, however, now works on external PDFs on iOS (PDFKit) and Desktop (PdfBox); see the [Search](#search) support matrix. Android external-PDF search stays unavailable because `PdfRenderer` exposes no text API.
 - **Selection bounding boxes use Compose font metrics**, not the original PDF font. Text content selects correctly (paste produces the right characters) but the highlight rectangle hugs the Compose-laid-out text, which can drift a pixel or two from the rasterised glyphs.
 - **External-PDF search highlights are approximate per platform.** Match rectangles come from the platform engine (PDFKit selection bounds / PdfBox direction-adjusted glyph boxes), so a complex / rotated layout can land the highlight a pixel or two off the glyph. The matched text is always correct; only the rectangle is approximate.
-- **Highlight annotations are overlay-only.** They are painted on top of the rasterised page and never written into the PDF bytes, so share / save / print export the untouched original and the highlight won't show in another reader. Persist the `PdfViewerAnnotation` list via `onAnnotationsChanged` and restore through `initialAnnotations`. Burning highlights into the PDF stream is out of scope for this initial version.
+- **Highlight annotations are overlay-only except for Desktop save.** They are painted on top of the rasterised page; share / print always export the untouched original. On **Desktop** the save / download action burns them into the PDF as real `Highlight` annotations (see [Exporting highlights into the PDF](#exporting-highlights-into-the-pdf-desktop)); on Android / iOS there is no writable PDF API so save also keeps exporting the original. Persist the `PdfViewerAnnotation` list via `onAnnotationsChanged` and restore through `initialAnnotations`.
+- **Password-protected PDFs open on Desktop and iOS only.** Pass `password`; Android's `PdfRenderer` has no password API, so encrypted documents are unreadable there (surfaced as `PdfViewerError.PasswordRequired`). The iOS unlock path (PDFKit) is pending macOS verification.
 - **No print preview integration**. Use `Intent.ACTION_VIEW` / `UIDocumentInteractionController` from your own UI if needed.
 - **iPad share** falls through silently when the host app hasn't set a popover anchor — see KDoc on `ShareLauncher.ios.kt`.
 - **Very large documents prefetch a tighter window.** The default `cacheStrategy = PdfPageCacheStrategy.Auto` is adaptive: documents up to ~200 pages keep a symmetric prefetch window (3 pages either side); past that the window tightens to a forward-biased `(before = 2, after = 4)` so the viewer never tries to warm a wide ring that the memory budget would only evict. Pass an explicit `PdfPageCacheStrategy.Window(...)` / `.All` to override. A hard per-platform byte budget (Android: 25 % of `maxMemory()`, iOS: 200 MB) always caps total cache size and evicts least-recently-used pages first, so a wide window can never crash the process.

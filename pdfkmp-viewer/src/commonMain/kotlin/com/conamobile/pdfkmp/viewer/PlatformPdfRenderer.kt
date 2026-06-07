@@ -54,8 +54,39 @@ internal expect class PdfPageRenderer {
 }
 
 /**
- * Opens an in-memory PDF for lazy per-page rendering. Returns `null`
- * when [bytes] is empty or the platform decoder rejects the payload —
- * the viewer surfaces an error UI when this happens.
+ * Outcome of an [openPdfRenderer] attempt — either a usable renderer or a
+ * typed reason it couldn't open, so the viewer can show "wrong / missing
+ * password" distinctly from a generic decode failure.
  */
-internal expect suspend fun openPdfRenderer(bytes: ByteArray): PdfPageRenderer?
+internal sealed interface PdfOpenResult {
+
+    /** The document opened; [renderer] is ready for per-page rendering. */
+    class Success(val renderer: PdfPageRenderer) : PdfOpenResult
+
+    /**
+     * The document is encrypted and the supplied [password] (possibly
+     * `null`) didn't unlock it — on Desktop the right password reopens it;
+     * on Android encrypted files can't be opened at all.
+     */
+    object PasswordRequired : PdfOpenResult
+
+    /** The bytes are empty, truncated, or otherwise un-decodable. */
+    object CannotOpen : PdfOpenResult
+}
+
+/**
+ * Opens an in-memory PDF for lazy per-page rendering.
+ *
+ * [password] unlocks an encrypted document — pass the user/owner password
+ * when one is known. A `null` password is fine for unencrypted documents;
+ * an encrypted document with a missing / wrong password yields
+ * [PdfOpenResult.PasswordRequired] instead of a generic failure so the
+ * viewer can surface a password message. Android can never open encrypted
+ * documents (its `PdfRenderer` has no password API), so it always reports
+ * [PdfOpenResult.PasswordRequired] for an encrypted payload regardless of
+ * [password].
+ */
+internal expect suspend fun openPdfRenderer(
+    bytes: ByteArray,
+    password: String?,
+): PdfOpenResult
