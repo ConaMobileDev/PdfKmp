@@ -39,11 +39,21 @@ import androidx.compose.ui.Modifier
  * @param onBack callback when the back affordance is tapped.
  * @param onSearch callback when the search affordance is tapped.
  * @param onShare callback when the share affordance is tapped.
+ * @param onPrint callback when the print affordance is tapped.
  * @param onDownload callback when the download affordance is tapped.
+ * @param onAnnotate callback when the highlight-annotation toggle is
+ *   tapped. Surfaced only when [showAnnotate] is `true`.
  * @param showBack visibility of the back affordance.
  * @param showSearch visibility of the search affordance.
  * @param showShare visibility of the share affordance.
+ * @param showPrint visibility of the print affordance. `false` by
+ *   default since printing is opt-in — wire [onPrint] *and* set this
+ *   to `true` to surface it.
  * @param showDownload visibility of the download affordance.
+ * @param showAnnotate visibility of the highlight-annotation toggle.
+ *   `false` by default — annotation tools are opt-in.
+ * @param annotateActive whether annotation mode is currently on, so
+ *   the toggle can render an "active" treatment.
  */
 @Composable
 public expect fun PdfViewerTopBar(
@@ -55,9 +65,14 @@ public expect fun PdfViewerTopBar(
     onBack: () -> Unit = {},
     onSearch: () -> Unit = {},
     onShare: () -> Unit = {},
+    onPrint: () -> Unit = {},
     onDownload: () -> Unit = {},
+    onAnnotate: () -> Unit = {},
     showBack: Boolean = true,
     showSearch: Boolean = false,
     showShare: Boolean = true,
+    showPrint: Boolean = false,
     showDownload: Boolean = true,
+    showAnnotate: Boolean = false,
+    annotateActive: Boolean = false,
 )

@@ -13,10 +13,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jetbrains.skia.Image as SkiaImage
 import platform.CoreGraphics.CGSizeMake
+import platform.CoreImage.CIContext
+import platform.CoreImage.CIFilter
+import platform.CoreImage.CIImage
+import platform.CoreImage.createCGImage
+import platform.CoreImage.filterWithName
 import platform.Foundation.NSData
 import platform.Foundation.create
+import platform.Foundation.setValue
 import platform.PDFKit.PDFDocument
 import platform.PDFKit.kPDFDisplayBoxMediaBox
+import platform.UIKit.UIImage
 import platform.UIKit.UIImagePNGRepresentation
 import platform.posix.memcpy
 import kotlin.math.max
@@ -48,7 +55,7 @@ internal actual class PdfPageRenderer private constructor(
         }
     }
 
-    actual suspend fun renderPage(index: Int, density: Float): ImageBitmap? = withContext(Dispatchers.Default) {
+    actual suspend fun renderPage(index: Int, density: Float, invert: Boolean): ImageBitmap? = withContext(Dispatchers.Default) {
         if (index !in 0 until pageCount) return@withContext null
         val page = document.pageAtIndex(index.toULong()) ?: return@withContext null
         val safeDensity = max(density, 0.5f).toDouble()
@@ -60,7 +67,11 @@ internal actual class PdfPageRenderer private constructor(
             height = pointHeight * safeDensity,
         )
         val image = page.thumbnailOfSize(pixelSize, forBox = kPDFDisplayBoxMediaBox)
-        val pngData = UIImagePNGRepresentation(image) ?: return@withContext null
+        // Dark-mode: run the UIImage through Core Image's CIColorInvert
+        // before the PNG round-trip. Falls back to the original image if
+        // the filter can't be built so a render never silently fails.
+        val finalImage = if (invert) invertImage(image) ?: image else image
+        val pngData = UIImagePNGRepresentation(finalImage) ?: return@withContext null
         SkiaImage.makeFromEncoded(pngData.toByteArray()).toComposeImageBitmap()
     }
 
@@ -87,6 +98,33 @@ internal actual class PdfPageRenderer private constructor(
 
 internal actual suspend fun openPdfRenderer(bytes: ByteArray): PdfPageRenderer? =
     PdfPageRenderer.open(bytes)
+
+/**
+ * Returns a colour-inverted copy of [image] for the viewer's dark-mode
+ * surface, using Core Image's `CIColorInvert` filter. Returns `null` if
+ * the image has no backing `CGImage`, the filter can't be created, or
+ * the filtered output can't be rendered back to a `CGImage` — callers
+ * fall back to the un-inverted image so a render never fails outright.
+ *
+ * `CIColorInvert` maps each RGB channel to `1 − channel` and leaves
+ * alpha intact, matching the Android (`ColorMatrix`) and Desktop
+ * (`RescaleOp`) backends.
+ *
+ * NOTE: targets the Apple toolchain — cannot be compiled on a non-macOS
+ * host; needs verification on macOS / a simulator.
+ */
+private fun invertImage(image: UIImage): UIImage? {
+    val cgImage = image.CGImage ?: return null
+    val input = CIImage.imageWithCGImage(cgImage)
+    val filter = CIFilter.filterWithName("CIColorInvert") ?: return null
+    filter.setValue(input, forKey = "inputImage")
+    val output = filter.outputImage ?: return null
+    val context = CIContext.context()
+    val outputCg = context.createCGImage(output, fromRect = output.extent()) ?: return null
+    // Preserve the original scale/orientation so the inverted bitmap
+    // stays the same pixel size as the source thumbnail.
+    return UIImage.imageWithCGImage(outputCg, scale = image.scale, orientation = image.imageOrientation)
+}
 
 /** Copies an [NSData] payload into a Kotlin [ByteArray]. */
 private fun NSData.toByteArray(): ByteArray {

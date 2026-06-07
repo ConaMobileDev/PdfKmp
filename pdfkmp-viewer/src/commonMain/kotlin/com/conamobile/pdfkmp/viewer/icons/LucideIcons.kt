@@ -72,6 +72,33 @@ public val LucideDownloadIcon: ImageVector = lucide("LucideDownload") {
     verticalLineTo(3f)
 }
 
+/** `printer` — Lucide outlined printer for the topbar print action. */
+public val LucidePrinterIcon: ImageVector = lucide("LucidePrinter") {
+    // Top paper feed (polyline 6 9 V 2 H 18 V 9).
+    moveTo(6f, 9f)
+    verticalLineTo(2f)
+    horizontalLineTo(18f)
+    verticalLineTo(9f)
+    // Printer body — the "U" wrapping the rounded chassis, leaving the
+    // bottom open where the output sheet sits.
+    moveTo(6f, 18f)
+    horizontalLineTo(4f)
+    arcToRelative(2f, 2f, 0f, false, true, -2f, -2f)
+    verticalLineToRelative(-5f)
+    arcToRelative(2f, 2f, 0f, false, true, 2f, -2f)
+    horizontalLineToRelative(16f)
+    arcToRelative(2f, 2f, 0f, false, true, 2f, 2f)
+    verticalLineToRelative(5f)
+    arcToRelative(2f, 2f, 0f, false, true, -2f, 2f)
+    horizontalLineToRelative(-2f)
+    // Output sheet (rect x=6 y=14 w=12 h=8).
+    moveTo(6f, 14f)
+    horizontalLineToRelative(12f)
+    verticalLineToRelative(8f)
+    horizontalLineTo(6f)
+    close()
+}
+
 /** `share-2` — Lucide outlined node graph variant of share. */
 public val LucideShareIcon: ImageVector = lucide("LucideShare") {
     // Top right node (circle approx, r=3, cx=18, cy=5).
@@ -100,6 +127,30 @@ public val LucideShareIcon: ImageVector = lucide("LucideShare") {
     lineTo(15.42f, 17.49f)
     moveTo(15.41f, 6.51f)
     lineTo(8.59f, 10.49f)
+}
+
+/**
+ * `highlighter` — Lucide outlined highlighter pen for the topbar
+ * annotation-mode toggle. Matches the 24×24 / stroke-2 outlined recipe
+ * of the other topbar glyphs.
+ */
+public val LucideHighlighterIcon: ImageVector = lucide("LucideHighlighter") {
+    // Pen nib + body (Lucide `highlighter`: m9 11-6 6v3h9l3-3).
+    moveTo(9f, 11f)
+    lineTo(3f, 17f)
+    verticalLineToRelative(3f)
+    horizontalLineToRelative(9f)
+    lineToRelative(3f, -3f)
+    // Marker barrel (m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4).
+    moveTo(22f, 12f)
+    lineToRelative(-4.6f, 4.6f)
+    arcToRelative(2f, 2f, 0f, false, true, -2.8f, 0f)
+    lineToRelative(-5.2f, -5.2f)
+    arcToRelative(2f, 2f, 0f, false, true, 0f, -2.8f)
+    lineTo(14f, 4f)
+    // Cap end (the diagonal tip cut, 14 4 6 6).
+    moveTo(14f, 4f)
+    lineToRelative(6f, 6f)
 }
 
 private inline fun lucide(

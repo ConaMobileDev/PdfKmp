@@ -37,7 +37,7 @@ internal actual class PdfPageRenderer private constructor(
         PageSize(box.width, box.height)
     }
 
-    actual suspend fun renderPage(index: Int, density: Float): ImageBitmap? {
+    actual suspend fun renderPage(index: Int, density: Float, invert: Boolean): ImageBitmap? {
         if (index !in 0 until pageCount) return null
         // Acquire the lock first, then switch to IO — a coroutine merely
         // waiting for the (single-threaded PdfBox) renderer shouldn't park an
@@ -49,7 +49,11 @@ internal actual class PdfPageRenderer private constructor(
                 // Android/iOS convention of pixelSize = points × density.
                 val dpi = max(density, 0.5f) * 72f
                 runCatching {
-                    renderer.renderImageWithDPI(index, dpi, ImageType.RGB).toComposeImageBitmap()
+                    val raw = renderer.renderImageWithDPI(index, dpi, ImageType.RGB)
+                    // Dark-mode: invert the BufferedImage before it crosses
+                    // into Skia — see [invertRgb].
+                    val image = if (invert) invertRgb(raw) else raw
+                    image.toComposeImageBitmap()
                 }.getOrNull()
             }
         }

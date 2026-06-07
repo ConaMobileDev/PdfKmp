@@ -28,6 +28,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.conamobile.pdfkmp.viewer.icons.LucideChevronLeftIcon
 import com.conamobile.pdfkmp.viewer.icons.LucideDownloadIcon
+import com.conamobile.pdfkmp.viewer.icons.LucideHighlighterIcon
+import com.conamobile.pdfkmp.viewer.icons.LucidePrinterIcon
 import com.conamobile.pdfkmp.viewer.icons.LucideSearchIcon
 import com.conamobile.pdfkmp.viewer.icons.LucideShareIcon
 
@@ -48,11 +50,11 @@ import com.conamobile.pdfkmp.viewer.icons.LucideShareIcon
  *     an equal gutter on each side, so the title stays optically
  *     centered and yields ([titleOverflow]) the moment it would
  *     otherwise crowd the icons — it can never push them off the bar.
- *   - **Trailing**: three 36×36 icon buttons (search, share,
- *     download), all tinted iOS Blue, equal weight — emphasis comes
- *     from position rather than colour. Each can be hidden via the
- *     matching `show…` flag. These are measured at their natural size
- *     and never shrink, regardless of how long the title is.
+ *   - **Trailing**: up to four 36×36 icon buttons (search, share,
+ *     print, download), all tinted iOS Blue, equal weight — emphasis
+ *     comes from position rather than colour. Each can be hidden via
+ *     the matching `show…` flag. These are measured at their natural
+ *     size and never shrink, regardless of how long the title is.
  *
  * @param title filename / document name centered between the two
  *   columns.
@@ -66,11 +68,21 @@ import com.conamobile.pdfkmp.viewer.icons.LucideShareIcon
  *   label is the hit target). Ignored when [showBack] is `false`.
  * @param onSearch tap callback for the search button.
  * @param onShare tap callback for the share button.
+ * @param onPrint tap callback for the print button.
  * @param onDownload tap callback for the download button.
+ * @param onAnnotate tap callback for the highlight-annotation toggle.
  * @param showBack hide / show the back chevron + label.
  * @param showSearch hide / show the search button.
  * @param showShare hide / show the share button.
+ * @param showPrint hide / show the print button. `false` by default
+ *   because printing is opt-in — wire [onPrint] *and* set this to
+ *   `true` to surface it.
  * @param showDownload hide / show the download button.
+ * @param showAnnotate hide / show the highlight-annotation toggle.
+ *   `false` by default — annotation tools are opt-in.
+ * @param annotateActive whether annotation mode is on; the toggle
+ *   tints its background iOS-blue while active so the engaged mode is
+ *   visible.
  * @param modifier applied to the outer [Column] container.
  */
 @Composable
@@ -82,11 +94,16 @@ public fun PdfViewerTopBarClassicIos(
     onBack: () -> Unit = {},
     onSearch: () -> Unit = {},
     onShare: () -> Unit = {},
+    onPrint: () -> Unit = {},
     onDownload: () -> Unit = {},
+    onAnnotate: () -> Unit = {},
     showBack: Boolean = true,
     showSearch: Boolean = false,
     showShare: Boolean = true,
+    showPrint: Boolean = false,
     showDownload: Boolean = true,
+    showAnnotate: Boolean = false,
+    annotateActive: Boolean = false,
 ) {
     Column(
         modifier = modifier
@@ -132,6 +149,14 @@ public fun PdfViewerTopBarClassicIos(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
                 ) {
+                    if (showAnnotate) {
+                        ClassicIosTrailingButton(
+                            icon = LucideHighlighterIcon,
+                            onClick = onAnnotate,
+                            contentDescription = "Highlight",
+                            active = annotateActive,
+                        )
+                    }
                     if (showSearch) {
                         ClassicIosTrailingButton(
                             icon = LucideSearchIcon,
@@ -144,6 +169,13 @@ public fun PdfViewerTopBarClassicIos(
                             icon = LucideShareIcon,
                             onClick = onShare,
                             contentDescription = "Share",
+                        )
+                    }
+                    if (showPrint) {
+                        ClassicIosTrailingButton(
+                            icon = LucidePrinterIcon,
+                            onClick = onPrint,
+                            contentDescription = "Print",
                         )
                     }
                     if (showDownload) {
@@ -316,11 +348,16 @@ private fun ClassicIosTrailingButton(
     icon: ImageVector,
     onClick: () -> Unit,
     contentDescription: String?,
+    active: Boolean = false,
 ) {
     Box(
         modifier = Modifier
             .size(36.dp)
             .clip(RoundedCornerShape(8.dp))
+            // A faint iOS-blue wash behind the glyph signals the engaged
+            // mode (e.g. annotation toggle on) — neutral background while
+            // idle, matching the other trailing buttons.
+            .background(if (active) ClassicIosActiveBackground else Color.Transparent)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -337,4 +374,5 @@ private val ClassicIosHeight = 52.dp
 private val ClassicIosBackground = Color(0xFFFFFFFF)
 private val ClassicIosTitleColor = Color(0xFF000000)
 private val ClassicIosAccent = Color(0xFF0A84FF)
+private val ClassicIosActiveBackground = Color(0x1A0A84FF) // ≈ 10% iOS Blue
 private val ClassicIosDivider = Color(0x14000000) // ≈ rgba(0,0,0,0.08)

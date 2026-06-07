@@ -1,7 +1,11 @@
 package com.conamobile.pdfkmp.viewer
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.compose.ui.graphics.ImageBitmap
@@ -40,7 +44,7 @@ internal actual class PdfPageRenderer private constructor(
         }
     }
 
-    actual suspend fun renderPage(index: Int, density: Float): ImageBitmap? {
+    actual suspend fun renderPage(index: Int, density: Float, invert: Boolean): ImageBitmap? {
         if (index !in 0 until pageCount) return null
         return mutex.withLock {
             if (closed) return@withLock null
@@ -52,10 +56,33 @@ internal actual class PdfPageRenderer private constructor(
                     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                     bitmap.eraseColor(Color.WHITE)
                     page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                    bitmap.asImageBitmap()
+                    val output = if (invert) invertColors(bitmap) else bitmap
+                    output.asImageBitmap()
                 }
             }
         }
+    }
+
+    /**
+     * Returns a colour-inverted copy of [source] for the viewer's
+     * dark-mode surface, drawing it through a [ColorMatrixColorFilter]
+     * that maps each RGB channel `out = −in + 255` while leaving alpha
+     * at `1×`. The matrix form keeps the inversion on the GPU-friendly
+     * paint path rather than walking every pixel in Kotlin.
+     */
+    private fun invertColors(source: Bitmap): Bitmap {
+        val inverted = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
+        val matrix = ColorMatrix(
+            floatArrayOf(
+                -1f, 0f, 0f, 0f, 255f,
+                0f, -1f, 0f, 0f, 255f,
+                0f, 0f, -1f, 0f, 255f,
+                0f, 0f, 0f, 1f, 0f,
+            ),
+        )
+        val paint = Paint().apply { colorFilter = ColorMatrixColorFilter(matrix) }
+        Canvas(inverted).drawBitmap(source, 0f, 0f, paint)
+        return inverted
     }
 
     actual fun close() {

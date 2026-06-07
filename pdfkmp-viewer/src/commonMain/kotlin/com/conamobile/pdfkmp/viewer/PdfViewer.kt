@@ -13,6 +13,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.horizontalScroll
@@ -215,6 +216,12 @@ private const val DENSITY_REFRESH_DELAY_MS: Long = 250L
  * @param hyperlinksEnabled toggles the invisible clickable overlay
  *   that opens hyperlink annotations in the system browser. Same
  *   "needs PdfKmp-built document" caveat as [textSelectable].
+ * @param invertColors renders each page bitmap colour-inverted (white
+ *   page → near-black, black text → white) for a dark-mode reading
+ *   surface. `false` by default. Only the rasterised preview is
+ *   inverted — the encoded PDF is untouched. The bitmap cache keys on
+ *   this flag, so flipping it re-renders rather than serving a stale
+ *   bitmap.
  * @param showPageIndicator toggles the bottom-centre `n / total`
  *   chip. `true` by default.
  * @param shareButtonAlignment positions the built-in share FAB inside
@@ -230,6 +237,18 @@ private const val DENSITY_REFRESH_DELAY_MS: Long = 250L
  *   identifying the "current" match. Rendered with a stronger fill
  *   and auto-scrolled into view whenever it changes. `-1` means no
  *   active match (all highlights painted with the resting fill).
+ * @param annotations in-viewer highlight annotations painted over the
+ *   pages, scaled with zoom exactly like [searchHighlights]. Overlay
+ *   only — never written into the PDF bytes (see [PdfViewerAnnotation]).
+ * @param annotationMode when `true`, a drag on a page draws a new
+ *   highlight ([onAnnotationCreated]) and a tap on an existing one
+ *   deletes it ([onAnnotationDeleted]); page panning is suppressed
+ *   while the mode is on so the drag is unambiguously a highlight.
+ *   `false` (the default) leaves the annotations as passive paint.
+ * @param onAnnotationCreated invoked with a freshly drawn highlight
+ *   when the user finishes a drag in [annotationMode].
+ * @param onAnnotationDeleted invoked with the index (into [annotations])
+ *   of the highlight a tap deleted in [annotationMode].
  */
 @Composable
 public fun PdfViewer(
@@ -248,11 +267,16 @@ public fun PdfViewer(
     showZoomControls: Boolean = true,
     textSelectable: Boolean = true,
     hyperlinksEnabled: Boolean = true,
+    invertColors: Boolean = false,
     showPageIndicator: Boolean = true,
     shareButtonAlignment: Alignment = Alignment.BottomEnd,
     shareButtonPadding: PaddingValues = PaddingValues(16.dp),
     searchHighlights: List<PdfSearchHighlight> = emptyList(),
     activeSearchHighlightIndex: Int = -1,
+    annotations: List<PdfViewerAnnotation> = emptyList(),
+    annotationMode: Boolean = false,
+    onAnnotationCreated: ((PdfViewerAnnotation) -> Unit)? = null,
+    onAnnotationDeleted: ((Int) -> Unit)? = null,
     cacheStrategy: PdfPageCacheStrategy = PdfPageCacheStrategy.Auto,
 ) {
     // Stage 1 — bytes. In-memory variants resolve synchronously via
@@ -352,6 +376,13 @@ public fun PdfViewer(
     }
     val activeSearchHighlight = searchHighlights.getOrNull(activeSearchHighlightIndex)
 
+    // Annotations carry their global list index so a per-page tap can
+    // report deletion against the canonical [annotations] list, not the
+    // per-page slice.
+    val annotationsByPage = remember(annotations) {
+        annotations.withIndex().groupBy { it.value.pageIndex }
+    }
+
     // When the active match changes, scroll the LazyColumn so the page
     // hosting it is visible. Page-level scroll is good enough for v1
     // — within-page scrolling would also need the zoomed-in horizontal
@@ -387,6 +418,7 @@ public fun PdfViewer(
                     doubleTapToZoom = doubleTapToZoom,
                     showZoomControls = showZoomControls,
                     effectiveDensity = stableEffectiveDensity,
+                    invertColors = invertColors,
                     pageBackgroundColor = pageBackgroundColor,
                     contentPadding = contentPadding,
                     pageSpacing = pageSpacing,
@@ -395,6 +427,10 @@ public fun PdfViewer(
                     urlLauncher = urlLauncher,
                     searchHighlightsByPage = searchHighlightsByPage,
                     activeSearchHighlight = activeSearchHighlight,
+                    annotationsByPage = annotationsByPage,
+                    annotationMode = annotationMode,
+                    onAnnotationCreated = onAnnotationCreated,
+                    onAnnotationDeleted = onAnnotationDeleted,
                     scope = scope,
                 )
                 if (showPageIndicator) {
@@ -450,11 +486,16 @@ public fun PdfViewer(
     showZoomControls: Boolean = true,
     textSelectable: Boolean = true,
     hyperlinksEnabled: Boolean = true,
+    invertColors: Boolean = false,
     showPageIndicator: Boolean = true,
     shareButtonAlignment: Alignment = Alignment.BottomEnd,
     shareButtonPadding: PaddingValues = PaddingValues(16.dp),
     searchHighlights: List<PdfSearchHighlight> = emptyList(),
     activeSearchHighlightIndex: Int = -1,
+    annotations: List<PdfViewerAnnotation> = emptyList(),
+    annotationMode: Boolean = false,
+    onAnnotationCreated: ((PdfViewerAnnotation) -> Unit)? = null,
+    onAnnotationDeleted: ((Int) -> Unit)? = null,
     cacheStrategy: PdfPageCacheStrategy = PdfPageCacheStrategy.Auto,
 ) {
     PdfViewer(
@@ -473,11 +514,16 @@ public fun PdfViewer(
         showZoomControls = showZoomControls,
         textSelectable = textSelectable,
         hyperlinksEnabled = hyperlinksEnabled,
+        invertColors = invertColors,
         showPageIndicator = showPageIndicator,
         shareButtonAlignment = shareButtonAlignment,
         shareButtonPadding = shareButtonPadding,
         searchHighlights = searchHighlights,
         activeSearchHighlightIndex = activeSearchHighlightIndex,
+        annotations = annotations,
+        annotationMode = annotationMode,
+        onAnnotationCreated = onAnnotationCreated,
+        onAnnotationDeleted = onAnnotationDeleted,
         cacheStrategy = cacheStrategy,
     )
 }
@@ -502,11 +548,16 @@ public fun PdfViewer(
     zoomEnabled: Boolean = true,
     doubleTapToZoom: Boolean = true,
     showZoomControls: Boolean = true,
+    invertColors: Boolean = false,
     showPageIndicator: Boolean = true,
     shareButtonAlignment: Alignment = Alignment.BottomEnd,
     shareButtonPadding: PaddingValues = PaddingValues(16.dp),
     searchHighlights: List<PdfSearchHighlight> = emptyList(),
     activeSearchHighlightIndex: Int = -1,
+    annotations: List<PdfViewerAnnotation> = emptyList(),
+    annotationMode: Boolean = false,
+    onAnnotationCreated: ((PdfViewerAnnotation) -> Unit)? = null,
+    onAnnotationDeleted: ((Int) -> Unit)? = null,
     cacheStrategy: PdfPageCacheStrategy = PdfPageCacheStrategy.Auto,
 ) {
     PdfViewer(
@@ -523,11 +574,16 @@ public fun PdfViewer(
         zoomEnabled = zoomEnabled,
         doubleTapToZoom = doubleTapToZoom,
         showZoomControls = showZoomControls,
+        invertColors = invertColors,
         showPageIndicator = showPageIndicator,
         shareButtonAlignment = shareButtonAlignment,
         shareButtonPadding = shareButtonPadding,
         searchHighlights = searchHighlights,
         activeSearchHighlightIndex = activeSearchHighlightIndex,
+        annotations = annotations,
+        annotationMode = annotationMode,
+        onAnnotationCreated = onAnnotationCreated,
+        onAnnotationDeleted = onAnnotationDeleted,
         cacheStrategy = cacheStrategy,
     )
 }
@@ -566,6 +622,7 @@ private fun PdfPagesContent(
     doubleTapToZoom: Boolean,
     showZoomControls: Boolean,
     effectiveDensity: Float,
+    invertColors: Boolean,
     pageBackgroundColor: Color,
     contentPadding: PaddingValues,
     pageSpacing: Dp,
@@ -574,6 +631,10 @@ private fun PdfPagesContent(
     urlLauncher: PdfUrlLauncher?,
     searchHighlightsByPage: Map<Int, List<PdfSearchHighlight>>,
     activeSearchHighlight: PdfSearchHighlight?,
+    annotationsByPage: Map<Int, List<IndexedValue<PdfViewerAnnotation>>>,
+    annotationMode: Boolean,
+    onAnnotationCreated: ((PdfViewerAnnotation) -> Unit)?,
+    onAnnotationDeleted: ((Int) -> Unit)?,
     scope: CoroutineScope,
 ) {
     // Prefetch loop — keeps the requested window around the currently
@@ -581,7 +642,7 @@ private fun PdfPagesContent(
     // delay when scrolling within the window. `collectLatest` cancels
     // the prior pass on every scroll, so a fast flick doesn't queue
     // up renders for pages the user is already past.
-    LaunchedEffect(renderer, cache, cacheStrategy, effectiveDensity) {
+    LaunchedEffect(renderer, cache, cacheStrategy, effectiveDensity, invertColors) {
         snapshotFlow { listState.firstVisibleItemIndex }
             .collectLatest { visible ->
                 val (before, after) = cacheStrategy.window(renderer.pageCount)
@@ -592,7 +653,7 @@ private fun PdfPagesContent(
                 // miss the window simply queue behind.
                 val order = buildPrefetchOrder(visible, start, end)
                 for (index in order) {
-                    renderAndCache(renderer, cache, index, effectiveDensity)
+                    renderAndCache(renderer, cache, index, effectiveDensity, invertColors)
                 }
             }
     }
@@ -660,8 +721,12 @@ private fun PdfPagesContent(
                         }
                     }
                 }
-                .pointerInput(maxZoom, zoomEnabled) {
-                    if (!zoomEnabled) return@pointerInput
+                .pointerInput(maxZoom, zoomEnabled, annotationMode) {
+                    // Annotation mode owns drags (a drag draws a highlight),
+                    // so the document-pan / pinch handler stands down while
+                    // it is on. Pinch-to-zoom resumes when the user toggles
+                    // the mode back off.
+                    if (!zoomEnabled || annotationMode) return@pointerInput
                     // Initial-pass handler so we can take precedence
                     // over the inner LazyColumn / horizontalScroll
                     // scrollables when the user is pinching or panning
@@ -744,8 +809,10 @@ private fun PdfPagesContent(
                         } while (event.changes.any { it.pressed })
                     }
                 }
-                .pointerInput(zoomEnabled, doubleTapToZoom) {
-                    if (!zoomEnabled || !doubleTapToZoom) return@pointerInput
+                .pointerInput(zoomEnabled, doubleTapToZoom, annotationMode) {
+                    // Suppress double-tap-to-zoom in annotation mode so a tap
+                    // is unambiguously a "delete this highlight" gesture.
+                    if (!zoomEnabled || !doubleTapToZoom || annotationMode) return@pointerInput
                     detectTapGestures(
                         onDoubleTap = {
                             val zoomingIn = zoom.value <= 1.01f
@@ -829,12 +896,17 @@ private fun PdfPagesContent(
                                 ?: PageSize(widthPoints = 1f, heightPoints = 1f),
                             pageBackgroundColor = pageBackgroundColor,
                             renderDensity = effectiveDensity,
+                            invertColors = invertColors,
                             textRuns = textRunsByPage[index].orEmpty(),
                             hyperlinks = hyperlinksByPage[index].orEmpty(),
                             urlLauncher = urlLauncher,
                             searchHighlights = searchHighlightsByPage[index].orEmpty(),
                             activeSearchHighlight = activeSearchHighlight
                                 ?.takeIf { it.pageIndex == index },
+                            annotations = annotationsByPage[index].orEmpty(),
+                            annotationMode = annotationMode,
+                            onAnnotationCreated = onAnnotationCreated,
+                            onAnnotationDeleted = onAnnotationDeleted,
                         )
                     }
                 }
@@ -890,16 +962,24 @@ private fun PdfPageItem(
     pageSize: PageSize,
     pageBackgroundColor: Color,
     renderDensity: Float,
+    invertColors: Boolean,
     textRuns: List<PdfTextRun>,
     hyperlinks: List<PdfHyperlink>,
     urlLauncher: PdfUrlLauncher?,
     searchHighlights: List<PdfSearchHighlight>,
     activeSearchHighlight: PdfSearchHighlight?,
+    annotations: List<IndexedValue<PdfViewerAnnotation>>,
+    annotationMode: Boolean,
+    onAnnotationCreated: ((PdfViewerAnnotation) -> Unit)?,
+    onAnnotationDeleted: ((Int) -> Unit)?,
 ) {
     // The bitmap state intentionally outlives `renderDensity` changes
     // so the previous low-resolution frame stays on screen while the
     // higher-density re-render is in flight — no zoom-induced flicker.
-    var bitmap by remember(renderer, index) {
+    // It DOES reset on an `invertColors` flip, though: a wrong-polarity
+    // frame lingering during a dark-mode toggle would flash the user,
+    // and the cache keys on invert so the correct bitmap returns fast.
+    var bitmap by remember(renderer, index, invertColors) {
         mutableStateOf<ImageBitmap?>(null)
     }
 
@@ -908,8 +988,8 @@ private fun PdfPageItem(
     // resident in `cache` and `renderAndCache` returns synchronously
     // after a single mutex round-trip. Only the first visit (or a
     // visit after the page has been evicted) actually rasterises.
-    LaunchedEffect(renderer, cache, index, renderDensity) {
-        val rendered = renderAndCache(renderer, cache, index, renderDensity)
+    LaunchedEffect(renderer, cache, index, renderDensity, invertColors) {
+        val rendered = renderAndCache(renderer, cache, index, renderDensity, invertColors)
         if (rendered != null) {
             bitmap = rendered
         }
@@ -944,24 +1024,191 @@ private fun PdfPageItem(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
-            if (textRuns.isNotEmpty()) {
-                PdfTextSelectionOverlay(
-                    textRuns = textRuns,
-                    pageSize = pageSize,
-                    modifier = Modifier.fillMaxSize(),
+            // Text-selection + hyperlink overlays stand down while
+            // annotation mode is active so the drag-to-highlight gesture
+            // isn't swallowed by the SelectionContainer's long-press or a
+            // link's clickable Box. They return verbatim when the mode is
+            // off.
+            if (!annotationMode) {
+                if (textRuns.isNotEmpty()) {
+                    PdfTextSelectionOverlay(
+                        textRuns = textRuns,
+                        pageSize = pageSize,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                if (hyperlinks.isNotEmpty() && urlLauncher != null) {
+                    // Drawn AFTER the text overlay so a clickable Box sits
+                    // on top — Compose's hit testing routes the tap to the
+                    // topmost node, and the SelectionContainer below
+                    // handles long-press separately so both gestures
+                    // coexist on the same region.
+                    PdfHyperlinkOverlay(
+                        hyperlinks = hyperlinks,
+                        pageSize = pageSize,
+                        onUrlClicked = urlLauncher::invoke,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+            // Annotation layer is always painted (so saved highlights show
+            // even when the tool is off) but only captures drag / tap
+            // gestures while [annotationMode] is on. Drawn last so its
+            // gesture surface sits above the others.
+            PdfAnnotationOverlay(
+                annotations = annotations,
+                pageIndex = index,
+                pageSize = pageSize,
+                annotationMode = annotationMode,
+                onAnnotationCreated = onAnnotationCreated,
+                onAnnotationDeleted = onAnnotationDeleted,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+}
+
+/**
+ * Renders the in-viewer highlight [annotations] over the rasterised
+ * page, and — while [annotationMode] is on — turns the page into a
+ * drawing surface: a **drag** paints a new translucent highlight
+ * ([onAnnotationCreated]); a **tap** on an existing highlight removes it
+ * ([onAnnotationDeleted]).
+ *
+ * Geometry mirrors [PdfSearchOverlay]: annotation boxes are stored in
+ * PDF points and scaled into the page Box's runtime pixel size, so a
+ * highlight tracks pinch zoom for free. Hit-testing maps the tap back
+ * from pixels into page points before consulting [hitTestAnnotation].
+ *
+ * When [annotationMode] is off the overlay is pure paint with no
+ * pointer input, so the underlying text-selection / hyperlink layers
+ * keep working.
+ */
+@Composable
+private fun PdfAnnotationOverlay(
+    annotations: List<IndexedValue<PdfViewerAnnotation>>,
+    pageIndex: Int,
+    pageSize: PageSize,
+    annotationMode: Boolean,
+    onAnnotationCreated: ((PdfViewerAnnotation) -> Unit)?,
+    onAnnotationDeleted: ((Int) -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    val widthPoints = pageSize.widthPoints.takeIf { it > 0f } ?: return
+    val heightPoints = pageSize.heightPoints.takeIf { it > 0f } ?: return
+
+    BoxWithConstraints(modifier = modifier) {
+        val scaleX = maxWidth.value / widthPoints
+        val scaleY = maxHeight.value / heightPoints
+
+        // Live drag rectangle in pixels (Offset corners), shown as a
+        // preview while the finger is down. Pixel-space because pointer
+        // positions arrive in pixels; converted to page points on release.
+        var dragStart by remember(pageIndex) { mutableStateOf<Offset?>(null) }
+        var dragCurrent by remember(pageIndex) { mutableStateOf<Offset?>(null) }
+
+        // Density to convert px (pointer space) → page points and dp (paint).
+        val density = LocalDensity.current
+
+        val gestureModifier = if (annotationMode) {
+            Modifier.pointerInput(pageIndex, annotations, onAnnotationCreated, onAnnotationDeleted) {
+                // Tap → delete the topmost annotation under the point.
+                detectTapGestures(
+                    onTap = { offset ->
+                        val xPts = with(density) { offset.x.toDp().value } / scaleX
+                        val yPts = with(density) { offset.y.toDp().value } / scaleY
+                        val hit = hitTestAnnotation(
+                            annotations = annotations.map { it.value },
+                            pageIndex = pageIndex,
+                            xPoints = xPts,
+                            yPoints = yPts,
+                        )
+                        if (hit >= 0) {
+                            // Translate the per-page slice index back to the
+                            // canonical [annotations] list index the host owns.
+                            onAnnotationDeleted?.invoke(annotations[hit].index)
+                        }
+                    },
+                )
+            }.pointerInput(pageIndex, onAnnotationCreated) {
+                // Drag → draw a new highlight. Separate pointerInput so the
+                // tap and drag detectors don't fight over the same gesture.
+                detectDragGestures(
+                    onDragStart = { start ->
+                        dragStart = start
+                        dragCurrent = start
+                    },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        dragCurrent = change.position
+                    },
+                    onDragEnd = {
+                        val start = dragStart
+                        val end = dragCurrent
+                        if (start != null && end != null) {
+                            val sxPts = with(density) { start.x.toDp().value } / scaleX
+                            val syPts = with(density) { start.y.toDp().value } / scaleY
+                            val exPts = with(density) { end.x.toDp().value } / scaleX
+                            val eyPts = with(density) { end.y.toDp().value } / scaleY
+                            buildAnnotationFromDrag(
+                                pageIndex = pageIndex,
+                                startX = sxPts,
+                                startY = syPts,
+                                endX = exPts,
+                                endY = eyPts,
+                                pageWidth = widthPoints,
+                                pageHeight = heightPoints,
+                            )?.let { onAnnotationCreated?.invoke(it) }
+                        }
+                        dragStart = null
+                        dragCurrent = null
+                    },
+                    onDragCancel = {
+                        dragStart = null
+                        dragCurrent = null
+                    },
                 )
             }
-            if (hyperlinks.isNotEmpty() && urlLauncher != null) {
-                // Drawn AFTER the text overlay so a clickable Box sits
-                // on top — Compose's hit testing routes the tap to the
-                // topmost node, and the SelectionContainer below
-                // handles long-press separately so both gestures
-                // coexist on the same region.
-                PdfHyperlinkOverlay(
-                    hyperlinks = hyperlinks,
-                    pageSize = pageSize,
-                    onUrlClicked = urlLauncher::invoke,
-                    modifier = Modifier.fillMaxSize(),
+        } else {
+            Modifier
+        }
+
+        Box(modifier = Modifier.fillMaxSize().then(gestureModifier)) {
+            // Saved annotations.
+            annotations.forEach { (_, annotation) ->
+                Box(
+                    modifier = Modifier
+                        .offset(
+                            x = (annotation.x * scaleX).dp,
+                            y = (annotation.y * scaleY).dp,
+                        )
+                        .size(
+                            width = (annotation.width * scaleX).dp,
+                            height = (annotation.height * scaleY).dp,
+                        )
+                        .background(annotation.color),
+                )
+            }
+
+            // Live drag preview (pixels → dp).
+            val start = dragStart
+            val current = dragCurrent
+            if (annotationMode && start != null && current != null) {
+                val leftPx = minOf(start.x, current.x)
+                val topPx = minOf(start.y, current.y)
+                val widthPx = kotlin.math.abs(current.x - start.x)
+                val heightPx = kotlin.math.abs(current.y - start.y)
+                Box(
+                    modifier = Modifier
+                        .offset(
+                            x = with(density) { leftPx.toDp() },
+                            y = with(density) { topPx.toDp() },
+                        )
+                        .size(
+                            width = with(density) { widthPx.toDp() },
+                            height = with(density) { heightPx.toDp() },
+                        )
+                        .background(PdfViewerAnnotation.DefaultHighlightColor),
                 )
             }
         }

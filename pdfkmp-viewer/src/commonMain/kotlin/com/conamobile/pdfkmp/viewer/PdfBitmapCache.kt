@@ -8,16 +8,22 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * Identifies a cached bitmap. Keyed on both the page index *and* a
- * quantised density bucket so that a base-density bitmap and a
- * zoomed-in bitmap of the same page can coexist (the viewer switches
- * between them when the user starts / stops pinching).
+ * Identifies a cached bitmap. Keyed on the page index, a quantised
+ * density bucket, *and* the colour-inversion flag so that a base-density
+ * bitmap and a zoomed-in bitmap of the same page can coexist (the
+ * viewer switches between them when the user starts / stops pinching),
+ * and so toggling dark-mode ([invert]) never serves a stale,
+ * wrong-polarity bitmap from the cache.
  *
  * Density is bucketed to the nearest 0.25 to keep the cache from
  * accumulating dozens of near-identical entries as the user fiddles
  * with zoom — see [bucketOf].
  */
-internal data class PdfPageCacheKey(val index: Int, val densityBucket: Int) {
+internal data class PdfPageCacheKey(
+    val index: Int,
+    val densityBucket: Int,
+    val invert: Boolean,
+) {
     internal companion object {
         /**
          * Quantise [density] to a discrete bucket. 0.25-precision is
@@ -139,8 +145,10 @@ private fun estimateBytes(bitmap: ImageBitmap): Long =
 /**
  * Renders [index] at [density] through [renderer], routing the
  * result through [cache] so the next request for the same key is a
- * straight memory hit. Catches platform OOMs (Android only — iOS
- * gets killed by the kernel) and retries once after halving the
+ * straight memory hit. [invert] flows into both the render call and
+ * the cache key so a normal and a dark-mode bitmap of the same page
+ * never overwrite each other. Catches platform OOMs (Android only —
+ * iOS gets killed by the kernel) and retries once after halving the
  * cache, so the worst-case experience for an over-eager prefetch
  * window is "renders return null" rather than a process crash.
  */
@@ -149,12 +157,13 @@ internal suspend fun renderAndCache(
     cache: PdfBitmapCache,
     index: Int,
     density: Float,
+    invert: Boolean,
 ): ImageBitmap? {
-    val key = PdfPageCacheKey(index, PdfPageCacheKey.bucketOf(density))
+    val key = PdfPageCacheKey(index, PdfPageCacheKey.bucketOf(density), invert)
     cache.get(key)?.let { return it }
 
     return try {
-        val rendered = renderer.renderPage(index, density) ?: return null
+        val rendered = renderer.renderPage(index, density, invert) ?: return null
         cache.put(key, rendered)
         rendered
     } catch (e: CancellationException) {
@@ -162,7 +171,7 @@ internal suspend fun renderAndCache(
     } catch (t: Throwable) {
         cache.trim()
         try {
-            val rendered = renderer.renderPage(index, density) ?: return null
+            val rendered = renderer.renderPage(index, density, invert) ?: return null
             cache.put(key, rendered)
             rendered
         } catch (e: CancellationException) {

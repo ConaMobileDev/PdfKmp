@@ -35,12 +35,19 @@ internal expect class PdfPageRenderer {
      * Returns `null` when the page cannot be rendered (corrupt input,
      * out-of-range index, etc.).
      *
+     * When [invert] is `true` the produced bitmap is colour-inverted
+     * per RGB channel (white → near-black, black → white) while alpha
+     * is preserved — the dark-mode reading surface exposed via
+     * [KmpPdfViewer]'s `invertColors` flag. The inversion is applied to
+     * the rasterised preview only; the encoded PDF bytes are never
+     * touched.
+     *
      * Implementations must be safe to call concurrently from multiple
      * coroutines — the Android backend serialises through a [Mutex]
      * because [android.graphics.pdf.PdfRenderer] only allows one open
      * page at a time; the iOS PDFKit backend is naturally re-entrant.
      */
-    suspend fun renderPage(index: Int, density: Float): ImageBitmap?
+    suspend fun renderPage(index: Int, density: Float, invert: Boolean): ImageBitmap?
 
     /** Releases the underlying file descriptor / native handle. */
     fun close()

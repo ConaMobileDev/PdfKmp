@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -99,7 +100,18 @@ import com.conamobile.pdfkmp.PdfDocument
  * @param showSearch hide / show the search affordance. Auto-
  *   suppressed when the source carries no text runs.
  * @param showShare hide / show the share affordance.
+ * @param showPrint hide / show the print affordance. `false` by
+ *   default — printing is opt-in. When `true` the topbar surfaces a
+ *   print button that hands the bytes to the platform print pipeline
+ *   (`PrintManager` on Android, `UIPrintInteractionController` on iOS,
+ *   `java.awt.print.PrinterJob` on Desktop).
  * @param showDownload hide / show the download affordance.
+ * @param invertColors render every page bitmap colour-inverted (white
+ *   page → near-black, black text → white) for a dark-mode reading
+ *   surface. `false` by default. The inversion happens on the
+ *   rasterised preview only — the encoded PDF and the bytes handed to
+ *   share / save / print are untouched. Pair it with a dark
+ *   [pageBackgroundColor] / [backgroundColor] for a seamless look.
  * @param showPageIndicator hide / show the bottom-centre page chip.
  * @param zoomEnabled master switch for pinch + double-tap zoom.
  * @param doubleTapToZoom independent toggle for the double-tap
@@ -126,6 +138,21 @@ import com.conamobile.pdfkmp.PdfDocument
  *   [PdfPageCacheStrategy] for the trade-offs; defaults to
  *   [PdfPageCacheStrategy.Auto] which picks a window based on
  *   available RAM and never crashes.
+ * @param showAnnotationTools surfaces a highlight-annotation toggle in
+ *   the topbar. `false` by default — annotation tools are opt-in. When
+ *   the toggle is on, dragging on a page paints a translucent yellow
+ *   highlight and tapping an existing highlight deletes it. **Overlay
+ *   only:** highlights live in viewer state and are never written into
+ *   the PDF bytes — share / save / print get the original document
+ *   (see [PdfViewerAnnotation]).
+ * @param initialAnnotations highlights to restore into the viewer on
+ *   first composition (e.g. a list previously persisted by your app via
+ *   [onAnnotationsChanged]). The viewer owns the mutable copy from then
+ *   on.
+ * @param onAnnotationsChanged invoked with the full annotation list
+ *   every time the user adds or removes a highlight, so the host can
+ *   persist them. `null` (the default) drops the changes — annotations
+ *   then live only for the composition's lifetime.
  */
 @Composable
 public fun KmpPdfViewer(
@@ -140,13 +167,18 @@ public fun KmpPdfViewer(
     showBack: Boolean = onBack != null,
     showSearch: Boolean = true,
     showShare: Boolean = true,
+    showPrint: Boolean = false,
     showDownload: Boolean = true,
+    invertColors: Boolean = false,
     showPageIndicator: Boolean = true,
     zoomEnabled: Boolean = true,
     doubleTapToZoom: Boolean = true,
     showZoomControls: Boolean = true,
     textSelectable: Boolean = true,
     hyperlinksEnabled: Boolean = true,
+    showAnnotationTools: Boolean = false,
+    initialAnnotations: List<PdfViewerAnnotation> = emptyList(),
+    onAnnotationsChanged: ((List<PdfViewerAnnotation>) -> Unit)? = null,
     backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
     pageBackgroundColor: Color = Color.White,
     contentPadding: PaddingValues = PaddingValues(0.dp),
@@ -172,19 +204,60 @@ public fun KmpPdfViewer(
     }
 
     val resolvedBytes = bytes
-    val textRuns = remember(source) { source.textRuns() }
+    val authoredTextRuns = remember(source) { source.textRuns() }
 
     val shareAction = if (showShare) rememberPdfShareAction() else null
     val saveAction = if (showDownload) rememberPdfSaveAction() else null
+    val printAction = if (showPrint) rememberPdfPrintAction() else null
 
     var searchOpen by remember(source) { mutableStateOf(false) }
     var searchQuery by remember(source) { mutableStateOf("") }
     var activeMatchIndex by remember(source) { mutableIntStateOf(0) }
 
-    val highlights = remember(textRuns, searchQuery, searchOpen) {
-        if (!searchOpen || searchQuery.isBlank()) emptyList()
-        else searchPdfText(textRuns, searchQuery)
+    // In-viewer highlight annotations — owned here so the host only has to
+    // hand in [initialAnnotations] and observe [onAnnotationsChanged]. The
+    // list resets when the source changes (a new document gets a fresh set,
+    // seeded from the host's initial list). Held in a SnapshotStateList so
+    // an add / remove recomposes the page overlays immediately.
+    val annotations = remember(source) {
+        mutableStateListOf<PdfViewerAnnotation>().apply { addAll(initialAnnotations) }
     }
+    var annotationMode by remember(source) { mutableStateOf(false) }
+
+    // Search highlights come from one of two paths:
+    //
+    // - **PdfKmp-authored documents** carry exact text positions
+    //   (authoredTextRuns) and match synchronously through the shared
+    //   [searchPdfText] matcher — the original behaviour, unchanged.
+    // - **External documents** (bytes / file / network / asset) have no
+    //   captured runs, so we fall back to the platform text engine via
+    //   [searchPdfBytes] — PdfBox on Desktop, PDFKit on iOS; Android
+    //   returns nothing (no PDF text API). This runs off the main thread
+    //   and parses lazily, only once the user is actually searching.
+    val usesExternalSearch = authoredTextRuns.isEmpty()
+
+    val authoredHighlights = remember(authoredTextRuns, searchQuery, searchOpen) {
+        if (usesExternalSearch || !searchOpen || searchQuery.isBlank()) emptyList()
+        else searchPdfText(authoredTextRuns, searchQuery)
+    }
+
+    // External-document matches resolve asynchronously; hold them in state
+    // and recompute whenever the (already-debounced-by-typing) query
+    // changes. The platform call is cancellation-aware via the
+    // LaunchedEffect key, so a stale query's parse is dropped when the
+    // user keeps typing.
+    var externalHighlights by remember(source) { mutableStateOf<List<PdfSearchHighlight>>(emptyList()) }
+    LaunchedEffect(source, searchOpen, searchQuery, resolvedBytes) {
+        if (!usesExternalSearch) return@LaunchedEffect
+        if (!searchOpen || searchQuery.isBlank()) {
+            externalHighlights = emptyList()
+            return@LaunchedEffect
+        }
+        val ready = resolvedBytes ?: return@LaunchedEffect
+        externalHighlights = searchPdfBytes(ready, searchQuery)
+    }
+
+    val highlights = if (usesExternalSearch) externalHighlights else authoredHighlights
 
     // Reset the active index whenever the result set changes so it
     // doesn't dangle past the new size.
@@ -237,16 +310,28 @@ public fun KmpPdfViewer(
                         val ready = resolvedBytes
                         if (ready != null) shareAction?.invoke(ready, fileName)
                     },
+                    onPrint = {
+                        val ready = resolvedBytes
+                        if (ready != null) printAction?.invoke(ready, fileName)
+                    },
                     onDownload = {
                         val ready = resolvedBytes
                         if (ready != null) saveAction?.invoke(ready, fileName)
                     },
+                    onAnnotate = { annotationMode = !annotationMode },
                     showBack = showBack,
-                    // Auto-suppress the search affordance when the
-                    // source can't produce matches.
-                    showSearch = showSearch && textRuns.isNotEmpty(),
+                    // Auto-suppress the search affordance only when the
+                    // source can never produce matches: an external
+                    // document on a platform with no text API (Android).
+                    // PdfKmp-authored docs (authoredTextRuns non-empty)
+                    // and external docs on Desktop / iOS keep search.
+                    showSearch = showSearch &&
+                        (authoredTextRuns.isNotEmpty() || pdfViewerSupportsTextExtraction),
                     showShare = showShare,
+                    showPrint = showPrint,
                     showDownload = showDownload,
+                    showAnnotate = showAnnotationTools,
+                    annotateActive = annotationMode,
                 )
             }
         }
@@ -302,10 +387,23 @@ public fun KmpPdfViewer(
                     showZoomControls = showZoomControls,
                     textSelectable = textSelectable,
                     hyperlinksEnabled = hyperlinksEnabled,
+                    invertColors = invertColors,
                     showPageIndicator = showPageIndicator,
                     cacheStrategy = cacheStrategy,
                     searchHighlights = highlights,
                     activeSearchHighlightIndex = activeMatchIndex,
+                    annotations = annotations,
+                    annotationMode = annotationMode,
+                    onAnnotationCreated = { annotation ->
+                        annotations.add(annotation)
+                        onAnnotationsChanged?.invoke(annotations.toList())
+                    },
+                    onAnnotationDeleted = { index ->
+                        if (index in annotations.indices) {
+                            annotations.removeAt(index)
+                            onAnnotationsChanged?.invoke(annotations.toList())
+                        }
+                    },
                 )
             }
         }
@@ -331,13 +429,18 @@ public fun KmpPdfViewer(
     showBack: Boolean = onBack != null,
     showSearch: Boolean = true,
     showShare: Boolean = true,
+    showPrint: Boolean = false,
     showDownload: Boolean = true,
+    invertColors: Boolean = false,
     showPageIndicator: Boolean = true,
     zoomEnabled: Boolean = true,
     doubleTapToZoom: Boolean = true,
     showZoomControls: Boolean = true,
     textSelectable: Boolean = true,
     hyperlinksEnabled: Boolean = true,
+    showAnnotationTools: Boolean = false,
+    initialAnnotations: List<PdfViewerAnnotation> = emptyList(),
+    onAnnotationsChanged: ((List<PdfViewerAnnotation>) -> Unit)? = null,
     backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
     pageBackgroundColor: Color = Color.White,
     contentPadding: PaddingValues = PaddingValues(0.dp),
@@ -358,13 +461,18 @@ public fun KmpPdfViewer(
         showBack = showBack,
         showSearch = showSearch,
         showShare = showShare,
+        showPrint = showPrint,
         showDownload = showDownload,
+        invertColors = invertColors,
         showPageIndicator = showPageIndicator,
         zoomEnabled = zoomEnabled,
         doubleTapToZoom = doubleTapToZoom,
         showZoomControls = showZoomControls,
         textSelectable = textSelectable,
         hyperlinksEnabled = hyperlinksEnabled,
+        showAnnotationTools = showAnnotationTools,
+        initialAnnotations = initialAnnotations,
+        onAnnotationsChanged = onAnnotationsChanged,
         backgroundColor = backgroundColor,
         pageBackgroundColor = pageBackgroundColor,
         contentPadding = contentPadding,
@@ -395,13 +503,18 @@ public fun KmpPdfViewer(
     showBack: Boolean = onBack != null,
     showSearch: Boolean = true,
     showShare: Boolean = true,
+    showPrint: Boolean = false,
     showDownload: Boolean = true,
+    invertColors: Boolean = false,
     showPageIndicator: Boolean = true,
     zoomEnabled: Boolean = true,
     doubleTapToZoom: Boolean = true,
     showZoomControls: Boolean = true,
     textSelectable: Boolean = true,
     hyperlinksEnabled: Boolean = true,
+    showAnnotationTools: Boolean = false,
+    initialAnnotations: List<PdfViewerAnnotation> = emptyList(),
+    onAnnotationsChanged: ((List<PdfViewerAnnotation>) -> Unit)? = null,
     backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
     pageBackgroundColor: Color = Color.White,
     contentPadding: PaddingValues = PaddingValues(0.dp),
@@ -422,13 +535,18 @@ public fun KmpPdfViewer(
         showBack = showBack,
         showSearch = showSearch,
         showShare = showShare,
+        showPrint = showPrint,
         showDownload = showDownload,
+        invertColors = invertColors,
         showPageIndicator = showPageIndicator,
         zoomEnabled = zoomEnabled,
         doubleTapToZoom = doubleTapToZoom,
         showZoomControls = showZoomControls,
         textSelectable = textSelectable,
         hyperlinksEnabled = hyperlinksEnabled,
+        showAnnotationTools = showAnnotationTools,
+        initialAnnotations = initialAnnotations,
+        onAnnotationsChanged = onAnnotationsChanged,
         backgroundColor = backgroundColor,
         pageBackgroundColor = pageBackgroundColor,
         contentPadding = contentPadding,
@@ -456,7 +574,8 @@ public fun KmpPdfViewer(
             "title = title, fileName = fileName, onBack = onBack, backLabel = backLabel, " +
             "titleOverflow = titleOverflow, " +
             "showTopBar = showTopBar, showBack = showBack, showSearch = showSearch, " +
-            "showShare = showShare, showDownload = showDownload, " +
+            "showShare = showShare, showPrint = showPrint, showDownload = showDownload, " +
+            "invertColors = invertColors, " +
             "showPageIndicator = showPageIndicator, zoomEnabled = zoomEnabled, " +
             "doubleTapToZoom = doubleTapToZoom, showZoomControls = showZoomControls, " +
             "textSelectable = textSelectable, " +
@@ -480,13 +599,18 @@ public fun KmpPdfViewer(
     showBack: Boolean = onBack != null,
     showSearch: Boolean = true,
     showShare: Boolean = true,
+    showPrint: Boolean = false,
     showDownload: Boolean = true,
+    invertColors: Boolean = false,
     showPageIndicator: Boolean = true,
     zoomEnabled: Boolean = true,
     doubleTapToZoom: Boolean = true,
     showZoomControls: Boolean = true,
     textSelectable: Boolean = true,
     hyperlinksEnabled: Boolean = true,
+    showAnnotationTools: Boolean = false,
+    initialAnnotations: List<PdfViewerAnnotation> = emptyList(),
+    onAnnotationsChanged: ((List<PdfViewerAnnotation>) -> Unit)? = null,
     backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
     pageBackgroundColor: Color = Color.White,
     contentPadding: PaddingValues = PaddingValues(0.dp),
@@ -507,13 +631,18 @@ public fun KmpPdfViewer(
         showBack = showBack,
         showSearch = showSearch,
         showShare = showShare,
+        showPrint = showPrint,
         showDownload = showDownload,
+        invertColors = invertColors,
         showPageIndicator = showPageIndicator,
         zoomEnabled = zoomEnabled,
         doubleTapToZoom = doubleTapToZoom,
         showZoomControls = showZoomControls,
         textSelectable = textSelectable,
         hyperlinksEnabled = hyperlinksEnabled,
+        showAnnotationTools = showAnnotationTools,
+        initialAnnotations = initialAnnotations,
+        onAnnotationsChanged = onAnnotationsChanged,
         backgroundColor = backgroundColor,
         pageBackgroundColor = pageBackgroundColor,
         contentPadding = contentPadding,

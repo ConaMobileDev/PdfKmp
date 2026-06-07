@@ -1,6 +1,6 @@
 # pdfkmp-viewer
 
-Compose Multiplatform PDF viewer with **document-wide pinch zoom**, **text selection**, **hyperlinks**, **share**, and **save to Downloads** — works on Android (`android.graphics.pdf.PdfRenderer`) and iOS (`PDFKit`).
+Compose Multiplatform PDF viewer with **document-wide pinch zoom**, **text selection** (Android / iOS / Desktop), **hyperlinks**, **search**, **highlight annotations**, **share**, and **save to Downloads** — works on Android (`android.graphics.pdf.PdfRenderer`), iOS (`PDFKit`), and Desktop (PdfBox).
 
 > **Looking for the document generator?** That lives in the sibling [`:pdfkmp`](../pdfkmp) module. This module renders any PDF — but text selection and hyperlinks only light up for documents authored through the PdfKmp DSL.
 
@@ -138,9 +138,11 @@ PdfViewer(document = doc, doubleTapToZoom = false)    // pinch only
 
 ### Text selection
 
-Long-press text to select, drag the handles to extend, hit **Copy** in the system menu — exactly like reading a PDF in Apple Books or Samsung Notes.
+Long-press text to select, drag the handles to extend, hit **Copy** in the system menu — exactly like reading a PDF in Apple Books or Samsung Notes. Works on **Android, iOS, and Desktop** alike.
 
-How it works: during rendering, the library captures every laid-out text run with its position (`PdfTextRun`). The viewer overlays an invisible `BasicText` layer inside `SelectionContainer` on top of each rasterised page bitmap. Compose's selection UI (handles, magnifier, copy menu) comes for free.
+How it works: during rendering, the library captures every laid-out text run with its position (`PdfTextRun`). The viewer overlays an invisible `BasicText` layer inside `SelectionContainer` on top of each rasterised page bitmap. Compose's selection UI (handles, magnifier, copy menu) comes for free. Because the overlay is pure common Compose, the same long-press selection + copy behaviour lights up on every platform — including iOS, where the `SelectionContainer` copy menu writes through Compose's clipboard.
+
+Need a programmatic copy (e.g. your own "Copy all text" button)? The public `pdfViewerCopyToClipboard(text)` writes straight to the platform pasteboard — Android `ClipboardManager`, iOS `UIPasteboard.generalPasteboard`, Desktop AWT clipboard.
 
 > **Limitation**: text selection only works for PDFs **built through the PdfKmp DSL** (`pdf { … }` / `pdfAsync { … }`). For arbitrary external PDFs, the bytes don't carry text-position metadata and the selection layer has nothing to render.
 
@@ -166,6 +168,55 @@ PdfViewer(document = doc, hyperlinksEnabled = false)   // suppress overlay
 ```
 
 Same caveat as text selection: only works for PdfKmp-built documents.
+
+### Search
+
+`KmpPdfViewer` ships an inline search bar (tap the search icon in the topbar). Type a query, then step through matches with the ↑ / ↓ chips — each match is highlighted on the page (amber, with the active match in a stronger fill) and scrolled into view. Two engines feed it, picked automatically:
+
+- **PdfKmp-authored documents** search their captured text runs directly (the `searchPdfText` matcher). Exact, instant, and works on **every** platform.
+- **External PDFs** (network, file picker, bundled third-party files — anything without captured runs) fall back to the **platform text engine**. The search bar UI is identical; only the source of the match rectangles differs.
+
+Per-platform search support:
+
+| Document source | Android | iOS | Desktop |
+|---|---|---|---|
+| PdfKmp `pdf { … }` (`PdfSource.Document`) | ✅ | ✅ | ✅ |
+| External bytes / file / URL / asset | ❌ (no PDF text API) | ✅ (PDFKit `findString`) | ✅ (PdfBox `PDFTextStripper`) |
+
+> **Android external-PDF search is unavailable**: `android.graphics.pdf.PdfRenderer` exposes no text-extraction API, so an external document on Android carries nothing to match against. The search affordance is auto-suppressed there (PdfKmp-authored documents still search normally because they carry their own text). On iOS and Desktop, external-document text is extracted lazily off the main thread the first time you search and cached for the session, so subsequent queries are cheap.
+>
+> External-PDF match rectangles come from the platform engine's glyph geometry (PDFKit selection bounds / PdfBox direction-adjusted boxes), mapped into the viewer's page-point space — they line up with the rasterised text the same way the PdfKmp path does.
+
+```kotlin
+KmpPdfViewer(document = doc, showSearch = true)   // search button (default)
+KmpPdfViewer(bytes = external, showSearch = true) // searchable on iOS / Desktop; hidden on Android
+```
+
+### Highlight annotations (overlay)
+
+`KmpPdfViewer` ships an **opt-in** highlight tool. Pass `showAnnotationTools = true` to surface a highlighter toggle in the topbar (it matches the existing icon style — a Lucide outlined highlighter, tinted iOS-blue / filled to show the active state). Tap the toggle to enter annotation mode, then:
+
+- **Drag** on a page → draws a translucent yellow highlight rectangle (page-coordinate space, scaled with zoom exactly like search highlights).
+- **Tap** an existing highlight → deletes it.
+
+While annotation mode is on, page panning / pinch-zoom and text selection stand down so the drag is unambiguously a new highlight; toggle the tool back off to resume reading.
+
+State lives in viewer state and is surfaced to the host so it can persist / restore:
+
+```kotlin
+var saved by remember { mutableStateOf(loadAnnotations()) }   // your storage
+
+KmpPdfViewer(
+    document = doc,
+    showAnnotationTools = true,
+    initialAnnotations = saved,                       // restore on open
+    onAnnotationsChanged = { saved = it; persist(it) } // called on every add / delete
+)
+```
+
+Each highlight is a `PdfViewerAnnotation(pageIndex, x, y, width, height, color)` in PDF points (top-left origin, Y down) — the same coordinate space as `PdfTextRun` / `PdfSearchHighlight`, so it lines up with the rasterised page at any zoom. Two pure helpers back the gesture logic and are reusable / unit-testable: `hitTestAnnotation(...)` (which highlight a tap landed on) and `buildAnnotationFromDrag(...)` (normalise + clamp a drag into a box).
+
+> **Honest scope — overlay only.** Highlights are painted *on top of* the rasterised page; they are **not** written back into the PDF bytes. The bytes handed to share / save / print are the untouched original, so a highlight won't appear if the same PDF is opened in another reader. Persist the `PdfViewerAnnotation` list yourself (via `onAnnotationsChanged`) and restore it through `initialAnnotations`.
 
 ### Share
 
@@ -298,9 +349,13 @@ PdfViewer(
 | `PdfSource.of(document)` / `PdfSource.of(bytes)` | Convenience factories |
 | `rememberPdfShareAction()` | Action that triggers the system share sheet |
 | `rememberPdfSaveAction()` | Action that writes to Downloads / Documents |
+| `rememberPdfPrintAction()` | Action that opens the platform print pipeline (`PrintManager` / `UIPrintInteractionController` / `PrinterJob`) — surfaced in the topbar via `showPrint = true` |
 | `PdfShareFab(document / bytes, …)` | Material 3 share FAB ready for the `overlay` slot |
 | `PdfSaveFab(document / bytes, …)` | Material 3 save FAB ready for the `overlay` slot |
 | `PdfShareIcon` / `PdfSaveIcon` | Inline `ImageVector`s — reuse for visual consistency in your own toolbars |
+| `PdfViewerAnnotation(pageIndex, x, y, width, height, color)` | One overlay highlight, in PDF points |
+| `hitTestAnnotation(...)` / `buildAnnotationFromDrag(...)` | Pure annotation helpers (tap hit-test / drag → box) |
+| `pdfViewerCopyToClipboard(text)` | Writes text to the platform pasteboard (Android / iOS / Desktop) |
 
 `PdfViewer` parameters (defaults shown):
 
@@ -318,10 +373,23 @@ PdfViewer(
 | `doubleTapToZoom: Boolean` | `true` | Independent double-tap toggle |
 | `textSelectable: Boolean` | `true` | Selection overlay |
 | `hyperlinksEnabled: Boolean` | `true` | Clickable link overlay |
+| `invertColors: Boolean` | `false` | Dark-mode page rendering — bitmaps are colour-inverted (white → near-black, black text → white); the encoded PDF and the share / save / print bytes are untouched |
 | `showPageIndicator: Boolean` | `true` | Bottom-centre `n / total` chip |
 | `shareButtonAlignment` | `BottomEnd` | Default share FAB anchor (ignored once `overlay` is non-empty) |
 | `shareButtonPadding` | `16.dp` | Default share FAB inset |
+| `annotations: List<PdfViewerAnnotation>` | `emptyList()` | Highlight annotations painted over the pages (overlay only) |
+| `annotationMode: Boolean` | `false` | When `true`, drag draws a highlight and tap deletes one |
+| `onAnnotationCreated: ((PdfViewerAnnotation) -> Unit)?` | `null` | Fired when a drag in annotation mode produces a highlight |
+| `onAnnotationDeleted: ((Int) -> Unit)?` | `null` | Fired with the annotation index a tap deleted |
 | `overlay: @Composable BoxScope.() -> Unit` | `{}` | Free-form slot rendered on top of the viewer — see [Customising the chrome](#customising-the-chrome) |
+
+`KmpPdfViewer` adds the higher-level, state-owning annotation API on top of those low-level `PdfViewer` hooks:
+
+| Parameter | Default | Purpose |
+|---|---|---|
+| `showAnnotationTools: Boolean` | `false` | Surfaces the highlighter toggle in the topbar |
+| `initialAnnotations: List<PdfViewerAnnotation>` | `emptyList()` | Highlights restored into viewer state on first composition |
+| `onAnnotationsChanged: ((List<PdfViewerAnnotation>) -> Unit)?` | `null` | Fired with the full list on every add / delete, for persistence |
 
 ## Architecture
 
@@ -351,10 +419,13 @@ The recording driver is a transparent decorator around the platform `PdfDriver` 
 
 ## Limitations
 
-- **Text selection / hyperlinks only on PdfKmp-built documents.** External PDFs (network, file picker, etc.) are bitmap-only. Adding general PDF text extraction would require a parser dependency (PdfBox-Android, PDF.js, …) — a separate `:pdfkmp-viewer-text` module is on the roadmap.
+- **Text selection / hyperlinks only on PdfKmp-built documents.** External PDFs (network, file picker, etc.) are bitmap-only for *selection* and *hyperlinks* — those overlays need the captured text-position metadata that only the PdfKmp DSL produces. **Search**, however, now works on external PDFs on iOS (PDFKit) and Desktop (PdfBox); see the [Search](#search) support matrix. Android external-PDF search stays unavailable because `PdfRenderer` exposes no text API.
 - **Selection bounding boxes use Compose font metrics**, not the original PDF font. Text content selects correctly (paste produces the right characters) but the highlight rectangle hugs the Compose-laid-out text, which can drift a pixel or two from the rasterised glyphs.
+- **External-PDF search highlights are approximate per platform.** Match rectangles come from the platform engine (PDFKit selection bounds / PdfBox direction-adjusted glyph boxes), so a complex / rotated layout can land the highlight a pixel or two off the glyph. The matched text is always correct; only the rectangle is approximate.
+- **Highlight annotations are overlay-only.** They are painted on top of the rasterised page and never written into the PDF bytes, so share / save / print export the untouched original and the highlight won't show in another reader. Persist the `PdfViewerAnnotation` list via `onAnnotationsChanged` and restore through `initialAnnotations`. Burning highlights into the PDF stream is out of scope for this initial version.
 - **No print preview integration**. Use `Intent.ACTION_VIEW` / `UIDocumentInteractionController` from your own UI if needed.
 - **iPad share** falls through silently when the host app hasn't set a popover anchor — see KDoc on `ShareLauncher.ios.kt`.
+- **Very large documents prefetch a tighter window.** The default `cacheStrategy = PdfPageCacheStrategy.Auto` is adaptive: documents up to ~200 pages keep a symmetric prefetch window (3 pages either side); past that the window tightens to a forward-biased `(before = 2, after = 4)` so the viewer never tries to warm a wide ring that the memory budget would only evict. Pass an explicit `PdfPageCacheStrategy.Window(...)` / `.All` to override. A hard per-platform byte budget (Android: 25 % of `maxMemory()`, iOS: 200 MB) always caps total cache size and evicts least-recently-used pages first, so a wide window can never crash the process.
 
 ## Versioning
 

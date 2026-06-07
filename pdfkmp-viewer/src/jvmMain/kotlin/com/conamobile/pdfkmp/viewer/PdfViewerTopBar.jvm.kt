@@ -21,11 +21,16 @@ public actual fun PdfViewerTopBar(
     onBack: () -> Unit,
     onSearch: () -> Unit,
     onShare: () -> Unit,
+    onPrint: () -> Unit,
     onDownload: () -> Unit,
+    onAnnotate: () -> Unit,
     showBack: Boolean,
     showSearch: Boolean,
     showShare: Boolean,
+    showPrint: Boolean,
     showDownload: Boolean,
+    showAnnotate: Boolean,
+    annotateActive: Boolean,
 ) {
     PdfViewerTopBarMinimalMono(
         title = title,
@@ -35,10 +40,15 @@ public actual fun PdfViewerTopBar(
         onBack = onBack,
         onSearch = onSearch,
         onShare = onShare,
+        onPrint = onPrint,
         onDownload = onDownload,
+        onAnnotate = onAnnotate,
         showBack = showBack,
         showSearch = showSearch,
         showShare = showShare,
+        showPrint = showPrint,
         showDownload = showDownload,
+        showAnnotate = showAnnotate,
+        annotateActive = annotateActive,
     )
 }

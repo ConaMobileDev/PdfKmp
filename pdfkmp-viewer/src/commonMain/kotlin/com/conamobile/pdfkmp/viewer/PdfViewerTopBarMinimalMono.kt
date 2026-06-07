@@ -28,6 +28,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Text
 import com.conamobile.pdfkmp.viewer.icons.LucideArrowLeftIcon
 import com.conamobile.pdfkmp.viewer.icons.LucideDownloadIcon
+import com.conamobile.pdfkmp.viewer.icons.LucideHighlighterIcon
+import com.conamobile.pdfkmp.viewer.icons.LucidePrinterIcon
 import com.conamobile.pdfkmp.viewer.icons.LucideSearchIcon
 import com.conamobile.pdfkmp.viewer.icons.LucideShareIcon
 
@@ -45,7 +47,8 @@ import com.conamobile.pdfkmp.viewer.icons.LucideShareIcon
  *      `11sp` meta line `#8E8E93` truncated with ellipsis)
  *   3. 38×38 search chip (same gray, hidden when [onSearch] is null)
  *   4. 38×38 share chip (same gray, hidden when [onShare] is null)
- *   5. 38×38 download chip — **primary action**, filled `#111111`
+ *   5. 38×38 print chip (same gray, hidden when [showPrint] is false)
+ *   6. 38×38 download chip — **primary action**, filled `#111111`
  *      with white icon, hidden when [onDownload] is null.
  *
  * Recommended as the platform-agnostic default, especially on Android
@@ -66,16 +69,28 @@ import com.conamobile.pdfkmp.viewer.icons.LucideShareIcon
  *   [showSearch] is `false`.
  * @param onShare tap callback for the share chip. Ignored when
  *   [showShare] is `false`.
+ * @param onPrint tap callback for the print chip. Ignored when
+ *   [showPrint] is `false`.
  * @param onDownload tap callback for the primary download chip.
  *   Ignored when [showDownload] is `false`.
+ * @param onAnnotate tap callback for the highlight-annotation toggle.
+ *   Ignored when [showAnnotate] is `false`.
  * @param showBack hide / show the back chip independently of
  *   [onBack]. `true` by default.
  * @param showSearch hide / show the search chip. `false` by default
  *   because search is opt-in — wire [onSearch] *and* set this to
  *   `true` to surface it.
  * @param showShare hide / show the share chip. `true` by default.
+ * @param showPrint hide / show the print chip. `false` by default
+ *   because printing is opt-in — wire [onPrint] *and* set this to
+ *   `true` to surface it.
  * @param showDownload hide / show the primary download chip. `true`
  *   by default.
+ * @param showAnnotate hide / show the highlight-annotation toggle
+ *   chip. `false` by default — annotation tools are opt-in.
+ * @param annotateActive whether annotation mode is on; the chip
+ *   renders with the filled "primary" treatment while active so the
+ *   user can see the mode is engaged.
  * @param modifier applied to the outer [Row] container.
  */
 @Composable
@@ -87,11 +102,16 @@ public fun PdfViewerTopBarMinimalMono(
     onBack: () -> Unit = {},
     onSearch: () -> Unit = {},
     onShare: () -> Unit = {},
+    onPrint: () -> Unit = {},
     onDownload: () -> Unit = {},
+    onAnnotate: () -> Unit = {},
     showBack: Boolean = true,
     showSearch: Boolean = false,
     showShare: Boolean = true,
+    showPrint: Boolean = false,
     showDownload: Boolean = true,
+    showAnnotate: Boolean = false,
+    annotateActive: Boolean = false,
 ) {
     Column(
         modifier = modifier
@@ -134,6 +154,17 @@ public fun PdfViewerTopBarMinimalMono(
                     .weight(1f)
                     .padding(horizontal = 6.dp),
             )
+            if (showAnnotate) {
+                MinimalMonoChip(
+                    icon = LucideHighlighterIcon,
+                    onClick = onAnnotate,
+                    contentDescription = "Highlight",
+                    // Reuse the filled "primary" treatment to signal the
+                    // active state — the same affordance the download chip
+                    // uses, so an engaged tool reads as "on".
+                    primary = annotateActive,
+                )
+            }
             if (showSearch) {
                 MinimalMonoChip(
                     icon = LucideSearchIcon,
@@ -146,6 +177,13 @@ public fun PdfViewerTopBarMinimalMono(
                     icon = LucideShareIcon,
                     onClick = onShare,
                     contentDescription = "Share",
+                )
+            }
+            if (showPrint) {
+                MinimalMonoChip(
+                    icon = LucidePrinterIcon,
+                    onClick = onPrint,
+                    contentDescription = "Print",
                 )
             }
             if (showDownload) {
