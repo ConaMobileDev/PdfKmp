@@ -35,6 +35,7 @@ internal class KmpPdfCanvas(
     private val pageIndex: Int,
     private val navigation: KmpNavigation,
     private val textEncoder: WinAnsiTextEncoder,
+    private val fontRegistry: KmpFontRegistry,
 ) : PdfCanvas {
 
     private val out: ByteBuffer get() = page.content
@@ -62,15 +63,35 @@ internal class KmpPdfCanvas(
     override fun drawText(text: String, x: Float, y: Float, style: TextStyle) {
         if (text.isEmpty()) return
         textEncoder.noteFont(style.font)
-        val codes = textEncoder.encodeToWinAnsi(text)
-        if (codes.isEmpty()) return
+        val plan = fontRegistry.planRun(text, style)
 
-        val face = HelveticaFace.forStyle(style.fontWeight, style.fontStyle)
-        val fontName = resources.fontName(face)
         val size = style.fontSize.value
+        // Each text path picks its own font resource, glyph string, and ascent.
+        val fontRef: KmpFontRef
+        val glyphString: String
+        val ascent: Float
+        when (plan) {
+            is KmpFontRegistry.RunPlan.Helvetica -> {
+                val codes = textEncoder.encodeToWinAnsi(text)
+                if (codes.isEmpty()) return
+                fontRef = KmpFontRef.Helvetica(plan.face)
+                glyphString = encodeStringLiteral(codes)
+                ascent = ascentPoints(size)
+            }
+            is KmpFontRegistry.RunPlan.Embedded -> {
+                val embedded = plan.embedded
+                fontRef = KmpFontRef.Embedded(embedded)
+                glyphString = encodeGlyphHex(embedded, text)
+                // Embedded faces carry their own ascent; the layout engine
+                // measured against the same value (see KmpFontMetrics).
+                ascent = embedded.ascentThousandths / 1000f * size
+            }
+        }
+
+        val fontName = resources.fontName(fontRef)
         // PdfKmp positions text by its top-left corner; PDF text operators place
         // the baseline. Offset down by the ascent to convert.
-        val baselineTop = y + ascentPoints(size)
+        val baselineTop = y + ascent
 
         applyAlpha(style.color.alpha)
         setFillColor(style.color)
@@ -78,7 +99,7 @@ internal class KmpPdfCanvas(
         op("/$fontName ${n(size)} Tf")
         if (style.letterSpacing.value != 0f) op("${n(style.letterSpacing.value)} Tc")
         op("${n(x)} ${n(fy(baselineTop))} Td")
-        op("${encodeStringLiteral(codes)} Tj")
+        op("$glyphString Tj")
         op("ET")
         // Reset character spacing so it doesn't leak into later text runs that
         // assume the default zero.
@@ -102,6 +123,45 @@ internal class KmpPdfCanvas(
             }
         }
         append(')')
+    }
+
+    /**
+     * Encodes [text] as a hex glyph-id string `<…>` for an embedded Identity-H
+     * font: each code point is mapped to its two-byte glyph id (CID == GID under
+     * the Identity CIDToGIDMap) and emitted as four hex digits. Recording usage
+     * here keeps the subset and width array complete; the same code points were
+     * already noted at measure time, and re-noting is idempotent.
+     */
+    private fun encodeGlyphHex(embedded: KmpEmbeddedFont, text: String): String = buildString {
+        append('<')
+        var i = 0
+        while (i < text.length) {
+            val cp = codePointAt(text, i)
+            i += if (cp > 0xFFFF) 2 else 1
+            val gid = embedded.use(cp)
+            append(hex4(gid))
+        }
+        append('>')
+    }
+
+    private fun hex4(v: Int): String {
+        val s = v.toString(16).uppercase()
+        return "0".repeat((4 - s.length).coerceAtLeast(0)) + s
+    }
+
+    /**
+     * Decodes the Unicode code point at [index], combining a surrogate pair into
+     * one astral code point — stdlib char arithmetic to stay wasm-compatible.
+     */
+    private fun codePointAt(text: String, index: Int): Int {
+        val high = text[index]
+        if (high.isHighSurrogate() && index + 1 < text.length) {
+            val low = text[index + 1]
+            if (low.isLowSurrogate()) {
+                return 0x10000 + ((high.code - 0xD800) shl 10) + (low.code - 0xDC00)
+            }
+        }
+        return high.code
     }
 
     // -- Rectangles -------------------------------------------------------

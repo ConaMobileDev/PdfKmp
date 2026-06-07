@@ -4,20 +4,20 @@ import com.conamobile.pdfkmp.PdfLog
 import com.conamobile.pdfkmp.style.PdfFont
 
 /**
- * Converts arbitrary text into WinAnsi byte codes for the Standard-14 fonts and
- * tracks the two "your text wasn't fully representable" conditions this phase-1
- * backend can't honour, warning about each at most once per document.
+ * Converts text into WinAnsi byte codes for the Standard-14 (Helvetica) text
+ * path, and warns once per document when a code point falls through to the `?`
+ * replacement.
  *
  * One instance is shared between [KmpFontMetrics] and [KmpPdfCanvas] for a whole
- * document so measurement and drawing always make the same substitution
- * decisions (a glyph dropped at measure time must be dropped at draw time too)
- * and so each warning fires exactly once no matter how many runs trigger it:
+ * document so measurement and drawing make the same substitution decisions (a
+ * glyph dropped at measure time must be dropped at draw time too) and so the
+ * warning fires exactly once no matter how many runs trigger it.
  *
- * - A code point outside WinAnsi (CJK, emoji, most non-Latin scripts) is
- *   replaced with `?` ([WinAnsiEncoding.REPLACEMENT]) — the only repertoire the
- *   non-embedded base fonts can show — and warns once.
- * - A [PdfFont.Custom] reference can't be embedded yet by this backend, so it
- *   maps to the Helvetica face matching its weight/style and warns once.
+ * This only governs the Helvetica path now: [KmpFontRegistry] handles the two
+ * embedding paths (custom fonts and the bundled-Inter Unicode fallback). The
+ * `?` substitution is therefore the *last-resort* path — reached only for a code
+ * point that is outside WinAnsi **and** has no glyph in any embeddable font (or
+ * whose font failed to parse).
  *
  * Surrogate pairs are decoded to their full code point before lookup so an
  * astral character counts as one (unmappable) glyph rather than two stray `?`s.
@@ -25,21 +25,14 @@ import com.conamobile.pdfkmp.style.PdfFont
 internal class WinAnsiTextEncoder {
 
     private var warnedUnmappable = false
-    private var warnedCustomFont = false
 
     /**
-     * Records that a run used [font], warning once if it is a [PdfFont.Custom]
-     * (which this backend can't embed yet). Called by both the metrics and the
-     * canvas so the warning fires regardless of which path sees the font first.
+     * Hook retained for symmetry with the embedding paths; the registry now owns
+     * all custom-font diagnostics, so this is a no-op for [PdfFont.Custom].
      */
+    @Suppress("UNUSED_PARAMETER")
     fun noteFont(font: PdfFont) {
-        if (font is PdfFont.Custom && !warnedCustomFont) {
-            warnedCustomFont = true
-            PdfLog.warn(
-                "Custom font '${font.name}' is not embedded by the pure-Kotlin PDF " +
-                    "backend yet; falling back to the Standard-14 Helvetica face.",
-            )
-        }
+        // Intentionally empty: custom-font handling moved to KmpFontRegistry.
     }
 
     /**

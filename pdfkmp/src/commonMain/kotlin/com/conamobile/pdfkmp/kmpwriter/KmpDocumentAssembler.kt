@@ -25,12 +25,27 @@ internal class KmpDocumentAssembler(
     private val metadata: PdfMetadata,
     private val pages: List<KmpPage>,
     private val navigation: KmpNavigation,
+    /**
+     * When `true` (the default) page content streams are written with
+     * `/FlateDecode`; when `false` they are written verbatim. The switch exists
+     * so tests can compare the compressed and uncompressed paths and assert the
+     * deflated output round-trips to the same operators.
+     */
+    private val compressStreams: Boolean = true,
 ) {
 
     private val writer = PdfObjectWriter()
 
-    /** Shared font objects, keyed by face → object number. */
-    private val fontObjects = HashMap<HelveticaFace, Int>()
+    /**
+     * Shared font objects, keyed by font reference → the object number the page
+     * `/Font` dictionary points at. For a Helvetica face this is the Type1 font
+     * dict; for an embedded face it is the Type0 font dict (the head of its
+     * five-object CIDFontType2 set).
+     */
+    private val fontObjects = HashMap<KmpFontRef, Int>()
+
+    /** Embedded-font writers paired with their Type0 base object number, for phase 2. */
+    private val embeddedWriters = ArrayList<Pair<KmpEmbeddedFontWriter, Int>>()
 
     /** Shared ExtGState objects, keyed by rounded alpha → object number. */
     private val alphaObjects = HashMap<Float, Int>()
@@ -86,8 +101,23 @@ internal class KmpDocumentAssembler(
 
     private fun allocateSharedResources() {
         for (page in pages) {
-            for (face in page.resources.fonts) {
-                fontObjects.getOrPut(face) { writer.allocate() }
+            for (ref in page.resources.fonts) {
+                fontObjects.getOrPut(ref) {
+                    when (ref) {
+                        // A Helvetica face is a single Type1 font object.
+                        is KmpFontRef.Helvetica -> writer.allocate()
+                        // An embedded face needs five consecutive objects; the
+                        // first (Type0) is what the page references, the rest are
+                        // its descendant/descriptor/file/ToUnicode set.
+                        is KmpFontRef.Embedded -> {
+                            val embeddedWriter = KmpEmbeddedFontWriter(ref.font)
+                            val base = writer.allocate()
+                            repeat(embeddedWriter.objectCount - 1) { writer.allocate() }
+                            embeddedWriters.add(embeddedWriter to base)
+                            base
+                        }
+                    }
+                }
             }
             for (alpha in page.resources.alphaStates) {
                 alphaObjects.getOrPut(alpha) { writer.allocate() }
@@ -96,13 +126,19 @@ internal class KmpDocumentAssembler(
     }
 
     private fun writeSharedResources() {
-        for ((face, obj) in fontObjects) {
-            // A Standard-14 base font: no embedding, WinAnsi encoding. The viewer
-            // supplies the outlines and the AFM metrics we measured against.
-            writer.writeObject(
-                obj,
-                "<< /Type /Font /Subtype /Type1 /BaseFont /${face.baseFont} /Encoding /WinAnsiEncoding >>",
-            )
+        for ((ref, obj) in fontObjects) {
+            if (ref is KmpFontRef.Helvetica) {
+                // A Standard-14 base font: no embedding, WinAnsi encoding. The
+                // viewer supplies the outlines and the AFM metrics we measured.
+                writer.writeObject(
+                    obj,
+                    "<< /Type /Font /Subtype /Type1 /BaseFont /${ref.face.baseFont} /Encoding /WinAnsiEncoding >>",
+                )
+            }
+        }
+        // Embedded fonts: subset, compress, and emit the five-object set each.
+        for ((embeddedWriter, base) in embeddedWriters) {
+            embeddedWriter.write(writer, base)
         }
         for ((alpha, obj) in alphaObjects) {
             val a = PdfSyntax.formatNumber(alpha)
@@ -175,7 +211,12 @@ internal class KmpDocumentAssembler(
     }
 
     private fun writeContentStream(pageIndex: Int, contentObj: Int) {
-        writer.writeStreamObject(contentObj, "<< >>", pages[pageIndex].content.toByteArray())
+        val raw = pages[pageIndex].content.toByteArray()
+        if (compressStreams) {
+            writer.writeStreamObject(contentObj, "<< /Filter /FlateDecode >>", Deflate.zlibCompress(raw))
+        } else {
+            writer.writeStreamObject(contentObj, "<< >>", raw)
+        }
     }
 
     private fun writePagesTree(pagesObj: Int, catalogObj: Int) {

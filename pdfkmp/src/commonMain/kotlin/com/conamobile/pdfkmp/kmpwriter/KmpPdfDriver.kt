@@ -20,26 +20,33 @@ import com.conamobile.pdfkmp.style.PdfFont
  * outline entry, and the info dictionary are turned into numbered indirect
  * objects with byte-exact cross-reference offsets.
  *
- * Supported in this phase: Standard-14 Helvetica text (WinAnsi, no embedding),
- * vector shapes / paths / clips, dashed & dotted lines, constant-alpha
- * transparency and transparency groups, axial & radial gradients, PNG (8-bit
- * truecolor/grayscale, non-interlaced) and JPEG image embedding, URI &
- * internal-destination links, named destinations, outline bookmarks, and the
- * document info dictionary.
+ * Supported: Standard-14 Helvetica text (WinAnsi, no embedding); embedded
+ * TrueType text via subsetted CIDFontType2 / Type0 (Identity-H) for
+ * [PdfFont.Custom] fonts and for the bundled Inter fallback that covers
+ * non-WinAnsi code points (e.g. Cyrillic), with a ToUnicode CMap for text
+ * extraction; Flate-compressed content streams; vector shapes / paths / clips,
+ * dashed & dotted lines, constant-alpha transparency and transparency groups,
+ * axial & radial gradients, PNG (8-bit truecolor/grayscale, non-interlaced) and
+ * JPEG image embedding, URI & internal-destination links, named destinations,
+ * outline bookmarks, and the document info dictionary.
  *
- * Not yet supported (each warns once and is skipped): custom-font embedding
- * (falls back to Helvetica), characters outside WinAnsi (substituted with `?`),
- * AcroForm fields (static fallback kept), and [PdfMetadata.encryption] /
- * [PdfMetadata.attachments] (ignored). The driver is single-use and not
- * thread-safe.
+ * Not supported (each warns once and is skipped): CFF/OpenType-PS custom fonts
+ * (only TrueType outlines subset; falls back to Helvetica), code points with no
+ * glyph in any available font (rendered as a missing-glyph box or `?`), synthetic
+ * bold/italic for a single-face custom font, AcroForm fields (static fallback
+ * kept), and [PdfMetadata.encryption] / [PdfMetadata.attachments] (ignored). The
+ * driver is single-use and not thread-safe.
  */
 internal class KmpPdfDriver(
     private val metadata: PdfMetadata,
     customFonts: List<PdfFont.Custom>,
+    /** Forwarded to the assembler: Flate-compress content streams when `true`. */
+    private val compressStreams: Boolean = true,
 ) : PdfDriver {
 
     private val textEncoder = WinAnsiTextEncoder()
-    private val metrics = KmpFontMetrics(textEncoder)
+    private val fontRegistry = KmpFontRegistry(customFonts)
+    private val metrics = KmpFontMetrics(textEncoder, fontRegistry)
     private val navigation = KmpNavigation()
     private val pages = ArrayList<KmpPage>()
 
@@ -47,8 +54,6 @@ internal class KmpPdfDriver(
     private var open = true
 
     init {
-        // Warn up front (once) that custom fonts won't be embedded by this phase.
-        for (font in customFonts) textEncoder.noteFont(font)
         if (metadata.encryption != null) {
             PdfLog.warn("Encryption is not supported by the pure-Kotlin PDF backend; the document is written unencrypted.")
         }
@@ -65,7 +70,7 @@ internal class KmpPdfDriver(
         val page = KmpPage(width = size.width.value, height = size.height.value)
         pages.add(page)
         currentPage = page
-        return KmpPdfCanvas(page, pages.size - 1, navigation, textEncoder)
+        return KmpPdfCanvas(page, pages.size - 1, navigation, textEncoder, fontRegistry)
     }
 
     override fun endPage() {
@@ -77,6 +82,6 @@ internal class KmpPdfDriver(
         check(open) { "Driver already finished" }
         check(currentPage == null) { "endPage() must be called before finish()" }
         open = false
-        return KmpDocumentAssembler(metadata, pages, navigation).assemble()
+        return KmpDocumentAssembler(metadata, pages, navigation, compressStreams).assemble()
     }
 }

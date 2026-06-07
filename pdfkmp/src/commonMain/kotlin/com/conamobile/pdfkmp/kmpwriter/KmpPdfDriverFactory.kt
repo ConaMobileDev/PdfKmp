@@ -14,10 +14,17 @@ import com.conamobile.pdfkmp.style.PdfFont
  * upcoming wasmJs target will wire up as its default, and the way the JVM tests
  * validate the backend against PdfBox.
  */
-internal class KmpPdfDriverFactory : PdfDriverFactory {
+internal class KmpPdfDriverFactory(
+    /**
+     * Whether emitted content streams are Flate-compressed. Defaults to `true`
+     * (the published behaviour); tests flip it to `false` to exercise and compare
+     * the uncompressed path against the deflated one.
+     */
+    private val compressStreams: Boolean = true,
+) : PdfDriverFactory {
 
     override fun create(
         metadata: PdfMetadata,
         customFonts: List<PdfFont.Custom>,
-    ): PdfDriver = KmpPdfDriver(metadata, customFonts)
+    ): PdfDriver = KmpPdfDriver(metadata, customFonts, compressStreams)
 }

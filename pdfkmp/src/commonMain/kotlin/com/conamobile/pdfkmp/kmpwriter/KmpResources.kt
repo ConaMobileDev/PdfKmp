@@ -16,9 +16,9 @@ package com.conamobile.pdfkmp.kmpwriter
  */
 internal class KmpResources {
 
-    /** Helvetica faces used on the page, in first-use order; index is the `/F<n>` suffix. */
-    val fonts: MutableList<HelveticaFace> = ArrayList()
-    private val fontNames = HashMap<HelveticaFace, String>()
+    /** Fonts used on the page, in first-use order; index is the `/F<n>` suffix. */
+    val fonts: MutableList<KmpFontRef> = ArrayList()
+    private val fontNames = HashMap<KmpFontRef, String>()
 
     /** Distinct constant-alpha graphics states, keyed by rounded alpha value. */
     val alphaStates: MutableList<Float> = ArrayList()
@@ -30,10 +30,10 @@ internal class KmpResources {
     /** Image XObjects referenced by `Do`, in first-use order. */
     val images: MutableList<KmpImageDef> = ArrayList()
 
-    /** Returns the `/F<n>` name for [face], registering it on first use. */
-    fun fontName(face: HelveticaFace): String = fontNames.getOrPut(face) {
+    /** Returns the `/F<n>` name for [ref], registering it on first use. */
+    fun fontName(ref: KmpFontRef): String = fontNames.getOrPut(ref) {
         val name = "F${fonts.size}"
-        fonts.add(face)
+        fonts.add(ref)
         name
     }
 
@@ -68,6 +68,27 @@ internal class KmpResources {
     private fun roundAlpha(alpha: Float): Float {
         val clamped = alpha.coerceIn(0f, 1f)
         return (clamped * 1000f + 0.5f).toInt() / 1000f
+    }
+}
+
+/**
+ * A page-level reference to a font resource, deduplicated so the page `/Font`
+ * dictionary lists each distinct face once. Two flavours mirror the backend's
+ * two text paths: a non-embedded Standard-14 [Helvetica] face and an embedded
+ * [Embedded] CIDFontType2 face. Equality is identity-meaningful so a given face
+ * shares one `/F<n>` slot across all its draws on a page.
+ */
+internal sealed interface KmpFontRef {
+    /** A Standard-14 Helvetica face (no embedding). */
+    data class Helvetica(val face: HelveticaFace) : KmpFontRef
+
+    /**
+     * An embedded CIDFontType2 face. Keyed by the [KmpEmbeddedFont] instance,
+     * which the registry pools document-wide, so referential identity is enough.
+     */
+    class Embedded(val font: KmpEmbeddedFont) : KmpFontRef {
+        override fun equals(other: Any?): Boolean = other is Embedded && other.font === font
+        override fun hashCode(): Int = font.hashCode()
     }
 }
 
