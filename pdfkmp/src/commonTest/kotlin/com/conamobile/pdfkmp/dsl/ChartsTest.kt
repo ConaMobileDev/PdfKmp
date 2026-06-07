@@ -99,6 +99,79 @@ class ChartsTest {
     }
 
     @Test
+    fun barChart_gridLines_addFaintStrokesAndMaxLabel() {
+        val withGrid = paths { barChart(series, width = 200.dp, height = 100.dp, gridLines = 4) }
+        val noGrid = paths { barChart(series, width = 200.dp, height = 100.dp, gridLines = 0) }
+
+        // Grid lines are extra stroked paths beyond the baseline axis.
+        assertTrue(
+            withGrid.stroked().size > noGrid.stroked().size,
+            "gridLines must add stroked grid paths",
+        )
+        // The max value (20) is shown as an axis label.
+        val texts = texts { barChart(series, width = 200.dp, height = 100.dp, gridLines = 4) }
+        assertTrue("20" in texts, "max-value axis label must render with a grid: $texts")
+    }
+
+    @Test
+    fun barChart_showAxisFalse_omitsBaseline() {
+        // With no axis and no grid and no values, only the filled bars remain.
+        val paths = paths {
+            barChart(series, width = 200.dp, height = 100.dp, showValues = false, showAxis = false)
+        }
+        assertTrue(paths.stroked().isEmpty(), "showAxis = false must omit the baseline")
+        assertEquals(series.size, paths.filled().size, "bars still render")
+    }
+
+    // endregion
+
+    // region — stacked bar chart
+
+    private val groups = listOf(
+        StackedBarGroup(
+            "Q1",
+            listOf(
+                StackedBarSegment("Sales", 10f, PdfColor.Red),
+                StackedBarSegment("Costs", 4f, PdfColor.Blue),
+            ),
+        ),
+        StackedBarGroup(
+            "Q2",
+            listOf(
+                StackedBarSegment("Sales", 14f, PdfColor.Red),
+                StackedBarSegment("Costs", 6f, PdfColor.Blue),
+            ),
+        ),
+    )
+
+    @Test
+    fun stackedBarChart_emitsOneFilledPathPerSegment() {
+        val paths = paths {
+            stackedBarChart(groups, width = 200.dp, height = 100.dp, showLegend = false)
+        }
+        val expectedSegments = groups.sumOf { it.segments.size }
+        assertEquals(expectedSegments, paths.filled().size, "one filled rect per stacked segment")
+    }
+
+    @Test
+    fun stackedBarChart_legendDeduplicatesSegmentLabels() {
+        val texts = texts {
+            stackedBarChart(groups, width = 200.dp, height = 100.dp, showLegend = true)
+        }
+        // Group labels plus each distinct segment label, but "Sales"/"Costs"
+        // appear once each in the legend despite repeating across groups.
+        assertTrue("Sales" in texts && "Costs" in texts, "legend must list distinct segment labels")
+        assertEquals(1, texts.count { it == "Sales" }, "duplicate segment label must collapse to one legend row")
+    }
+
+    @Test
+    fun stackedBarChart_emptyOrZero_drawsNothing() {
+        assertTrue(paths { stackedBarChart(emptyList(), width = 200.dp, height = 100.dp) }.isEmpty())
+        val zero = listOf(StackedBarGroup("a", listOf(StackedBarSegment("x", 0f, PdfColor.Red))))
+        assertTrue(paths { stackedBarChart(zero, width = 200.dp, height = 100.dp) }.isEmpty())
+    }
+
+    @Test
     fun barChart_allZeroValues_drawsNothing() {
         val zero = listOf(ChartSeries("a", 0f, PdfColor.Red), ChartSeries("b", 0f, PdfColor.Blue))
         val paths = paths { barChart(zero, width = 200.dp, height = 100.dp) }
@@ -133,13 +206,51 @@ class ChartsTest {
     @Test
     fun lineChart_fewerThanTwoPoints_drawsNothing() {
         assertTrue(paths { lineChart(listOf(5f), width = 200.dp, height = 80.dp) }.isEmpty())
-        assertTrue(paths { lineChart(emptyList(), width = 200.dp, height = 80.dp) }.isEmpty())
+        assertTrue(paths { lineChart(emptyList<Float>(), width = 200.dp, height = 80.dp) }.isEmpty())
     }
 
     @Test
     fun lineChart_flatData_doesNotThrow() {
         val paths = paths { lineChart(listOf(3f, 3f, 3f), width = 200.dp, height = 80.dp) }
         assertTrue(paths.stroked().isNotEmpty(), "flat data still draws a line")
+    }
+
+    @Test
+    fun lineChart_gridLines_addStrokesAndMinMaxLabels() {
+        val texts = texts { lineChart(listOf(1f, 4f, 2f, 6f), width = 200.dp, height = 80.dp, gridLines = 4) }
+        // Min (1) and max (6) labels both render.
+        assertTrue("1" in texts && "6" in texts, "min/max axis labels must render: $texts")
+    }
+
+    @Test
+    fun lineChart_multiSeries_drawsOneLinePerSeries_andLegend() {
+        val lines = listOf(
+            LineSeries("A", listOf(1f, 3f, 2f, 5f), PdfColor.Red),
+            LineSeries("B", listOf(4f, 2f, 6f, 1f), PdfColor.Green),
+        )
+        val paths = paths { lineChart(lines, width = 200.dp, height = 80.dp, showLegend = true) }
+        // Each series stroke uses its own colour at the default 2f width.
+        val strokeColors = paths.stroked().filter { it.strokeWidth == 2f }.map { it.strokeColor }
+        assertTrue(PdfColor.Red in strokeColors && PdfColor.Green in strokeColors, "each series uses its colour")
+
+        val texts = texts { lineChart(lines, width = 200.dp, height = 80.dp, showLegend = true) }
+        assertTrue("A" in texts && "B" in texts, "legend must list each series label")
+    }
+
+    @Test
+    fun lineChart_multiSeries_skipsShortSeries() {
+        val lines = listOf(
+            LineSeries("A", listOf(1f, 3f, 2f), PdfColor.Red),
+            LineSeries("tooShort", listOf(9f), PdfColor.Blue),
+        )
+        val paths = paths { lineChart(lines, width = 200.dp, height = 80.dp, showLegend = false) }
+        val lineStrokes = paths.stroked().filter { it.strokeWidth == 2f }
+        assertEquals(1, lineStrokes.size, "single-point series must be skipped")
+    }
+
+    @Test
+    fun lineChart_multiSeries_empty_drawsNothing() {
+        assertTrue(paths { lineChart(emptyList<LineSeries>(), width = 200.dp, height = 80.dp) }.isEmpty())
     }
 
     // endregion

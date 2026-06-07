@@ -75,6 +75,7 @@ private suspend fun PdfNode.resolve(): PdfNode = when (this) {
     is ShapeNode,
     is QrCodeNode,
     is BarcodeNode,
+    is DataMatrixNode,
     is BookmarkNode,
     is AnchorNode,
     is FormTextFieldNode,

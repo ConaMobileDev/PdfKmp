@@ -5,6 +5,7 @@ import com.conamobile.pdfkmp.node.BarcodeNode
 import com.conamobile.pdfkmp.node.BookmarkNode
 import com.conamobile.pdfkmp.node.BoxNode
 import com.conamobile.pdfkmp.node.ColumnNode
+import com.conamobile.pdfkmp.node.DataMatrixNode
 import com.conamobile.pdfkmp.node.DividerNode
 import com.conamobile.pdfkmp.node.FormCheckBoxNode
 import com.conamobile.pdfkmp.node.FormTextFieldNode
@@ -65,7 +66,7 @@ internal fun collectCustomFonts(node: PdfNode, sink: MutableSet<PdfFont.Custom>)
             if (font is PdfFont.Custom) sink += font
         }
         is SpacerNode, is ImageNode, is VectorNode, is DividerNode, is ShapeNode,
-        is QrCodeNode, is BarcodeNode, is BookmarkNode, is AnchorNode,
+        is QrCodeNode, is BarcodeNode, is DataMatrixNode, is BookmarkNode, is AnchorNode,
         is FormTextFieldNode, is FormCheckBoxNode,
         -> Unit
         // LazyNodes are unresolved at this point; pdfAsync re-runs this

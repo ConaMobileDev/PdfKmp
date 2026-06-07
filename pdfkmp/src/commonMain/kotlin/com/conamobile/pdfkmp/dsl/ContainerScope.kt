@@ -10,6 +10,7 @@ import com.conamobile.pdfkmp.layout.VerticalAlignment
 import com.conamobile.pdfkmp.layout.VerticalArrangement
 import com.conamobile.pdfkmp.node.AnchorNode
 import com.conamobile.pdfkmp.node.BarcodeNode
+import com.conamobile.pdfkmp.node.BarcodeSymbology
 import com.conamobile.pdfkmp.node.BookmarkNode
 import com.conamobile.pdfkmp.node.BoxChild
 import com.conamobile.pdfkmp.node.BoxNode
@@ -17,6 +18,7 @@ import com.conamobile.pdfkmp.node.ColumnNode
 import com.conamobile.pdfkmp.node.InternalLinkNode
 import com.conamobile.pdfkmp.node.KeepTogetherNode
 import com.conamobile.pdfkmp.node.ContainerDecoration
+import com.conamobile.pdfkmp.node.DataMatrixNode
 import com.conamobile.pdfkmp.node.DividerNode
 import com.conamobile.pdfkmp.node.FormCheckBoxNode
 import com.conamobile.pdfkmp.node.FormTextFieldNode
@@ -649,16 +651,24 @@ public abstract class ContainerScope internal constructor(
     }
 
     /**
-     * Appends a Code 128 barcode encoding [data] (printable ASCII 32–126).
-     * Digit runs compress automatically via code set C, and the mandatory
-     * mod-103 checksum is appended for you.
+     * Appends a 1D barcode encoding [data] with the chosen [symbology].
+     *
+     * - [BarcodeSymbology.Code128] (default): printable ASCII 32–126; digit
+     *   runs compress automatically via code set C and the mandatory mod-103
+     *   checksum is appended for you.
+     * - [BarcodeSymbology.Ean13]: 12 digits (check digit computed) or 13
+     *   digits (check digit verified).
+     * - [BarcodeSymbology.UpcA]: 11 digits (check digit computed) or 12 digits
+     *   (check digit verified); rendered as the equivalent EAN-13 symbol.
      *
      * Readers expect a quiet zone of roughly ten modules on both sides —
      * give the barcode some horizontal breathing room. The human-readable
      * caption customary under retail barcodes is not drawn automatically;
      * add a centred `text(data)` below when you need one.
      *
-     * @param data payload; non-ASCII input throws [IllegalArgumentException].
+     * @param data payload; invalid input for the [symbology] throws
+     *   [IllegalArgumentException].
+     * @param symbology which 1D encoding to use; defaults to Code 128.
      * @param width rendered width; `null` uses the symbol's natural size of
      *   one PDF point per module.
      * @param height bar height — taller bars are easier to scan.
@@ -667,6 +677,7 @@ public abstract class ContainerScope internal constructor(
      */
     public fun barcode(
         data: String,
+        symbology: BarcodeSymbology = BarcodeSymbology.Code128,
         width: Dp? = null,
         height: Dp = Dp(50f),
         color: PdfColor = PdfColor.Black,
@@ -674,8 +685,41 @@ public abstract class ContainerScope internal constructor(
     ) {
         children += BarcodeNode(
             data = data,
+            symbology = symbology,
             width = width,
             height = height,
+            color = color,
+            background = background,
+        )
+    }
+
+    /**
+     * Appends a Data Matrix (ECC 200) 2D barcode encoding [data].
+     *
+     * Encoding (ASCII encodation, Reed-Solomon error correction, the smallest
+     * fitting square symbol from 10×10 to 52×52) happens in common code via
+     * [com.conamobile.pdfkmp.barcode.DataMatrixEncoder]. Bytes above 127 are
+     * rejected at build time.
+     *
+     * Like QR, Data Matrix expects a small quiet zone — place it inside a
+     * padded container or against the page margin.
+     *
+     * @param data payload; ASCII bytes 0..127 only. Larger / non-ASCII input
+     *   throws [IllegalArgumentException].
+     * @param size rendered edge length (square).
+     * @param color module (dark square) colour.
+     * @param background fill behind the symbol; `null` for transparent.
+     *   Keep strong contrast against [color] or scanners will struggle.
+     */
+    public fun dataMatrix(
+        data: String,
+        size: Dp = Dp(100f),
+        color: PdfColor = PdfColor.Black,
+        background: PdfColor? = PdfColor.White,
+    ) {
+        children += DataMatrixNode(
+            data = data,
+            size = size,
             color = color,
             background = background,
         )

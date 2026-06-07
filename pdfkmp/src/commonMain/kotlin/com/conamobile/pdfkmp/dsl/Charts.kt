@@ -30,6 +30,46 @@ public data class ChartSeries(
     val color: PdfColor,
 )
 
+/**
+ * One coloured segment within a stacked bar.
+ *
+ * @property label caption shown in the chart legend.
+ * @property value magnitude of this segment; negative values are treated as
+ *   `0` because a negative stack segment has no meaningful geometry.
+ * @property color fill colour for this segment (and its legend swatch).
+ */
+public data class StackedBarSegment(
+    val label: String,
+    val value: Float,
+    val color: PdfColor,
+)
+
+/**
+ * One group (single bar) in a [stackedBarChart], built from stacked
+ * [segments] drawn bottom-to-top in list order.
+ *
+ * @property label caption shown under the bar.
+ * @property segments the stacked pieces, bottom first.
+ */
+public data class StackedBarGroup(
+    val label: String,
+    val segments: List<StackedBarSegment>,
+)
+
+/**
+ * One line in a multi-series [lineChart].
+ *
+ * @property label caption shown in the chart legend.
+ * @property points y values in plot order; every series in a chart is scaled
+ *   against the combined min/max so the lines share one vertical axis.
+ * @property color stroke colour for this line (and its legend swatch).
+ */
+public data class LineSeries(
+    val label: String,
+    val points: List<Float>,
+    val color: PdfColor,
+)
+
 // Chart geometry is authored entirely through `freeDraw`, `row`, `column`, and
 // `text` — the existing public DSL primitives — so a chart is just composed
 // nodes. That keeps every glyph and shape vector (no rasterisation) and means
@@ -58,19 +98,31 @@ private val BAR_VALUE_BAND: Float = 12f
  *
  * An empty [series], or one whose values are all `<= 0`, draws nothing.
  *
+ * When [showAxis] is on, a baseline is stroked along the bottom. When
+ * [gridLines] is greater than `0`, that many faint horizontal value-grid lines
+ * are drawn across the plot and the min (`0`) and max value are labelled at the
+ * left edge so the bar heights can be read against a scale.
+ *
  * @param series the bars, left to right.
  * @param width total width of the plot area.
  * @param height total height of the plot area (bars + value captions live
  *   inside this; the label row is added beneath it).
  * @param showValues when `true` (default), draws each bar's value above it.
+ * @param showAxis when `true` (default), strokes the baseline axis line.
+ * @param gridLines number of faint horizontal value-grid lines (and the
+ *   min/max axis labels). `0` (default) draws no grid.
  * @param axisColor colour of the baseline axis line.
+ * @param gridColor colour of the faint value-grid lines.
  */
 public fun ContainerScope.barChart(
     series: List<ChartSeries>,
     width: Dp,
     height: Dp,
     showValues: Boolean = true,
+    showAxis: Boolean = true,
+    gridLines: Int = 0,
     axisColor: PdfColor = PdfColor.Gray,
+    gridColor: PdfColor = PdfColor.LightGray,
 ) {
     if (series.isEmpty()) return
     val maxValue = series.maxOf { max(it.value, 0f) }
@@ -90,11 +142,34 @@ public fun ContainerScope.barChart(
     val gutter = (slot - barWidth) / 2f
 
     column(spacing = CHART_GAP) {
+        // Max-value axis label above the plot when a value grid is shown, so the
+        // grid lines have a readable scale (the baseline below is the 0 mark).
+        if (gridLines > 0) {
+            text(formatValue(maxValue)) {
+                fontSize = 7.sp
+                // Qualify with `this`: the single-series lineChart's `color`
+                // parameter would otherwise shadow TextScope.color for an
+                // unqualified assignment.
+                this.color = PdfColor.Gray
+            }
+        }
         freeDraw(width = width, height = height) {
-            // Baseline axis first so bars paint over its endpoints cleanly.
-            path(strokeColor = axisColor, strokeWidth = 1f) {
-                moveTo(0f, baseline)
-                lineTo(w, baseline)
+            // Value grid first so everything else paints over it.
+            if (gridLines > 0) {
+                for (g in 1..gridLines) {
+                    val y = baseline - plotHeight * (g.toFloat() / gridLines)
+                    path(strokeColor = gridColor, strokeWidth = 0.5f) {
+                        moveTo(0f, y)
+                        lineTo(w, y)
+                    }
+                }
+            }
+            // Baseline axis next so bars paint over its endpoints cleanly.
+            if (showAxis) {
+                path(strokeColor = axisColor, strokeWidth = 1f) {
+                    moveTo(0f, baseline)
+                    lineTo(w, baseline)
+                }
             }
             series.forEachIndexed { index, bar ->
                 val value = max(bar.value, 0f)
@@ -138,6 +213,108 @@ public fun ContainerScope.barChart(
 }
 
 /**
+ * Appends a stacked bar chart.
+ *
+ * Each entry in [groups] becomes one bar whose segments are stacked
+ * bottom-to-top in list order; every bar is scaled against the largest group
+ * total so the tallest stack fills the plot. A baseline axis line is stroked
+ * along the bottom (when [showAxis] is on) and an optional faint value grid is
+ * drawn behind the bars (when [gridLines] is greater than `0`).
+ *
+ * When [showLegend] is on, a swatch + label legend is appended below, one row
+ * per distinct segment label encountered (first occurrence wins its colour),
+ * so the segment colours can be decoded.
+ *
+ * An empty [groups] list, or one whose every segment is `<= 0`, draws nothing.
+ *
+ * @param groups the bars, left to right; each stacks its [StackedBarGroup.segments].
+ * @param width total width of the plot area.
+ * @param height total height of the plot area; the label row is added beneath.
+ * @param showAxis when `true` (default), strokes the baseline axis line.
+ * @param gridLines number of faint horizontal value-grid lines; `0` draws none.
+ * @param showLegend when `true` (default), appends a per-segment swatch legend.
+ * @param axisColor colour of the baseline axis line.
+ * @param gridColor colour of the faint value-grid lines.
+ */
+public fun ContainerScope.stackedBarChart(
+    groups: List<StackedBarGroup>,
+    width: Dp,
+    height: Dp,
+    showAxis: Boolean = true,
+    gridLines: Int = 0,
+    showLegend: Boolean = true,
+    axisColor: PdfColor = PdfColor.Gray,
+    gridColor: PdfColor = PdfColor.LightGray,
+) {
+    if (groups.isEmpty()) return
+    val totals = groups.map { group -> group.segments.sumOf { max(it.value, 0f).toDouble() }.toFloat() }
+    val maxTotal = totals.maxOrNull() ?: 0f
+    if (maxTotal <= 0f) return
+
+    val w = width.value
+    val h = height.value
+    val baseline = h
+    val slot = w / groups.size
+    val barWidth = slot * 0.75f
+    val gutter = (slot - barWidth) / 2f
+
+    column(spacing = CHART_GAP) {
+        if (gridLines > 0) {
+            text(formatValue(maxTotal)) {
+                fontSize = 7.sp
+                color = PdfColor.Gray
+            }
+        }
+        freeDraw(width = width, height = height) {
+            if (gridLines > 0) {
+                for (g in 1..gridLines) {
+                    val y = baseline - h * (g.toFloat() / gridLines)
+                    path(strokeColor = gridColor, strokeWidth = 0.5f) {
+                        moveTo(0f, y)
+                        lineTo(w, y)
+                    }
+                }
+            }
+            if (showAxis) {
+                path(strokeColor = axisColor, strokeWidth = 1f) {
+                    moveTo(0f, baseline)
+                    lineTo(w, baseline)
+                }
+            }
+            groups.forEachIndexed { index, group ->
+                val left = index * slot + gutter
+                // Stack segments upward from the baseline; each segment height is
+                // its share of the largest total so all bars share one scale.
+                var cursorBottom = baseline
+                group.segments.forEach { segment ->
+                    val value = max(segment.value, 0f)
+                    if (value <= 0f) return@forEach
+                    val segHeight = h * (value / maxTotal)
+                    val top = cursorBottom - segHeight
+                    path(fill = segment.color) {
+                        rect(left, top, barWidth, segHeight)
+                    }
+                    cursorBottom = top
+                }
+            }
+        }
+
+        row {
+            groups.forEach { group ->
+                weighted(1f) {
+                    text(group.label) {
+                        fontSize = 8.sp
+                        align = TextAlign.Center
+                    }
+                }
+            }
+        }
+    }
+
+    if (showLegend) segmentLegend(groups.flatMap { it.segments })
+}
+
+/**
  * Appends a line chart.
  *
  * The [points] are plotted at evenly spaced x positions and scaled vertically
@@ -150,13 +327,20 @@ public fun ContainerScope.barChart(
  * an end. When every value is identical the line is drawn flat across the
  * vertical centre.
  *
+ * When [gridLines] is greater than `0`, that many faint horizontal grid lines
+ * are drawn behind the curve and the min / max values are labelled at the top
+ * and bottom so the curve can be read against a scale.
+ *
  * @param points y values in plot order.
  * @param width plot width.
  * @param height plot height.
  * @param color stroke (and fill tint) colour.
  * @param strokeWidth polyline thickness in points.
  * @param fillUnderLine when `true`, shades the area under the line.
+ * @param gridLines number of faint horizontal grid lines (and the min/max
+ *   axis labels). `0` (default) draws no grid.
  * @param axisColor colour of the baseline axis line.
+ * @param gridColor colour of the faint grid lines.
  */
 public fun ContainerScope.lineChart(
     points: List<Float>,
@@ -165,7 +349,9 @@ public fun ContainerScope.lineChart(
     color: PdfColor = PdfColor.Blue,
     strokeWidth: Float = 2f,
     fillUnderLine: Boolean = false,
+    gridLines: Int = 0,
     axisColor: PdfColor = PdfColor.Gray,
+    gridColor: PdfColor = PdfColor.LightGray,
 ) {
     if (points.size < 2) return
 
@@ -183,27 +369,153 @@ public fun ContainerScope.lineChart(
 
     val coords = points.mapIndexed { index, value -> index * stepX to yOf(value) }
 
-    freeDraw(width = width, height = height) {
-        // Baseline axis, drawn first so the line and fill sit on top.
-        path(strokeColor = axisColor, strokeWidth = 1f) {
-            moveTo(0f, h)
-            lineTo(w, h)
-        }
-
-        if (fillUnderLine) {
-            // Same polyline, closed down to the baseline and back, filled with
-            // a translucent tint so the curve stays readable over the shading.
-            path(fill = color.withAlpha(0.15f)) {
-                moveTo(coords.first().first, h)
-                coords.forEach { (x, y) -> lineTo(x, y) }
-                lineTo(coords.last().first, h)
-                close()
+    column(spacing = 0.dp) {
+        if (gridLines > 0) {
+            text(formatValue(maxValue)) {
+                fontSize = 7.sp
+                // Qualify with `this`: the single-series lineChart's `color`
+                // parameter would otherwise shadow TextScope.color for an
+                // unqualified assignment.
+                this.color = PdfColor.Gray
             }
         }
+        freeDraw(width = width, height = height) {
+            if (gridLines > 0) {
+                for (g in 1 until gridLines) {
+                    val y = h * (g.toFloat() / gridLines)
+                    path(strokeColor = gridColor, strokeWidth = 0.5f) {
+                        moveTo(0f, y)
+                        lineTo(w, y)
+                    }
+                }
+            }
+            // Baseline axis, drawn before the line and fill so they sit on top.
+            path(strokeColor = axisColor, strokeWidth = 1f) {
+                moveTo(0f, h)
+                lineTo(w, h)
+            }
 
-        path(strokeColor = color, strokeWidth = strokeWidth) {
-            moveTo(coords.first().first, coords.first().second)
-            coords.drop(1).forEach { (x, y) -> lineTo(x, y) }
+            if (fillUnderLine) {
+                // Same polyline, closed down to the baseline and back, filled with
+                // a translucent tint so the curve stays readable over the shading.
+                path(fill = color.withAlpha(0.15f)) {
+                    moveTo(coords.first().first, h)
+                    coords.forEach { (x, y) -> lineTo(x, y) }
+                    lineTo(coords.last().first, h)
+                    close()
+                }
+            }
+
+            path(strokeColor = color, strokeWidth = strokeWidth) {
+                moveTo(coords.first().first, coords.first().second)
+                coords.drop(1).forEach { (x, y) -> lineTo(x, y) }
+            }
+        }
+        if (gridLines > 0) {
+            text(formatValue(minValue)) {
+                fontSize = 7.sp
+                this.color = PdfColor.Gray
+            }
+        }
+    }
+}
+
+/**
+ * Appends a multi-series line chart.
+ *
+ * Every series in [series] is plotted in the same plot area, scaled against the
+ * combined min / max across all series so the lines share one vertical axis,
+ * each stroked in its own [LineSeries.color]. As with the single-series
+ * overload, [gridLines] draws a faint grid plus min/max axis labels, and
+ * [showLegend] appends a swatch + label legend so the lines can be told apart.
+ *
+ * Series with fewer than two points are skipped. If no series has at least two
+ * points, nothing is drawn.
+ *
+ * @param series the lines to overlay.
+ * @param width plot width.
+ * @param height plot height.
+ * @param strokeWidth polyline thickness in points, shared by every series.
+ * @param gridLines number of faint horizontal grid lines; `0` draws none.
+ * @param showLegend when `true` (default), appends a per-series swatch legend.
+ * @param axisColor colour of the baseline axis line.
+ * @param gridColor colour of the faint grid lines.
+ */
+public fun ContainerScope.lineChart(
+    series: List<LineSeries>,
+    width: Dp,
+    height: Dp,
+    strokeWidth: Float = 2f,
+    gridLines: Int = 0,
+    showLegend: Boolean = true,
+    axisColor: PdfColor = PdfColor.Gray,
+    gridColor: PdfColor = PdfColor.LightGray,
+) {
+    val drawable = series.filter { it.points.size >= 2 }
+    if (drawable.isEmpty()) return
+
+    val w = width.value
+    val h = height.value
+    val allValues = drawable.flatMap { it.points }
+    val minValue = allValues.min()
+    val maxValue = allValues.max()
+    val span = maxValue - minValue
+
+    fun yOf(value: Float): Float =
+        if (span <= 0f) h / 2f else h - (value - minValue) / span * h
+
+    column(spacing = 0.dp) {
+        if (gridLines > 0) {
+            text(formatValue(maxValue)) {
+                fontSize = 7.sp
+                // Qualify with `this`: the single-series lineChart's `color`
+                // parameter would otherwise shadow TextScope.color for an
+                // unqualified assignment.
+                this.color = PdfColor.Gray
+            }
+        }
+        freeDraw(width = width, height = height) {
+            if (gridLines > 0) {
+                for (g in 1 until gridLines) {
+                    val y = h * (g.toFloat() / gridLines)
+                    path(strokeColor = gridColor, strokeWidth = 0.5f) {
+                        moveTo(0f, y)
+                        lineTo(w, y)
+                    }
+                }
+            }
+            path(strokeColor = axisColor, strokeWidth = 1f) {
+                moveTo(0f, h)
+                lineTo(w, h)
+            }
+            drawable.forEach { line ->
+                val stepX = w / (line.points.size - 1)
+                val coords = line.points.mapIndexed { index, value -> index * stepX to yOf(value) }
+                path(strokeColor = line.color, strokeWidth = strokeWidth) {
+                    moveTo(coords.first().first, coords.first().second)
+                    coords.drop(1).forEach { (x, y) -> lineTo(x, y) }
+                }
+            }
+        }
+        if (gridLines > 0) {
+            text(formatValue(minValue)) {
+                fontSize = 7.sp
+                this.color = PdfColor.Gray
+            }
+        }
+    }
+
+    if (showLegend) {
+        spacer(height = CHART_GAP)
+        column(spacing = 4.dp) {
+            drawable.forEach { line ->
+                row(spacing = 6.dp) {
+                    freeDraw(width = 10.dp, height = 10.dp) {
+                        path(fill = line.color) { rect(0f, 0f, 10f, 10f) }
+                    }
+                    text(line.label) { fontSize = 9.sp }
+                }
+            }
         }
     }
 }
@@ -398,6 +710,31 @@ private fun ContainerScope.legend(slices: List<ChartSeries>, total: Float) {
                     fontSize = 9.sp
                     color = PdfColor.Gray
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Appends a swatch + label legend for stacked-bar segments: one row per distinct
+ * [StackedBarSegment.label] across [segments], in first-occurrence order, using
+ * the colour of that first occurrence. Distinct labels are deduplicated because
+ * the same segment label repeats once per group.
+ */
+private fun ContainerScope.segmentLegend(segments: List<StackedBarSegment>) {
+    val seen = LinkedHashMap<String, PdfColor>()
+    segments.forEach { segment ->
+        if (max(segment.value, 0f) > 0f) seen.getOrPut(segment.label) { segment.color }
+    }
+    if (seen.isEmpty()) return
+    spacer(height = CHART_GAP)
+    column(spacing = 4.dp) {
+        seen.forEach { (label, color) ->
+            row(spacing = 6.dp) {
+                freeDraw(width = 10.dp, height = 10.dp) {
+                    path(fill = color) { rect(0f, 0f, 10f, 10f) }
+                }
+                text(label) { fontSize = 9.sp }
             }
         }
     }
