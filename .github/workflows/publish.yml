@@ -18,6 +18,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Select Xcode 26
+        # Match test.yml: Compose Multiplatform 1.11 needs the iOS 26 SDK,
+        # and the runner's default Xcode 16.4 can't link against it.
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -n1)"
+
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:

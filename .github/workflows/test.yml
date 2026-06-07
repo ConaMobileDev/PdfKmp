@@ -45,6 +45,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Select Xcode 26
+        # Compose Multiplatform 1.11 links against the iOS 26 SDK
+        # (UIUtilities framework / UIViewLayoutRegion); the runner's default
+        # Xcode 16.4 fails the viewer link with undefined symbols. Pick the
+        # newest Xcode 26 on the image rather than pinning a point release.
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -n1)"
+
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
