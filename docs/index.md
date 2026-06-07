@@ -12,16 +12,6 @@ The library ships the **Inter** font for cross-platform Latin parity and exposes
 opt-in references to system CJK / Arabic / Persian fonts so non-Latin scripts
 render natively on Android and iOS.
 
-<div class="grid" markdown>
-
-![PdfKmp brochure rendered on Android](screenshots/brochure-1.png){ width="250" }
-![PdfKmp brochure rendered on iOS](screenshots/brochure-2.png){ width="250" }
-![PdfKmp brochure rendered on Desktop](screenshots/brochure-3.png){ width="250" }
-
-</div>
-
-*The same `Samples.brochure()` document rendered on Android, iOS and Desktop — pixel-identical vector output.*
-
 ## Teaser
 
 ```kotlin
