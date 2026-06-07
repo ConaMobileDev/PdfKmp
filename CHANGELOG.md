@@ -6,12 +6,7 @@ versions follow [Semantic Versioning](https://semver.org). Pre-1.0
 minor versions may break public API; alpha / beta / rc tags signal
 an actively settling surface.
 
-## [Unreleased]
-
-> ⚠️ This wave was developed and verified on Windows (`:pdfkmp:jvmTest`,
-> `:pdfkmp-viewer:jvmTest`, `:pdfkmp-markdown:jvmTest`, Android compile,
-> and iOS *metadata* compile all green). Run the canonical iOS Simulator
-> suites on macOS before cutting the release.
+## [1.2.0] — 2026-06-07
 
 ### Added — text engine (`pdfkmp`)
 
@@ -215,6 +210,10 @@ an actively settling surface.
 
 ### Fixed
 
+- iOS outline entries now reference their 1-based page number instead of a
+  synthetic named destination — `CGPDFContextSetOutline` rejects name
+  strings (and empty `Children` arrays), crashing document generation with
+  an `NSInvalidArgumentException` whenever `bookmark()` was used.
 - `TextAlign.Justify` no longer silently falls back to start alignment.
 - Decorated containers no longer get sliced mid-decoration (they move
   whole, by design).

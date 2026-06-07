@@ -38,7 +38,7 @@ resolves the right variant automatically for every target.
 ```toml
 # gradle/libs.versions.toml
 [versions]
-pdfkmp = "1.1.1"
+pdfkmp = "1.2.0"
 
 [libraries]
 pdfkmp = { module = "io.github.conamobiledev:pdfkmp", version.ref = "pdfkmp" }
@@ -64,8 +64,8 @@ kotlin {
 ```kotlin
 // app/build.gradle.kts
 dependencies {
-    implementation("io.github.conamobiledev:pdfkmp-android:1.1.1")
-    implementation("io.github.conamobiledev:pdfkmp-viewer:1.1.1") // optional
+    implementation("io.github.conamobiledev:pdfkmp-android:1.2.0")
+    implementation("io.github.conamobiledev:pdfkmp-viewer:1.2.0") // optional
 }
 ```
 
@@ -74,8 +74,8 @@ dependencies {
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("io.github.conamobiledev:pdfkmp-jvm:1.1.1")
-    implementation("io.github.conamobiledev:pdfkmp-viewer-jvm:1.1.1") // optional
+    implementation("io.github.conamobiledev:pdfkmp-jvm:1.2.0")
+    implementation("io.github.conamobiledev:pdfkmp-viewer-jvm:1.2.0") // optional
 }
 ```
 

@@ -15,7 +15,7 @@ automatically):
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("io.github.conamobiledev:pdfkmp:1.1.1")
+            implementation("io.github.conamobiledev:pdfkmp:1.2.0")
         }
     }
 }
@@ -88,7 +88,7 @@ doc.save(StorageLocation.Downloads, "hello.pdf")    // browser download
 ## Install coordinate
 
 ```kotlin
-implementation("io.github.conamobiledev:pdfkmp:1.1.1")   // resolves pdfkmp-wasm-js for the wasmJs target
+implementation("io.github.conamobiledev:pdfkmp:1.2.0")   // resolves pdfkmp-wasm-js for the wasmJs target
 ```
 
 ## See also
