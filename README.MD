@@ -30,7 +30,7 @@
 </table>
 
 <p align="center">
-  <em>The same <code>Samples.brochure()</code> document rendered on Android, iOS and Desktop — pixel-identical vector output — plus the browser sample generating it live on the Web. Try it: <code>Samples.brochure().toByteArray()</code>.</em>
+  <em>The same brochure document rendered on Android, iOS and Desktop — pixel-identical vector output — plus the browser sample generating it live on the Web.</em>
 </p>
 
 PdfKmp lets you build PDF documents from a Compose-style DSL that runs identically on Android, iOS, Desktop (JVM — macOS, Windows, Linux), and the browser (Kotlin/Wasm). Text becomes glyph paths, shapes become path operators — every page stays sharp at any zoom level. The library ships the **Inter** font for cross-platform Latin parity and exposes opt-in references to system CJK / Arabic / Persian fonts so non-Latin scripts render natively on Android and iOS (on Desktop, supply a custom font — see [i18n fonts](https://conamobiledev.github.io/PdfKmp/guides/i18n/)).
@@ -75,24 +75,14 @@ PdfKmp is published to **Maven Central**. The library exposes:
 
 ### Web (Kotlin/Wasm)
 
-The browser exposes no PDF engine to Wasm, so the web target renders
-through PdfKmp's own pure-Kotlin PDF writer. Everything vector works
-exactly like the other platforms — text layout, tables, shapes,
-gradients, QR codes, barcodes, Data Matrix, charts, freeDraw,
-bookmarks/TOC, links — plus JPEG and 8-bit RGB/grayscale PNG images.
-The web backend now **embeds fonts**: a `PdfFont.Custom` is embedded as
-a TrueType subset, and non-WinAnsi text with no custom font falls back to
-a bundled-Inter subset, so **Cyrillic works in the browser out of the
-box** (plain Latin still uses Standard-14 Helvetica); content streams are
-Flate-compressed. Remaining honest font limits: CFF/OTF custom fonts fall
-back to Helvetica, single-face customs get no synthetic bold/italic, and
-coverage is gated by the font's own glyphs (CJK/Arabic generally need a
-`PdfFont.Custom`). Other current limits (each warned through `PdfLog` and
-skipped): palette/alpha PNGs, interactive form widgets, encryption, and
-attachments.
+The browser exposes no PDF engine to Wasm, so the web target renders through
+PdfKmp's own pure-Kotlin PDF writer — everything vector works exactly like the
+other platforms, custom TrueType fonts embed as subsets, and Cyrillic works out
+of the box via the bundled Inter. Current limits and font details: see the
+[Web guide](https://conamobiledev.github.io/PdfKmp/guides/web/).
 
-Viewing on the web needs no library at all — browsers ship excellent
-PDF viewers, so hand them the bytes:
+Viewing needs no library at all — browsers ship excellent PDF viewers, so hand
+them the bytes:
 
 ```kotlin
 val doc = pdf { page { text("Hello, Wasm!") } }
@@ -115,35 +105,7 @@ Pick the section that matches your project. The paths are mutually exclusive —
 
 ### Kotlin Multiplatform project
 
-Depend on `pdfkmp` from `commonMain`. Do **not** add `pdfkmp-android` separately — Gradle picks the Android variant of `pdfkmp` for your Android target on its own.
-
-With a version catalog:
-
-```toml
-# gradle/libs.versions.toml
-[versions]
-pdfkmp = "1.2.0"
-
-[libraries]
-pdfkmp = { module = "io.github.conamobiledev:pdfkmp", version.ref = "pdfkmp" }
-pdfkmp-compose-resources = { module = "io.github.conamobiledev:pdfkmp-compose-resources", version.ref = "pdfkmp" } # optional
-pdfkmp-viewer = { module = "io.github.conamobiledev:pdfkmp-viewer", version.ref = "pdfkmp" } # optional
-```
-
-```kotlin
-// build.gradle.kts
-kotlin {
-    sourceSets {
-        commonMain.dependencies {
-            implementation(libs.pdfkmp)
-            implementation(libs.pdfkmp.compose.resources) // optional
-            implementation(libs.pdfkmp.viewer)            // optional
-        }
-    }
-}
-```
-
-Without a version catalog:
+Depend on `pdfkmp` from `commonMain`. Do **not** add `pdfkmp-android` separately — Gradle picks the Android variant of `pdfkmp` for your Android target on its own. (Version catalogs work as usual — map the same coordinates in `libs.versions.toml`.)
 
 ```kotlin
 // build.gradle.kts
@@ -169,33 +131,11 @@ The core `pdfkmp` artifact itself stays Compose-free — non-Compose consumers d
 
 For projects that don't use Kotlin Multiplatform (plain `com.android.application` or `com.android.library`), depend on `pdfkmp-android`. KMP consumers should use the section above instead — they should not add this artifact.
 
-With a version catalog:
-
-```toml
-# gradle/libs.versions.toml
-[versions]
-pdfkmp = "1.2.0"
-
-[libraries]
-pdfkmp-android = { module = "io.github.conamobiledev:pdfkmp-android", version.ref = "pdfkmp" }
-pdfkmp-viewer = { module = "io.github.conamobiledev:pdfkmp-viewer", version.ref = "pdfkmp" } # optional
-```
-
-```kotlin
-// app/build.gradle.kts
-dependencies {
-    implementation(libs.pdfkmp.android)
-    implementation(libs.pdfkmp.viewer) // optional — Compose viewer screen
-}
-```
-
-Without a version catalog:
-
 ```kotlin
 // app/build.gradle.kts
 dependencies {
     implementation("io.github.conamobiledev:pdfkmp-android:1.2.0")
-    implementation("io.github.conamobiledev:pdfkmp-viewer:1.2.0") // optional
+    implementation("io.github.conamobiledev:pdfkmp-viewer:1.2.0") // optional — Compose viewer screen
 }
 ```
 
@@ -275,12 +215,6 @@ This README covers installation and your first document only — **everything el
 - [API Reference](https://conamobiledev.github.io/PdfKmp/api/) — generated KDoc for every public declaration.
 
 For repo conventions and AI-agent guidance see [CLAUDE.md](CLAUDE.md) (working **on** this codebase) and [AGENTS.md](AGENTS.md) / [`.claude/skills/pdfkmp/SKILL.md`](.claude/skills/pdfkmp/SKILL.md) (using the library).
-
----
-
-## Powered by Claude
-
-This library — the public API, the layout engine, the Android and iOS rendering backends, every test, the sample apps, and this README — was authored end-to-end with [Claude Code](https://claude.com/claude-code), Anthropic's coding agent. Bug reports, suggestions, and PRs welcome.
 
 ---
 
