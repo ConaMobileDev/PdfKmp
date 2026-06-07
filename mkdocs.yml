@@ -1,0 +1,77 @@
+# PdfKmp documentation site — Material for MkDocs.
+# Local preview:  pip install mkdocs-material && mkdocs serve
+# Deployed to GitHub Pages by .github/workflows/docs.yml; the Dokka API
+# reference is copied to /api during the same build.
+site_name: PdfKmp
+site_description: Kotlin Multiplatform PDF generator — Android, iOS, Desktop, and Web from one Compose-style DSL.
+site_url: https://conamobiledev.github.io/PdfKmp/
+repo_url: https://github.com/conamobiledev/PdfKmp
+repo_name: conamobiledev/PdfKmp
+edit_uri: edit/master/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: deep purple
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: deep purple
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - tables
+  - attr_list
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Guides:
+      - Text & typography: guides/text.md
+      - Layout containers: guides/layout.md
+      - Tables: guides/tables.md
+      - Decorations & effects: guides/decorations.md
+      - Images & vectors: guides/images-vectors.md
+      - Compose Resources: guides/compose-resources.md
+      - QR, barcodes & charts: guides/graphics.md
+      - Links, bookmarks & TOC: guides/navigation.md
+      - Pages, headers & watermarks: guides/page-setup.md
+      - Forms & security: guides/forms-security.md
+      - Fonts, i18n & RTL: guides/i18n.md
+      - PDF viewer (Compose): guides/viewer.md
+      - Markdown to PDF: guides/markdown.md
+      - Web (Kotlin/Wasm): guides/web.md
+      - Platform parity: guides/platform-parity.md
+  - Samples: samples.md
+  - Internals:
+      - Architecture: internals/architecture.md
+      - Streaming & memory: streaming-and-memory.md
+      - Wasm feasibility: wasm-feasibility.md
+  - API Reference: api/index.html

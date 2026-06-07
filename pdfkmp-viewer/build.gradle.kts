@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.mavenPublish)
+    alias(libs.plugins.dokka)
 }
 
 group = providers.gradleProperty("GROUP").get()
