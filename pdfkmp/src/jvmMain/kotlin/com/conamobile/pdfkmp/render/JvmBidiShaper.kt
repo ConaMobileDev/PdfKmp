@@ -48,6 +48,38 @@ internal object JvmBidiShaper {
         return false
     }
 
+    /**
+     * Positions in already-[shaped][shapeArabic] text *after which* a tatweel
+     * (U+0640) may be inserted to elongate the cursive line — i.e. after a letter
+     * whose chosen presentation form joins forward (an **initial** or **medial**
+     * form), since only those connect to the following glyph.
+     *
+     * Common layout decides *whether* to add kashida (see
+     * [com.conamobile.pdfkmp.style.TextStyle.kashidaJustify]); this JVM helper
+     * answers *where it is safe* once glyphs are in presentation-form space, and
+     * backs the shaper's own correctness tests. Returned indices are ascending.
+     */
+    internal fun kashidaCandidates(shapedText: String): List<Int> {
+        if (shapedText.length < 2) return emptyList()
+        val out = ArrayList<Int>()
+        for (i in 0 until shapedText.length - 1) {
+            if (joinsForward(shapedText[i])) out += i
+        }
+        return out
+    }
+
+    /**
+     * True when [ch] is an Arabic presentation form that connects to the glyph
+     * after it — the *initial* and *medial* forms in the Arabic Presentation
+     * Forms-B block (U+FE70..U+FEFC). Tatweel (U+0640) itself joins on both
+     * sides, so it also qualifies.
+     */
+    private fun joinsForward(ch: Char): Boolean {
+        val c = ch.code
+        if (c == 0x0640) return true // tatweel joins both ways
+        return c in PRESENTATION_FORWARD
+    }
+
     // region Arabic shaping
 
     /**
@@ -233,6 +265,23 @@ internal object JvmBidiShaper {
     // endregion
 
     // region Shaping tables
+
+    /**
+     * Presentation forms that join to the following glyph: the *initial* and
+     * *medial* forms of every dual-joining letter. Derived from [FORMS] so the
+     * two stay in lock-step. Right-joining letters contribute nothing — their
+     * forms never connect forward.
+     */
+    private val PRESENTATION_FORWARD: Set<Int> by lazy {
+        buildSet {
+            for (forms in FORMS.values) {
+                if (forms.joining == Joining.DUAL) {
+                    add(forms.initial.code)
+                    add(forms.medial.code)
+                }
+            }
+        }
+    }
 
     private const val LAM = 'ل'
 

@@ -1,5 +1,6 @@
 package com.conamobile.pdfkmp.style
 
+import com.conamobile.pdfkmp.layout.HyphenationPatterns
 import com.conamobile.pdfkmp.unit.Sp
 import com.conamobile.pdfkmp.unit.sp
 
@@ -98,6 +99,34 @@ public data class TextStyle(
      * "widow". `1` (default) allows any split.
      */
     val minLinesAfterBreak: Int = 1,
+
+    /**
+     * Automatic hyphenation dictionary, or `null` (the default) to disable it.
+     *
+     * When set, a word that does not fit a line and carries no explicit soft
+     * hyphens is consulted for legal break points (via the Liang algorithm in
+     * [HyphenationPatterns.hyphenate]) before falling back to a mid-word hard
+     * cut. A taken break renders a visible `-` at the line end, exactly like a
+     * soft hyphen. Words that the dictionary cannot split still hard-break so
+     * narrow slots never overflow. See [com.conamobile.pdfkmp.layout.Hyphenators].
+     */
+    val hyphenation: HyphenationPatterns? = null,
+
+    /**
+     * Kashida (tatweel, U+0640) justification for cursive RTL scripts.
+     *
+     * When `true` **and** the line's resolved direction is right-to-left,
+     * [TextAlign.Justify] absorbs part of each line's slack by elongating words
+     * at cursive joining points — inserting U+0640 between letters that join —
+     * instead of widening every inter-word gap alone. The remaining slack still
+     * goes to the gaps. Ignored for left-to-right text and when not justifying.
+     *
+     * The insertion is a typographic approximation: a small joining table picks
+     * candidate positions and at most a couple of tatweels are added per gap; the
+     * platform shapers (PdfBox on JVM, native on Android/iOS) then render the
+     * tatweels into the cursive line. Disabled (`false`) by default.
+     */
+    val kashidaJustify: Boolean = false,
 ) {
     public companion object {
         public val Default: TextStyle = TextStyle()

@@ -1,5 +1,6 @@
 package com.conamobile.pdfkmp.dsl
 
+import com.conamobile.pdfkmp.layout.HyphenationPatterns
 import com.conamobile.pdfkmp.style.FontStyle
 import com.conamobile.pdfkmp.style.FontWeight
 import com.conamobile.pdfkmp.style.PdfColor
@@ -85,6 +86,18 @@ public class TextScope internal constructor(parent: TextStyle) {
     public var minLinesAfterBreak: Int = parent.minLinesAfterBreak
 
     /**
+     * Automatic hyphenation dictionary; `null` disables it (the default).
+     * See [com.conamobile.pdfkmp.layout.Hyphenators] for bundled languages.
+     */
+    public var hyphenation: HyphenationPatterns? = parent.hyphenation
+
+    /**
+     * Kashida (tatweel) justification for cursive RTL text. Only effective when
+     * the line is justified and resolves to right-to-left. `false` by default.
+     */
+    public var kashidaJustify: Boolean = parent.kashidaJustify
+
+    /**
      * Convenience flag that toggles between [FontWeight.Bold] and
      * [FontWeight.Normal]. Reading this returns `true` when [fontWeight] is
      * exactly [FontWeight.Bold].
@@ -119,5 +132,7 @@ public class TextScope internal constructor(parent: TextStyle) {
         direction = direction,
         minLinesBeforeBreak = minLinesBeforeBreak,
         minLinesAfterBreak = minLinesAfterBreak,
+        hyphenation = hyphenation,
+        kashidaJustify = kashidaJustify,
     )
 }
