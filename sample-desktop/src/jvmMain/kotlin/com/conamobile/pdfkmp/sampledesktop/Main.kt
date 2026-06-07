@@ -53,6 +53,8 @@ private data class DesktopSample(
     val label: String,
     val fileName: String,
     val description: String,
+    /** Unlocks the viewer when the built document is encrypted. */
+    val password: String? = null,
     val build: () -> PdfDocument,
 )
 
@@ -74,6 +76,12 @@ private fun samples(): List<DesktopSample> {
         DesktopSample("Vector Advanced", "vector-advanced.pdf", "Gradients, arcs, group transforms.") { Samples.vectorAdvanced() },
         DesktopSample("Brochure", "brochure.pdf", "A polished multi-section marketing doc.") { Samples.brochure() },
         DesktopSample("Page Chrome", "page-chrome.pdf", "Header, footer, page numbers, watermark.") { Samples.pageChrome() },
+        DesktopSample(
+            "Encrypted PDF",
+            "encrypted.pdf",
+            "AES-256, user password \"$ENCRYPTED_SAMPLE_USER_PASSWORD\" — print/copy denied. Download it and open in Chrome to see the prompt.",
+            password = ENCRYPTED_SAMPLE_USER_PASSWORD,
+        ) { encryptedSampleDoc() },
         DesktopSample("Showcase", "showcase.pdf", "Every feature in a single document.") { Samples.showcase() },
         DesktopSample("With Image", "with-image.pdf", "Raster image, ContentScale Fit + Crop.") { Samples.withImage(image) },
         DesktopSample("Sliced Image", "sliced-image.pdf", "Tall image split across pages.") { Samples.slicedImage(image) },
@@ -128,6 +136,8 @@ fun main() {
                         modifier = Modifier.fillMaxSize(),
                         title = current.label,
                         fileName = current.fileName,
+                        // Unlocks the Encrypted PDF sample; null for the rest.
+                        password = current.password,
                         onBack = { selected = null },
                         showSearch = true,
                         // Desktop ＋/− zoom pill hidden — double-click and
