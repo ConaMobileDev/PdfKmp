@@ -223,3 +223,7 @@ For repo conventions and AI-agent guidance see [CLAUDE.md](CLAUDE.md) (working *
 Apache License 2.0 — see [LICENSE](LICENSE).
 
 The bundled Inter font is licensed separately under the SIL Open Font License 1.1 — see `pdfkmp/fonts/Inter-LICENSE.txt`.
+
+---
+
+If PdfKmp saved you some time, don't forget to click ⭐ — it helps others find the project :)
