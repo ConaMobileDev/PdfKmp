@@ -547,4 +547,43 @@ class VectorParserTest {
         val xml = """<svg viewBox="0 0 100 100"><path d="M0,0 L" fill="black"/></svg>"""
         assertFailsWith<VectorParseException> { VectorImage.parse(xml) }
     }
+
+    @Test
+    fun pathData_numberAfterClose_throwsInsteadOfHanging() {
+        val xml = """<svg viewBox="0 0 10 10"><path d="M0,0 L1,1 Z5" fill="black"/></svg>"""
+        assertFailsWith<VectorParseException> { VectorImage.parse(xml) }
+    }
+
+    @Test
+    fun pathData_repeatedCloseCommands_parseNormally() {
+        val xml = """<svg viewBox="0 0 10 10"><path d="M0,0 L1,1 Z Z" fill="black"/></svg>"""
+        val commands = VectorImage.parse(xml).paths.single().commands
+        assertEquals(2, commands.filterIsInstance<PathCommand.Close>().size)
+    }
+
+    @Test
+    fun excessiveElementNesting_throwsVectorParseException() {
+        val xml = "<svg viewBox=\"0 0 1 1\">" + "<g>".repeat(400) + "</g>".repeat(400) + "</svg>"
+        assertFailsWith<VectorParseException> { VectorImage.parse(xml) }
+    }
+
+    @Test
+    fun numericCharacterReference_decodesSupplementaryCodePointAsSurrogatePair() {
+        val xml = "<svg viewBox=\"0 0 1 1\"><path d=\"M0,0\" data-note=\"&#x1F600;\" fill=\"black\"/></svg>"
+        val root = MiniXml.parse(xml)
+        val decoded = root.children.single().attributes.getValue("data-note")
+        // Compare surrogate halves directly — String.codePointAt is a
+        // JVM-only API and this test also compiles for iOS/wasm.
+        assertEquals(2, decoded.length)
+        assertEquals('\uD83D', decoded[0])
+        assertEquals('\uDE00', decoded[1])
+    }
+
+    @Test
+    fun numericCharacterReference_surrogateOrNulCodePoint_isLeftAsRawText() {
+        val xml = "<svg viewBox=\"0 0 1 1\"><path d=\"M0,0\" data-note=\"&#xD800;\" fill=\"black\"/></svg>"
+        val root = MiniXml.parse(xml)
+        val decoded = root.children.single().attributes.getValue("data-note")
+        assertEquals("&#xD800;", decoded)
+    }
 }

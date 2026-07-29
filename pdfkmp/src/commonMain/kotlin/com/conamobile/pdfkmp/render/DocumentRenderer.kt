@@ -1,5 +1,6 @@
 package com.conamobile.pdfkmp.render
 
+import com.conamobile.pdfkmp.PdfLog
 import com.conamobile.pdfkmp.geometry.Constraints
 import com.conamobile.pdfkmp.geometry.Size
 import com.conamobile.pdfkmp.layout.MeasuredAnchor
@@ -380,11 +381,18 @@ internal object DocumentRenderer {
         is MeasuredColumn -> sliceColumn(node, env, frame, cursorY, canvas, xOffset)
         is MeasuredTable -> sliceTable(node, env, frame, cursorY, canvas, xOffset)
         // keepTogether { } exists precisely to opt out of slicing — the
-        // wrapped content falls through to the move-whole branch below.
+        // wrapped content falls through to the move-whole branch below. A
+        // node taller than the whole frame stays on an already-fresh page
+        // (moving it would only leave a blank page behind) and overflows.
         else -> {
-            val newCanvas = openNewPage(env, canvas)
-            place(node, newCanvas, frame.left + xOffset, frame.top)
-            RenderState(newCanvas, frame.top + node.size.height)
+            if (cursorY == frame.top) {
+                place(node, canvas, frame.left + xOffset, cursorY)
+                RenderState(canvas, cursorY + node.size.height)
+            } else {
+                val newCanvas = openNewPage(env, canvas)
+                place(node, newCanvas, frame.left + xOffset, frame.top)
+                RenderState(newCanvas, frame.top + node.size.height)
+            }
         }
     }
 
@@ -463,11 +471,40 @@ internal object DocumentRenderer {
         val headerOwners = if (hasHeader) node.cellOwners.getOrNull(0) else null
         val firstBodyIndex = if (hasHeader) 1 else 0
 
+        // A header cell whose rowSpan reaches into the body paints over
+        // spannedHeight rows, but a repeated header advances the cursor by
+        // only its own row height — re-drawing it on continuation pages
+        // would overpaint the first body row of every chunk. Draw such a
+        // header once instead.
+        val repeatHeader = node.repeatHeader && !node.headerSpansIntoBody
+        if (header != null && node.repeatHeader && node.headerSpansIntoBody) {
+            PdfLog.warn(
+                "table header cell rowSpan spans into body rows; the header is drawn once " +
+                    "instead of repeating on continuation pages",
+            )
+        }
+
         // Group body rows into atomic blocks so a rowspan is never split
         // across a page boundary. A block ends only at a row index where no
         // spanning cell reaches past it. Single-row tables collapse to one
         // block per row, reproducing the old per-row chunking.
         val groups = atomicBodyGroups(node, firstBodyIndex)
+
+        if (groups.isEmpty()) {
+            // Header-only tables carry no sliceable body groups; place the
+            // table whole. On an already-started page move to a fresh one; on
+            // a fresh page a new page can never fit it better, so it stays
+            // and overflows. Canvas identity must not be used to detect the
+            // page change — the counting pre-pass reuses one no-op canvas.
+            return if (cursorY == frame.top) {
+                place(node, canvas, frame.left + xOffset, cursorY)
+                RenderState(canvas, cursorY + node.size.height)
+            } else {
+                val newCanvas = openNewPage(env, canvas)
+                place(node, newCanvas, frame.left + xOffset, frame.top)
+                RenderState(newCanvas, frame.top + node.size.height)
+            }
+        }
 
         var currentCanvas = canvas
         var currentTop = cursorY
@@ -480,7 +517,7 @@ internal object DocumentRenderer {
             var chunkHeight = 0f
 
             // Continuation pages re-draw the header when requested.
-            val includeHeader = header != null && (isFirstChunk || node.repeatHeader)
+            val includeHeader = header != null && (isFirstChunk || repeatHeader)
             if (includeHeader) chunkHeight += header.height
 
             for (group in remaining) {
@@ -623,9 +660,14 @@ internal object DocumentRenderer {
             var overflow = split.second
 
             if (fitting.isEmpty()) {
-                currentCanvas = openNewPage(env, currentCanvas)
-                currentTop = frame.top
-                continue
+                if (currentTop == frame.top) {
+                    fitting = listOf(remaining.first())
+                    overflow = remaining.drop(1)
+                } else {
+                    currentCanvas = openNewPage(env, currentCanvas)
+                    currentTop = frame.top
+                    continue
+                }
             }
 
             if (overflow.isNotEmpty()) {
@@ -687,13 +729,23 @@ internal object DocumentRenderer {
         var consumed = 0f
 
         while (consumed < totalHeight) {
-            val available = frame.bottom - currentTop
+            var available = frame.bottom - currentTop
             if (available <= 0f) {
-                currentCanvas = openNewPage(env, currentCanvas)
-                currentTop = frame.top
-                continue
+                if (currentTop == frame.top) {
+                    available = totalHeight - consumed
+                } else {
+                    currentCanvas = openNewPage(env, currentCanvas)
+                    currentTop = frame.top
+                    continue
+                }
             }
-            val chunkHeight = minOf(available, totalHeight - consumed)
+            var chunkHeight = minOf(available, totalHeight - consumed)
+            if (consumed + chunkHeight == consumed) {
+                // The leftover frame height is below one ULP of the consumed
+                // total, so float addition can no longer advance — flush the
+                // whole remainder into this frame instead of looping forever.
+                chunkHeight = totalHeight - consumed
+            }
             val srcTop = consumed / totalHeight
             val srcBottom = (consumed + chunkHeight) / totalHeight
             currentCanvas.drawImage(

@@ -2,6 +2,8 @@ package com.conamobile.pdfkmp.render
 
 import android.graphics.Typeface
 import android.os.ParcelFileDescriptor
+import android.os.Process
+import com.conamobile.pdfkmp.PdfLog
 import com.conamobile.pdfkmp.font.ResolvedFont
 import com.conamobile.pdfkmp.font.resolveFont
 import com.conamobile.pdfkmp.style.FontStyle
@@ -9,6 +11,7 @@ import com.conamobile.pdfkmp.style.FontWeight
 import com.conamobile.pdfkmp.style.PdfFont
 import com.conamobile.pdfkmp.style.TextStyle
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Per-document cache that maps a [com.conamobile.pdfkmp.font.ResolvedFont]
@@ -22,12 +25,14 @@ import java.io.File
  *
  * Temporary files persist for the lifetime of the JVM process unless
  * [cleanup] is called. The driver invokes [cleanup] from
- * [com.conamobile.pdfkmp.render.PdfDriver.finish].
+ * [com.conamobile.pdfkmp.render.PdfDriver.finish] and, on the renderer's
+ * abort path, from [com.conamobile.pdfkmp.render.PdfDriver.close].
  */
 internal class AndroidFontRegistry(private val cacheDir: File) {
 
     private val typefaces = mutableMapOf<String, Typeface>()
     private val tempFiles = mutableListOf<File>()
+    private val instanceId = nextInstanceId.getAndIncrement()
 
     init {
         if (!cacheDir.exists()) cacheDir.mkdirs()
@@ -75,16 +80,39 @@ internal class AndroidFontRegistry(private val cacheDir: File) {
         val bytes = resolved.bytes
             ?: return resolveSystemTypeface(resolved.name)
 
-        val tempFile = File(cacheDir, "pdfkmp-${resolved.name}.ttf").also { file ->
-            if (!file.exists() || file.length() != bytes.size.toLong()) {
-                file.writeBytes(bytes)
-                tempFiles += file
-            }
+        val safeName = buildString(resolved.name.length) {
+            for (c in resolved.name) append(if (c.isLetterOrDigit() || c == '-' || c == '_') c else '_')
         }
-        return ParcelFileDescriptor.open(tempFile, ParcelFileDescriptor.MODE_READ_ONLY)
-            .use { pfd ->
-                Typeface.Builder(pfd.fileDescriptor).build()
-            }
+        // The name must be unique per created file, not merely per registry:
+        // the sanitized name is lossy ("My Font" and "My.Font" collide), the
+        // instance counter restarts per process, and cacheDir is shared
+        // across an app's processes — Typeface memory-maps the file, so any
+        // second writer corrupts glyphs under a live mapping. pid + instance
+        // + per-file sequence make the path unique on all three axes.
+        val tempFile = File(cacheDir, "pdfkmp-$processId-$instanceId-${tempFiles.size}-$safeName.ttf")
+        val typeface = try {
+            tempFile.writeBytes(bytes)
+            ParcelFileDescriptor.open(tempFile, ParcelFileDescriptor.MODE_READ_ONLY)
+                .use { pfd ->
+                    Typeface.Builder(pfd.fileDescriptor).build()
+                }
+        } catch (e: Exception) {
+            null
+        }
+        if (typeface == null) {
+            tempFile.delete()
+            PdfLog.warn(
+                "Custom font '${resolved.name}' could not be parsed; falling back to the default typeface (Android backend)",
+            )
+            return Typeface.DEFAULT
+        }
+        tempFiles += tempFile
+        return typeface
+    }
+
+    private companion object {
+        private val nextInstanceId = AtomicInteger()
+        private val processId = Process.myPid()
     }
 
     /**

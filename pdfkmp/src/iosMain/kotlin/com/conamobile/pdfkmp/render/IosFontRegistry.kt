@@ -1,5 +1,6 @@
 package com.conamobile.pdfkmp.render
 
+import com.conamobile.pdfkmp.PdfLog
 import com.conamobile.pdfkmp.font.ResolvedFont
 import com.conamobile.pdfkmp.font.resolveFont
 import com.conamobile.pdfkmp.style.FontStyle
@@ -77,7 +78,16 @@ internal class IosFontRegistry {
                 releaseData = null,
             ) ?: return@usePinned null
             CGFontCreateWithDataProvider(provider)
-        } ?: return
+        }
+        if (cgFont == null) {
+            // Same observable degrade path as the Android/JVM registries:
+            // without the warning a corrupt custom font silently renders in
+            // the system face and is undetectable at generation time.
+            PdfLog.warn(
+                "Custom font '${resolved.name}' could not be parsed; falling back to the system font (iOS backend)",
+            )
+            return
+        }
         CTFontManagerRegisterGraphicsFont(cgFont, null)
         registeredFonts[resolved.name] = cgFont
     }

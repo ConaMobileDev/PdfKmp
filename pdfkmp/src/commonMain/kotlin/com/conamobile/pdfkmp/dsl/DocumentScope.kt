@@ -171,9 +171,15 @@ public class DocumentScope internal constructor() {
     }
 
     internal fun build(): DocumentSpec {
+        require(pages.isNotEmpty()) {
+            "A PDF document needs at least one page { } block — an empty page tree is not a valid PDF"
+        }
         val collected = linkedSetOf<PdfFont.Custom>()
         collected += fonts
-        pages.forEach { page -> collectCustomFonts(page.content, collected) }
+        pages.forEach { page ->
+            collectCustomFonts(page.content, collected)
+            page.watermark?.let { collectCustomFonts(it, collected) }
+        }
         // Fold encryption + attachments into the metadata so they ride the
         // existing factory.create(metadata, …) channel without widening
         // DocumentSpec — drivers read them off PdfMetadata.

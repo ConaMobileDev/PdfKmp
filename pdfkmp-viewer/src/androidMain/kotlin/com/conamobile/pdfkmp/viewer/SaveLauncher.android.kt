@@ -42,7 +42,7 @@ public actual fun rememberPdfSaveAction(): PdfSaveAction {
 private class AndroidSaveAction(private val context: Context) : PdfSaveAction {
 
     override fun invoke(bytes: ByteArray, fileName: String) {
-        val safeName = fileName.takeIf { it.isNotBlank() } ?: "document.pdf"
+        val safeName = sanitizePdfFileName(fileName)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 writeViaMediaStore(safeName, bytes)

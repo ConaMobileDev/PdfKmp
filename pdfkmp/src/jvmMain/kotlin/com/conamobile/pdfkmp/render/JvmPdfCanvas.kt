@@ -2,6 +2,8 @@ package com.conamobile.pdfkmp.render
 
 import com.conamobile.pdfkmp.PdfLog
 import com.conamobile.pdfkmp.geometry.ContentScale
+import com.conamobile.pdfkmp.image.MAX_DECODE_PIXELS
+import com.conamobile.pdfkmp.image.exceedsDecodeBudget
 import com.conamobile.pdfkmp.style.LineStyle
 import com.conamobile.pdfkmp.style.PdfColor
 import com.conamobile.pdfkmp.style.PdfPaint
@@ -379,6 +381,16 @@ internal class JvmPdfCanvas(
         altText: String?,
     ) {
         if (bytes.isEmpty() || width <= 0f || height <= 0f) return
+        // The common header check only parses PNG/JPEG; the ImageIO probe
+        // covers every other format ImageIO would otherwise fully decode
+        // (GIF/BMP/TIFF dimension bombs included).
+        if (exceedsDecodeBudget(bytes) || imageIoExceedsDecodeBudget(bytes)) {
+            PdfLog.warn(
+                "drawImage skipped: declared dimensions exceed the $MAX_DECODE_PIXELS-pixel " +
+                    "decode budget (JVM backend)",
+            )
+            return
+        }
         val decoded = runCatching { ImageIO.read(ByteArrayInputStream(bytes)) }.getOrNull()
         if (decoded == null) {
             PdfLog.warn("drawImage skipped: ${bytes.size}-byte payload is not a decodable image (JVM backend)")
@@ -515,6 +527,34 @@ internal class JvmPdfCanvas(
 
 /** Rectangle in PDF points used to communicate an image's draw destination. */
 private data class DstRect(val x: Float, val y: Float, val width: Float, val height: Float)
+
+/**
+ * Pre-decode dimension check for every format ImageIO can read. The header
+ * is sized through the format's `ImageReader` without touching pixel data,
+ * so a hostile file claiming enormous dimensions is rejected before
+ * `ImageIO.read` can allocate them. Unreadable input returns `false` — the
+ * subsequent full decode is the one that reports it as undecodable.
+ */
+private fun imageIoExceedsDecodeBudget(bytes: ByteArray): Boolean {
+    return try {
+        val input = ImageIO.createImageInputStream(ByteArrayInputStream(bytes)) ?: return false
+        input.use { stream ->
+            val readers = ImageIO.getImageReaders(stream)
+            if (!readers.hasNext()) return false
+            val reader = readers.next()
+            try {
+                reader.setInput(stream)
+                val w = reader.getWidth(0)
+                val h = reader.getHeight(0)
+                w > 0 && h > 0 && w.toLong() * h.toLong() > MAX_DECODE_PIXELS
+            } finally {
+                reader.dispose()
+            }
+        }
+    } catch (e: Exception) {
+        false
+    }
+}
 
 /**
  * Returns the horizontal slice of [image] between the normalised

@@ -49,7 +49,10 @@ private class AndroidShareAction(private val context: Context) : PdfShareAction 
         val shareDir = File(context.cacheDir, SHARE_CACHE_DIR).apply {
             if (!exists()) mkdirs()
         }
-        val target = File(shareDir, fileName.takeIf { it.isNotBlank() } ?: "document.pdf")
+        // Leaf-name sanitization keeps a traversal-style name from writing
+        // outside the FileProvider-mapped dir (which would also make
+        // getUriForFile throw and crash the host).
+        val target = File(shareDir, sanitizePdfFileName(fileName))
         target.writeBytes(bytes)
 
         val authority = "${context.packageName}$FILE_PROVIDER_SUFFIX"

@@ -323,7 +323,7 @@ public fun PdfViewer(
     val hyperlinksByPage = remember(source, hyperlinksEnabled) {
         if (hyperlinksEnabled) source.hyperlinks().groupBy { it.pageIndex } else emptyMap()
     }
-    val urlLauncher = if (hyperlinksEnabled) rememberPdfUrlLauncher() else null
+    val urlLauncher = if (hyperlinksEnabled) rememberSchemeFilteredPdfUrlLauncher() else null
 
     // Stage 2 — renderer. Re-opens whenever the resolved bytes (or the
     // password) change.

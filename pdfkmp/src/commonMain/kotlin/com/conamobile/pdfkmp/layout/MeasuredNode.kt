@@ -281,6 +281,14 @@ public data class MeasuredTable(
      * engine.
      */
     val cellOwners: List<List<Int>> = emptyList(),
+    /**
+     * `true` when a header-row cell's rowSpan reaches into the body rows.
+     * The slicing renderer uses this to draw the header once instead of
+     * repeating it — a repeated header advances the cursor by only its own
+     * row height, so its merged cell would overpaint the first body row of
+     * every continuation chunk.
+     */
+    val headerSpansIntoBody: Boolean = false,
 ) : MeasuredNode
 
 /**

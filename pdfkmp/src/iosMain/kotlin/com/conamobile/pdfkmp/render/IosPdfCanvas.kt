@@ -2,6 +2,8 @@ package com.conamobile.pdfkmp.render
 
 import com.conamobile.pdfkmp.PdfLog
 import com.conamobile.pdfkmp.geometry.ContentScale
+import com.conamobile.pdfkmp.image.MAX_DECODE_PIXELS
+import com.conamobile.pdfkmp.image.exceedsDecodeBudget
 import com.conamobile.pdfkmp.style.LineStyle
 import com.conamobile.pdfkmp.style.PdfColor
 import com.conamobile.pdfkmp.style.PdfPaint
@@ -584,6 +586,18 @@ internal class IosPdfCanvas(
         altText: String?,
     ) {
         if (bytes.isEmpty() || width <= 0f || height <= 0f) return
+        // Same pre-decode budget the Android/JVM backends enforce: the
+        // downscale below happens only after CGContextDrawImage forces the
+        // full-size pixel allocation, so a dimension-bomb header must be
+        // rejected before decodeCGImage — jetsam kills at far lower peaks
+        // than a desktop OS would tolerate.
+        if (exceedsDecodeBudget(bytes)) {
+            PdfLog.warn(
+                "drawImage skipped: declared dimensions exceed the $MAX_DECODE_PIXELS-pixel " +
+                    "decode budget (iOS backend)",
+            )
+            return
+        }
         val decoded = decodeCGImage(bytes)
         if (decoded == null) {
             PdfLog.warn("drawImage skipped: ${bytes.size}-byte payload is not a decodable image (iOS backend)")

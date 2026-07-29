@@ -26,7 +26,11 @@ internal actual fun rememberPdfUrlLauncher(): PdfUrlLauncher =
 private class IosUrlLauncher : PdfUrlLauncher {
     override fun invoke(url: String) {
         if (url.isBlank()) return
-        val nsUrl = NSURL(string = url)
+        // URLWithString returns null for RFC-invalid strings (e.g. an
+        // embedded space) — the failable-initializer constructor form would
+        // make Kotlin/Native throw NPE and crash the host on a link tap,
+        // violating the launcher's silent fall-through contract.
+        val nsUrl = NSURL.URLWithString(url) ?: return
         UIApplication.sharedApplication.openURL(
             url = nsUrl,
             options = emptyMap<Any?, Any>(),

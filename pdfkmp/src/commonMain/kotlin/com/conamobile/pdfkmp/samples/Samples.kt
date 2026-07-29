@@ -2092,6 +2092,114 @@ public object Samples {
         }
     }
 
+    /**
+     * Exercises the untrusted-input hardening end-to-end in one document:
+     * the URL scheme allowlist at the DSL boundary, surrogate-safe word
+     * breaking and ellipsis, the image decode budget, and slice-safe tables
+     * (a header `rowSpan` spanning into the body, plus a header-only
+     * table). Every guarded path degrades *visibly on the page* instead of
+     * crashing, hanging, or corrupting output — so opening this sample in
+     * any of the sample apps doubles as a manual regression check.
+     */
+    public fun robustnessShowcase(): PdfDocument = pdf {
+        metadata { title = "PdfKmp – Robustness Showcase" }
+
+        page {
+            spacing = 10.dp
+
+            text("Robustness Showcase") { fontSize = 26.sp; bold = true }
+            text(
+                "Hostile or awkward input degrades gracefully — nothing on these " +
+                    "pages crashes, hangs, or corrupts the document.",
+            ) { color = PdfColor.DarkGray }
+
+            text("1 · Link scheme allowlist") { fontSize = 16.sp; bold = true }
+            text("Only http, https, mailto, and tel become annotations; anything else is drawn unlinked:")
+            link("https://github.com/conamobiledev/PdfKmp") {
+                text("https:// link — clickable annotation") { color = PdfColor.Blue; underline = true }
+            }
+            link("mailto:team@example.com") {
+                text("mailto: link — clickable annotation") { color = PdfColor.Blue; underline = true }
+            }
+            link("javascript:alert(1)") {
+                text("javascript: link — annotation dropped, content drawn plain")
+            }
+
+            text("2 · Surrogate-safe wrapping") { fontSize = 16.sp; bold = true }
+            text("An unbroken emoji run wraps at code-point boundaries — no emoji is ever torn in half:")
+            text("😀".repeat(120)) { fontSize = 12.sp }
+            text("And the ellipsis cut never strands half a surrogate pair:")
+            text("One visible line then 😀😀😀😀😀😀😀😀😀😀 $LOREM") {
+                maxLines = 1
+                overflow = TextOverflow.Ellipsis
+            }
+
+            text("3 · Image decode budget") { fontSize = 16.sp; bold = true }
+            text(
+                "The PNG below declares 50 000 × 50 000 px (2.5 gigapixels) in a " +
+                    "few dozen bytes. The pre-decode budget rejects it before any " +
+                    "pixel memory is allocated — the slot stays empty and a " +
+                    "warning is logged instead of the process dying:",
+            )
+            image(dimensionBombPng(), width = 120.dp, height = 60.dp)
+            text("(the empty slot above is the guarded outcome)") { fontSize = 9.sp; color = PdfColor.Gray }
+        }
+
+        page {
+            pageBreakStrategy = PageBreakStrategy.Slice
+            spacing = 10.dp
+
+            text("4 · Slice-safe tables") { fontSize = 16.sp; bold = true }
+            text(
+                "This header cell spans two rows (rowSpan = 2). Repeating such a " +
+                    "header on continuation pages would overpaint the first body " +
+                    "row of every chunk, so it is drawn once and the table simply " +
+                    "continues on later pages:",
+            )
+            table(columns = listOf(TableColumn.Weight(1f), TableColumn.Weight(2f))) {
+                header {
+                    cell("Group", rowSpan = 2)
+                    cell("Values")
+                }
+                // The first body row declares one cell — its first column is
+                // claimed by the header's merged cell above.
+                row { cell("merged into the header's group cell") }
+                repeat(60) { i ->
+                    row {
+                        cell("group ${i + 1}") { fontSize = 10.sp }
+                        cell("row ${i + 1} flows across page boundaries") { fontSize = 10.sp }
+                    }
+                }
+            }
+
+            text("A header-only table (zero body rows) places whole — it used to hang the slicer:")
+            table(columns = listOf(TableColumn.Weight(1f))) {
+                header { cell("Header only — no body rows") }
+            }
+        }
+    }
+
+    /**
+     * A syntactically plausible PNG whose IHDR claims 50 000 × 50 000
+     * pixels — a dimension bomb built from a few dozen bytes. Used by
+     * [robustnessShowcase] to demonstrate the decode budget; kept private
+     * so nobody mistakes it for a usable fixture.
+     */
+    private fun dimensionBombPng(): ByteArray {
+        fun u32(value: Int): ByteArray = byteArrayOf(
+            (value ushr 24).toByte(),
+            (value ushr 16).toByte(),
+            (value ushr 8).toByte(),
+            value.toByte(),
+        )
+        return byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A) +
+            u32(13) + byteArrayOf(0x49, 0x48, 0x44, 0x52) +
+            u32(50_000) + u32(50_000) +
+            byteArrayOf(0x08, 0x02, 0x00, 0x00, 0x00) + u32(0) +
+            u32(2) + byteArrayOf(0x49, 0x44, 0x41, 0x54, 0x78, 0x9C.toByte()) + u32(0) +
+            u32(0) + byteArrayOf(0x49, 0x45, 0x4E, 0x44)
+    }
+
     private const val LOREM: String =
         "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do " +
             "eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim " +

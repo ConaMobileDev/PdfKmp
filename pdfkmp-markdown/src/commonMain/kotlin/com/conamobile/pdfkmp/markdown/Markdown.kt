@@ -1,5 +1,6 @@
 package com.conamobile.pdfkmp.markdown
 
+import com.conamobile.pdfkmp.PdfUrls
 import com.conamobile.pdfkmp.dsl.ContainerScope
 import com.conamobile.pdfkmp.dsl.TextScope
 import com.conamobile.pdfkmp.geometry.Padding
@@ -131,10 +132,18 @@ internal class MarkdownRenderer(private val theme: MarkdownTheme) {
         val spans = InlineParser.parse(text)
         val onlyLink = spans.singleOrNull()?.takeIf { it.flags.link != null }
         if (onlyLink != null) {
-            link(onlyLink.flags.link!!) {
+            val url = onlyLink.flags.link!!
+            // link() drops the annotation for URLs outside the scheme
+            // allowlist (relative paths, "#anchor", bare "www." domains) —
+            // style those as plain text so the reader isn't promised a
+            // click that cannot happen.
+            val clickable = PdfUrls.isSafeExternalUrl(url)
+            link(url) {
                 text(onlyLink.text) {
-                    color = theme.linkColor
-                    underline = true
+                    if (clickable) {
+                        color = theme.linkColor
+                        underline = true
+                    }
                     applyFlags(onlyLink.flags)
                 }
             }

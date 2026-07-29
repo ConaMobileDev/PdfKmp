@@ -196,7 +196,8 @@ internal object KmpImageEmbedder {
             if (length < 0) return null
             val typeStart = offset + 4
             val dataStart = typeStart + 4
-            if (dataStart + length + 4 > bytes.size) {
+            val chunkEnd = dataStart.toLong() + length + 4L
+            if (chunkEnd > bytes.size) {
                 // Truncated chunk: stop. If we already gathered IDAT, use it.
                 break
             }

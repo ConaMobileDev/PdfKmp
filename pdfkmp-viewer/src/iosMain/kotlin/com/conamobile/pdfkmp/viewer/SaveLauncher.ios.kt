@@ -38,7 +38,7 @@ public actual fun rememberPdfSaveAction(): PdfSaveAction =
 private class IosSaveAction : PdfSaveAction {
 
     override fun invoke(bytes: ByteArray, fileName: String) {
-        val safeName = fileName.takeIf { it.isNotBlank() } ?: "document.pdf"
+        val safeName = sanitizePdfFileName(fileName)
         val baseDir = NSSearchPathForDirectoriesInDomains(
             directory = NSDocumentDirectory,
             domainMask = NSUserDomainMask,

@@ -5,6 +5,7 @@ import com.conamobile.pdfkmp.geometry.PageSize
 import com.conamobile.pdfkmp.geometry.Padding
 import com.conamobile.pdfkmp.layout.PageBreakStrategy
 import com.conamobile.pdfkmp.pdf
+import com.conamobile.pdfkmp.style.PdfFont
 import com.conamobile.pdfkmp.style.TableColumn
 import com.conamobile.pdfkmp.test.DrawCall
 import com.conamobile.pdfkmp.test.FakePdfDriverFactory
@@ -12,6 +13,7 @@ import com.conamobile.pdfkmp.unit.dp
 import com.conamobile.pdfkmp.unit.sp
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
@@ -680,6 +682,29 @@ class RenderTest {
         val texts = driver.pages.flatMap { it.canvas.calls.filterIsInstance<DrawCall.Text>() }.map { it.text }
         assertEquals(1, texts.count { it == "SPAN" })
         assertEquals(1, texts.count { it == "q" })
+    }
+
+    @Test
+    fun emptyDocument_failsFastWithClearMessage() {
+        val factory = FakePdfDriverFactory()
+        val error = assertFailsWith<IllegalArgumentException> {
+            pdf(factory = factory) { }
+        }
+        assertTrue("page" in error.message.orEmpty().lowercase())
+    }
+
+    @Test
+    fun customFontReferencedOnlyByWatermark_isCollectedAtBuildTime() {
+        val factory = FakePdfDriverFactory()
+        val watermarkFace = PdfFont.Custom("WatermarkFace", byteArrayOf(1, 2, 3))
+        pdf(factory = factory) {
+            page {
+                watermark {
+                    text("DRAFT") { font = watermarkFace }
+                }
+            }
+        }
+        assertEquals(listOf(watermarkFace), factory.drivers.single().customFonts)
     }
 
     /** Hand-built PNG header used by the image tests above. */

@@ -1,5 +1,6 @@
 package com.conamobile.pdfkmp.render
 
+import com.conamobile.pdfkmp.PdfLog
 import com.conamobile.pdfkmp.font.BundledFonts
 import com.conamobile.pdfkmp.font.ResolvedFont
 import com.conamobile.pdfkmp.font.resolveFont
@@ -37,6 +38,20 @@ internal class JvmFontRegistry(private val document: PDDocument) {
 
     private val fonts = mutableMapOf<String, PDFont>()
 
+    /**
+     * One shared fallback face per document. Loading Inter through
+     * [PDType0Font.load] embeds a separate font program each time, so a
+     * per-failure load would duplicate the subset in the output PDF for
+     * every unparseable custom font.
+     */
+    private val fallbackFont: PDFont by lazy {
+        try {
+            loadType0(BundledFonts.interRegular)
+        } catch (e: Exception) {
+            throw IllegalStateException("Bundled Inter font failed to load into PdfBox", e)
+        }
+    }
+
     /** Returns the [PDFont] for [style], embedding its bytes on first use. */
     fun fontFor(style: TextStyle): PDFont {
         val resolved = resolveFont(style.font, style.fontWeight, style.fontStyle)
@@ -52,14 +67,30 @@ internal class JvmFontRegistry(private val document: PDDocument) {
 
     private fun cached(resolved: ResolvedFont): PDFont {
         fonts[resolved.name]?.let { return it }
-        // System fonts have no bytes on Desktop — fall back to bundled Inter.
-        val bytes = resolved.bytes ?: BundledFonts.interRegular
-        val font = ByteArrayInputStream(bytes).use { stream ->
-            PDType0Font.load(document, stream, true)
-        }
+        val font = resolveWithFallback(resolved)
         fonts[resolved.name] = font
         return font
     }
+
+    private fun resolveWithFallback(resolved: ResolvedFont): PDFont {
+        // System fonts have no bytes on Desktop — fall back to bundled Inter.
+        val bytes = resolved.bytes ?: return fallbackFont
+        return try {
+            loadType0(bytes)
+        } catch (e: Exception) {
+            // Exception only: an Error (OOM, linkage) must propagate rather
+            // than be misreported as a font-parse failure.
+            PdfLog.warn(
+                "Custom font '${resolved.name}' could not be parsed; falling back to the bundled Inter face (JVM backend)",
+            )
+            fallbackFont
+        }
+    }
+
+    private fun loadType0(bytes: ByteArray): PDFont =
+        ByteArrayInputStream(bytes).use { stream ->
+            PDType0Font.load(document, stream, true)
+        }
 
     /**
      * Returns the subsequence of [text] whose characters [font] can encode.

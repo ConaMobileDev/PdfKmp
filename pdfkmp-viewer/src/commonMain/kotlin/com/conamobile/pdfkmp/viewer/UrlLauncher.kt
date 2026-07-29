@@ -1,6 +1,8 @@
 package com.conamobile.pdfkmp.viewer
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import com.conamobile.pdfkmp.PdfUrls
 
 /**
  * Action that opens an HTTP/HTTPS URL in the platform's default
@@ -25,3 +27,20 @@ public fun interface PdfUrlLauncher {
  */
 @Composable
 internal expect fun rememberPdfUrlLauncher(): PdfUrlLauncher
+
+/**
+ * Wraps the platform launcher with the [PdfUrls] scheme allowlist so a
+ * URL recorded from document content can never dispatch a `javascript:`,
+ * `file:`, `data:`, or other non-web scheme to the OS, regardless of
+ * how the document's annotations were authored. Rejected URLs follow
+ * the same silent fall-through contract as unhandled ones.
+ */
+@Composable
+internal fun rememberSchemeFilteredPdfUrlLauncher(): PdfUrlLauncher {
+    val platformLauncher = rememberPdfUrlLauncher()
+    return remember(platformLauncher) {
+        PdfUrlLauncher { url ->
+            if (PdfUrls.isSafeExternalUrl(url)) platformLauncher(url)
+        }
+    }
+}
