@@ -112,9 +112,9 @@ Depend on `pdfkmp` from `commonMain`. Do **not** add `pdfkmp-android` separately
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("io.github.conamobiledev:pdfkmp:1.2.0")
-            implementation("io.github.conamobiledev:pdfkmp-compose-resources:1.2.0") // optional
-            implementation("io.github.conamobiledev:pdfkmp-viewer:1.2.0")            // optional
+            implementation("io.github.conamobiledev:pdfkmp:1.3.0")
+            implementation("io.github.conamobiledev:pdfkmp-compose-resources:1.3.0") // optional
+            implementation("io.github.conamobiledev:pdfkmp-viewer:1.3.0")            // optional
         }
     }
 }
@@ -134,8 +134,8 @@ For projects that don't use Kotlin Multiplatform (plain `com.android.application
 ```kotlin
 // app/build.gradle.kts
 dependencies {
-    implementation("io.github.conamobiledev:pdfkmp-android:1.2.0")
-    implementation("io.github.conamobiledev:pdfkmp-viewer:1.2.0") // optional — Compose viewer screen
+    implementation("io.github.conamobiledev:pdfkmp-android:1.3.0")
+    implementation("io.github.conamobiledev:pdfkmp-viewer:1.3.0") // optional — Compose viewer screen
 }
 ```
 
@@ -148,8 +148,8 @@ KMP projects with a `jvm()` target need no extra setup — Gradle resolves the D
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("io.github.conamobiledev:pdfkmp-jvm:1.2.0")
-    implementation("io.github.conamobiledev:pdfkmp-viewer-jvm:1.2.0") // optional — Compose for Desktop viewer
+    implementation("io.github.conamobiledev:pdfkmp-jvm:1.3.0")
+    implementation("io.github.conamobiledev:pdfkmp-viewer-jvm:1.3.0") // optional — Compose for Desktop viewer
 }
 ```
 

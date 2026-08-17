@@ -8,8 +8,8 @@ is pure common, so it adds no platform code of its own.
 Install it alongside the core dependency:
 
 ```kotlin
-implementation("io.github.conamobiledev:pdfkmp:1.2.0")
-implementation("io.github.conamobiledev:pdfkmp-compose-resources:1.2.0")
+implementation("io.github.conamobiledev:pdfkmp:1.3.0")
+implementation("io.github.conamobiledev:pdfkmp-compose-resources:1.3.0")
 ```
 
 !!! warning "Build with `pdfAsync { }`"
