@@ -20,6 +20,7 @@ kotlinx-io = "0.9.1"
 
 pdfbox = "3.0.8"
 bouncycastle = "1.85"
+robolectric = "4.16"
 
 [libraries]
 androidx-activityCompose = { module = "androidx.activity:activity-compose", version.ref = "composeActivity" }
@@ -30,6 +31,10 @@ coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", ve
 coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinx-coroutines" }
 
 kotlinx-io-core = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version.ref = "kotlinx-io" }
+
+# Android host tests: gives the JVM test JVM a real Context + android.graphics
+# implementations, so the Android backend is exercised without an emulator.
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 
 # JVM/Desktop PDF backend: generation (PdfBox content streams, embedded
 # TrueType fonts → vector text) and viewer-side rasterisation (PDFRenderer).

@@ -6,6 +6,117 @@ versions follow [Semantic Versioning](https://semver.org). Pre-1.0
 minor versions may break public API; alpha / beta / rc tags signal
 an actively settling surface.
 
+## [Unreleased]
+
+### Breaking
+
+- **`link(url) { … }` embeds only allowlisted schemes.** `http`, `https`,
+  `mailto`, and `tel` become `/URI` annotations; every other scheme (and any
+  relative, scheme-relative, or control-character-bearing URL) is skipped —
+  the wrapped content is still drawn, just unlinked, and the skip is reported
+  through `PdfLog`. A generated PDF outlives the app that wrote it, so an
+  annotation carrying `javascript:`, `file:`, `data:`, or `content:` is a
+  code-execution / local-file channel in readers that honour those schemes.
+  The rule is exposed as `PdfUrls.isSafeExternalUrl(url)` and is applied again
+  in `pdfkmp-viewer` before a tapped link reaches the OS. Internal navigation
+  (`linkToAnchor`) is unaffected. See
+  [`docs/guides/navigation.md`](docs/guides/navigation.md).
+- **`save(location, filename)` validates the filename.** It must be a leaf
+  name: path separators, `..`, NUL and other control characters, the Win32
+  characters `: * ? " < > |`, Windows reserved device stems (`CON`, `COM1`, …),
+  and a trailing space or dot now raise `IllegalArgumentException` before any
+  platform code composes a path. Two previously-working call shapes break:
+  passing a sub-path as the filename (`save(Custom("/dir"), "reports/a.pdf")`)
+  and omitting the filename for a non-`Custom` location (`save(Downloads)`,
+  which silently became `document.pdf` on the Web target). Pass an explicit
+  leaf name. The checks are platform-independent on purpose — these files
+  cross OS boundaries through share sheets and cloud sync.
+- **An empty document is rejected.** `pdf { }` with no `page { }` block now
+  throws `IllegalArgumentException` instead of producing a page-less file that
+  no reader accepts. Guard data-driven page loops (`if (items.isEmpty()) return`).
+
+### Added
+
+- **`PdfImagePolicy.maxDecodePixels`** — the pixel ceiling applied to an
+  image's *declared* header dimensions before any decode allocates memory
+  (default 50 MP). Documents that legitimately carry very large imagery raise
+  it once at startup; a hostile file that claims enormous dimensions in a tiny
+  header is sub-sampled down to fit instead of taking the process with it.
+- **`PdfUrls`** — the URL scheme allowlist described above, public so host code
+  can pre-flight a URL with the same rule the DSL applies.
+  **`PdfUrls.allowedSchemes`** widens it for trusted, in-house targets
+  (`PdfUrls.DEFAULT_ALLOWED_SCHEMES + "myapp"`); entries are lower-cased and
+  validated as RFC 3986 schemes on assignment. It is process-wide and governs
+  annotation writing *and* the viewer's tap handling, so it must never be
+  derived from document content.
+- **`Samples.robustnessShowcase()`** — one document exercising the URL
+  allowlist, surrogate-safe wrapping and ellipsis, the decode budget, and
+  slice-safe tables. Wired into the desktop sample.
+
+### Fixed
+
+- **iOS: the abort path leaked a process-global graphics context.** When a draw
+  call threw before `finish()`, `IosPdfDriver` never ran
+  `UIGraphicsEndPDFContext()` or unregistered its custom fonts — the abandoned
+  PDF context stayed on the thread's UIKit stack for the rest of the process,
+  so every later `UIGraphicsGetCurrentContext()` caller inherited it. The
+  driver now implements `close()` (idempotent, and a no-op after a successful
+  `finish()`), matching the Android and JVM drivers.
+- **The image decode budget behaved differently on each platform.** Android
+  sub-sampled an oversized image and rendered it; iOS and the JVM dropped it
+  outright — so one document produced an image on one platform and a blank slot
+  on another. All three now sub-sample through the same shared factor
+  (`inSampleSize` on Android, `ImageReadParam.setSourceSubsampling` on the JVM,
+  `CGImageSourceCreateThumbnailAtIndex` on iOS). The pure-Kotlin/wasm writer,
+  which embeds encoded streams verbatim and owns no decoder, refuses an
+  over-budget image rather than passing the bomb to the reader — previously it
+  applied no bound at all and embedded a 2.5-gigapixel `/Width`/`/Height` pair
+  as-is.
+- **Android: one decode path skipped the budget entirely.** When both declared
+  dimensions already fell under the 200-DPI target, `decodeBitmap` returned an
+  unsampled full decode without consulting the budget, so a large enough
+  requested draw size let a dimension bomb through. Every decode now goes
+  through the bounds pass first.
+- **A table header cell spanning into the body could paint past its chunk.**
+  The header's merged rectangle is drawn from a `spannedHeight` fixed at
+  measure time, but the body-row grouping ignored the header's reach, so a
+  first chunk holding fewer rows than the cell spans painted it into the
+  margin while those rows rendered on the next page. The spanned rows are now
+  pinned to the header's chunk.
+- The JVM backend parsed an image header three times per drawn slice (common
+  probe, ImageIO probe, then the real read); it now sizes and decodes in one
+  reader pass — for a tall sliced image that was once per page.
+- **`pdfkmp-markdown` styled the same link two different ways.** Only the
+  standalone-link path honoured the scheme allowlist, so `[docs](#anchor)`
+  rendered as plain body text on a line of its own and as blue underlined
+  "clickable" text inside a sentence. Both paths now share one predicate.
+  Relative and anchor targets also no longer call the core `link()` just to
+  have it refuse them, so a document of internal cross-references stops
+  emitting one `PdfLog` warning per link.
+- **The JVM fallback face could be embedded twice.** A document that used the
+  bundled Inter *and* fell back to it (after an unparseable custom font)
+  carried two copies of the same font program; the fallback now shares the
+  registry's cache entry with the ordinary lookup.
+- **`MiniXml` decoded numeric references to forbidden control characters.**
+  XML 1.0's `Char` production admits only tab, LF and CR from the C0 range, but
+  only NUL and the surrogate halves were filtered — `&#1;`, `&#xB;`, `&#xFFFE;`
+  and friends materialised as real control characters. They now fall back to
+  raw text like any other invalid reference.
+- Font-load failures on Android and the JVM now report the underlying cause.
+  A truncated file, an unsupported CFF outline, and a full cache partition all
+  arrived at the same message and were indistinguishable.
+
+### Build
+
+- The Android target now runs the shared test suite (`withHostTest {}`), so 237
+  common tests cover the target that ships the `aar` — previously they ran on
+  jvm, iOS and wasm only. Robolectric backs an `androidHostTest` source set
+  covering the Android decode-budget path. `SamplesSmokeTest` and
+  `BarcodeDslTest` are excluded there: they build a real PDF through
+  `android.graphics.pdf.PdfDocument`, which is native-backed and cannot run on
+  a host JVM at all. Covering `AndroidPdfDriver` and `AndroidFontRegistry`
+  needs an instrumented test on a device, which this repo has no CI job for.
+
 ## [1.2.0] — 2026-06-07
 
 ### Added — text engine (`pdfkmp`)

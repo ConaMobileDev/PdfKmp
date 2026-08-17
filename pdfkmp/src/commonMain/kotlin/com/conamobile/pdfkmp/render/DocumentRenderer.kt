@@ -600,6 +600,13 @@ internal object DocumentRenderer {
      * it; cells that span multiple rows keep their rows in one group so the
      * slicer never tears a merged region. With no rowspans every body row is
      * its own group, matching the historical per-row slicing exactly.
+     *
+     * A header cell may itself span into the body. Its reach binds the *first*
+     * body group even though the header row is not a body row: the header is
+     * drawn from its measured `spannedHeight`, which is fixed at measure
+     * time and never recomputed per chunk, so a first chunk holding
+     * fewer body rows than the header spans would paint the merged cell past
+     * its own bottom edge and into the margin.
      */
     private fun atomicBodyGroups(node: MeasuredTable, firstBodyIndex: Int): List<BodyGroup> {
         val groups = ArrayList<BodyGroup>()
@@ -609,6 +616,10 @@ internal object DocumentRenderer {
             // Extend the group while any row already in it has a cell whose
             // rowspan reaches past the current end.
             var end = i
+            if (i == firstBodyIndex && firstBodyIndex > 0) {
+                val headerReach = rowSpanReach(node, 0)
+                if (headerReach > end) end = headerReach
+            }
             var scan = i
             while (scan <= end) {
                 val reach = rowSpanReach(node, scan)

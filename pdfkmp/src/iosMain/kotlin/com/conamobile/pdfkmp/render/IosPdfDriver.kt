@@ -104,6 +104,22 @@ internal class IosPdfDriver(
         }
     }
 
+    override fun close() {
+        // The renderer calls this on its abort path, where finish() never ran.
+        // Both resources below are *process-global*, which makes skipping this
+        // worse than an ordinary leak: an unterminated PDF context stays on the
+        // thread's UIKit context stack for the rest of the process (so the next
+        // UIGraphics* caller — including the next PdfKmp document — inherits
+        // it), and fonts registered through CTFontManager stay registered under
+        // their family name, blocking a later document from registering the
+        // same face. Guarded by `open`, so a close() after finish() is a no-op.
+        if (!open) return
+        open = false
+        pageOpen = false
+        UIGraphicsEndPDFContext()
+        fonts.cleanup()
+    }
+
     /**
      * Writes the collected bookmarks into the PDF context's outline before
      * the context closes. Entries reference their 1-based page number —

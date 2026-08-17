@@ -8,6 +8,7 @@ import com.conamobile.pdfkmp.test.FakePdfDriverFactory
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -87,6 +88,50 @@ class LinkUrlPolicyTest {
             .flatMap { it.canvas.calls }
             .filterIsInstance<DrawCall.Text>()
         assertTrue(texts.any { it.text == "click me" })
+    }
+
+    @Test
+    fun allowedSchemes_canBeWidenedForTrustedTargets() {
+        val previous = PdfUrls.allowedSchemes
+        try {
+            assertFalse(PdfUrls.isSafeExternalUrl("myapp://open/report"))
+            PdfUrls.allowedSchemes = PdfUrls.DEFAULT_ALLOWED_SCHEMES + "myapp"
+            assertTrue(PdfUrls.isSafeExternalUrl("myapp://open/report"))
+            // Widening must not weaken anything else about the check.
+            assertTrue(PdfUrls.isSafeExternalUrl("https://example.com"))
+            assertFalse(PdfUrls.isSafeExternalUrl("javascript:alert(1)"))
+            assertFalse(PdfUrls.isSafeExternalUrl("myapp://open/\u0001report"))
+        } finally {
+            PdfUrls.allowedSchemes = previous
+        }
+    }
+
+    @Test
+    fun allowedSchemes_areCaseNormalisedOnAssignment() {
+        val previous = PdfUrls.allowedSchemes
+        try {
+            PdfUrls.allowedSchemes = setOf("HTTPS", "MyApp")
+            assertTrue(PdfUrls.isSafeExternalUrl("https://example.com"))
+            assertTrue(PdfUrls.isSafeExternalUrl("MYAPP:x"))
+            assertFalse(PdfUrls.isSafeExternalUrl("http://example.com"))
+        } finally {
+            PdfUrls.allowedSchemes = previous
+        }
+    }
+
+    @Test
+    fun allowedSchemes_rejectsEmptyAndMalformedEntries() {
+        val previous = PdfUrls.allowedSchemes
+        try {
+            assertFailsWith<IllegalArgumentException> { PdfUrls.allowedSchemes = emptySet() }
+            assertFailsWith<IllegalArgumentException> { PdfUrls.allowedSchemes = setOf("has space") }
+            assertFailsWith<IllegalArgumentException> { PdfUrls.allowedSchemes = setOf("1leadingdigit") }
+            assertFailsWith<IllegalArgumentException> { PdfUrls.allowedSchemes = setOf("") }
+            // A rejected assignment must leave the previous policy in force.
+            assertEquals(previous, PdfUrls.allowedSchemes)
+        } finally {
+            PdfUrls.allowedSchemes = previous
+        }
     }
 
     @Test

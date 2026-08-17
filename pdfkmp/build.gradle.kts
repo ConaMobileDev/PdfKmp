@@ -114,6 +114,11 @@ kotlin {
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
 
+        // Without this the whole commonTest suite — every layout, slicing and
+        // policy assertion — runs on jvm, iOS and wasm but never on the target
+        // that ships the `aar`.
+        withHostTest {}
+
         compilations.configureEach {
             compileTaskProvider.configure {
                 compilerOptions {
@@ -185,6 +190,14 @@ kotlin {
             implementation(libs.bouncycastle.bcpkix)
         }
 
+        // Robolectric supplies a real Context and working android.graphics
+        // classes on the host JVM. Without it the Android target can only run
+        // the tests that never touch the platform backend, which is precisely
+        // the code that most needs covering here.
+        getByName("androidHostTest").dependencies {
+            implementation(libs.robolectric)
+        }
+
         compilerOptions {
             freeCompilerArgs.add("-Xexpect-actual-classes")
         }
@@ -249,6 +262,23 @@ mavenPublishing {
             url.set(providers.gradleProperty("POM_SCM_URL"))
             connection.set(providers.gradleProperty("POM_SCM_CONNECTION"))
             developerConnection.set(providers.gradleProperty("POM_SCM_DEV_CONNECTION"))
+        }
+    }
+}
+
+// The Android host-test JVM has no native android.graphics.pdf.PdfDocument:
+// Robolectric leaves its mNativeDocument at 0, so any call throws
+// "document is closed!". These two commonTest classes build a real PDF through
+// the default driver, so they cannot run here — they still run on jvm, iOS and
+// wasm, and covering the Android driver itself needs an instrumented test on a
+// device. Every other commonTest class runs on Android unmodified.
+// configureEach, not named(...): AGP registers the host-test task lazily, so it
+// does not exist yet when this file is evaluated.
+tasks.withType<Test>().configureEach {
+    if (name == "testAndroidHostTest") {
+        filter {
+            excludeTestsMatching("com.conamobile.pdfkmp.samples.SamplesSmokeTest")
+            excludeTestsMatching("com.conamobile.pdfkmp.dsl.BarcodeDslTest")
         }
     }
 }
