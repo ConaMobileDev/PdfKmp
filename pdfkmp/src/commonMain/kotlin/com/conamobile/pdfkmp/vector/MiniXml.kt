@@ -222,21 +222,37 @@ internal object MiniXml {
             source.regionMatches(index, prefix, 0, prefix.length)
     }
 
-    private fun encodeCodePoint(codePoint: Int): String? = when (codePoint) {
-        // XML 1.0's Char production forbids NUL and the surrogate range;
-        // materializing them would hand downstream consumers a NUL-bearing
-        // or malformed (lone surrogate) UTF-16 string. Returning null lets
-        // decodeEntities fall back to the raw text, same as out-of-range refs.
-        0, in 0xD800..0xDFFF -> null
-        in 1..0xFFFF -> codePoint.toChar().toString()
-        in 0x10000..0x10FFFF -> {
-            val v = codePoint - 0x10000
-            charArrayOf(
-                (0xD800 + (v shr 10)).toChar(),
-                (0xDC00 + (v and 0x3FF)).toChar(),
-            ).concatToString()
-        }
-        else -> null
+    /**
+     * XML 1.0's `Char` production, in full:
+     * `#x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]`.
+     *
+     * So tab, LF and CR are the *only* legal C0 controls — the rest of the C0
+     * range, the surrogate halves, and the two non-characters #xFFFE/#xFFFF are
+     * not. Materializing one would hand downstream consumers a string that is
+     * NUL-bearing, malformed UTF-16 (a lone surrogate), or carrying a control
+     * character straight out of an attacker-supplied `&#…;` reference.
+     */
+    private fun isXmlChar(codePoint: Int): Boolean = when (codePoint) {
+        0x9, 0xA, 0xD -> true
+        in 0x20..0xD7FF -> true
+        in 0xE000..0xFFFD -> true
+        in 0x10000..0x10FFFF -> true
+        else -> false
+    }
+
+    /**
+     * UTF-16 for [codePoint], or `null` when it is not a legal XML character.
+     * Returning null lets decodeEntities fall back to the raw text, same as
+     * out-of-range refs.
+     */
+    private fun encodeCodePoint(codePoint: Int): String? {
+        if (!isXmlChar(codePoint)) return null
+        if (codePoint <= 0xFFFF) return codePoint.toChar().toString()
+        val v = codePoint - 0x10000
+        return charArrayOf(
+            (0xD800 + (v shr 10)).toChar(),
+            (0xDC00 + (v and 0x3FF)).toChar(),
+        ).concatToString()
     }
 
     private fun decodeEntities(raw: String): String {

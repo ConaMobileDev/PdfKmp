@@ -586,4 +586,29 @@ class VectorParserTest {
         val decoded = root.children.single().attributes.getValue("data-note")
         assertEquals("&#xD800;", decoded)
     }
+
+    /**
+     * XML 1.0's Char production allows only tab, LF and CR out of the whole C0
+     * range. A reference to any other control character must not materialise —
+     * an attacker-supplied `&#1;` reaching a downstream consumer as a real
+     * control byte is the same class of problem as a lone surrogate.
+     */
+    @Test
+    fun numericCharacterReference_forbiddenControlCharacters_areLeftAsRawText() {
+        for (ref in listOf("&#0;", "&#1;", "&#8;", "&#xB;", "&#xC;", "&#xE;", "&#x1F;", "&#xFFFE;", "&#xFFFF;")) {
+            val xml = "<svg viewBox=\"0 0 1 1\"><path d=\"M0,0\" data-note=\"$ref\" fill=\"black\"/></svg>"
+            val decoded = MiniXml.parse(xml).children.single().attributes.getValue("data-note")
+            assertEquals(ref, decoded, "$ref must survive as raw text, not decode to a control character")
+        }
+    }
+
+    @Test
+    fun numericCharacterReference_permittedWhitespaceControls_decode() {
+        // Tab, LF and CR are legal XML characters and must still decode.
+        for ((ref, expected) in listOf("&#9;" to '\t', "&#xA;" to '\n', "&#xD;" to '\r')) {
+            val xml = "<svg viewBox=\"0 0 1 1\"><path d=\"M0,0\" data-note=\"$ref\" fill=\"black\"/></svg>"
+            val decoded = MiniXml.parse(xml).children.single().attributes.getValue("data-note")
+            assertEquals(expected.toString(), decoded, "$ref is a legal XML char and must decode")
+        }
+    }
 }

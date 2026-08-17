@@ -1,6 +1,8 @@
 package com.conamobile.pdfkmp.kmpwriter
 
 import com.conamobile.pdfkmp.PdfLog
+import com.conamobile.pdfkmp.image.PdfImagePolicy
+import com.conamobile.pdfkmp.image.exceedsDecodeBudget
 import com.conamobile.pdfkmp.image.readImageInfo
 
 /**
@@ -44,6 +46,20 @@ internal object KmpImageEmbedder {
     fun embed(bytes: ByteArray): Embeddable? {
         if (bytes.size < 8) {
             PdfLog.warn("drawImage skipped: payload too small to be an image (pure-Kotlin backend)")
+            return null
+        }
+        // This writer embeds the encoded stream verbatim — it owns no decoder,
+        // so it cannot sample an oversized image down the way the Android /
+        // iOS / JVM backends do. Passing the bytes through would hand the
+        // *reader* a multi-gigapixel decode: the dimension bomb would survive
+        // generation and detonate somewhere we no longer control. Refusing is
+        // the only lever available here.
+        if (exceedsDecodeBudget(bytes)) {
+            PdfLog.warn(
+                "drawImage skipped: declared dimensions exceed the " +
+                    "${PdfImagePolicy.maxDecodePixels}-pixel decode budget and this backend " +
+                    "cannot sample down (pure-Kotlin backend)",
+            )
             return null
         }
         return when {

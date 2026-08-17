@@ -1,5 +1,6 @@
 package com.conamobile.pdfkmp.kmpwriter
 
+import com.conamobile.pdfkmp.image.PdfImagePolicy
 import kotlin.test.Test
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -26,6 +27,34 @@ class KmpImageEmbedderTest {
             png(width = 1, height = 1, chunkLengthOverride = hostileChunkLength),
         )
         assertNull(embedded)
+    }
+
+    /**
+     * This backend embeds the encoded stream verbatim and owns no decoder, so
+     * it cannot sample an oversized image down the way the platform backends
+     * do. Letting the bytes through would move the dimension bomb from the
+     * generator into every reader that opens the file.
+     */
+    @Test
+    fun pngDeclaringMoreThanTheDecodeBudget_isRefused() {
+        val embedded = KmpImageEmbedder.embed(
+            png(width = 50_000, height = 50_000, idat = byteArrayOf(0x78, 0x9C.toByte())),
+        )
+        assertNull(embedded)
+    }
+
+    @Test
+    fun raisingTheBudget_letsALargeImageThrough() {
+        val bytes = png(width = 12_000, height = 12_000, idat = byteArrayOf(0x78, 0x9C.toByte()))
+        assertNull(KmpImageEmbedder.embed(bytes), "144 MP must exceed the 50 MP default")
+
+        val previous = PdfImagePolicy.maxDecodePixels
+        try {
+            PdfImagePolicy.maxDecodePixels = 200_000_000L
+            assertNotNull(KmpImageEmbedder.embed(bytes))
+        } finally {
+            PdfImagePolicy.maxDecodePixels = previous
+        }
     }
 
     private fun png(

@@ -2,8 +2,8 @@ package com.conamobile.pdfkmp.render
 
 import com.conamobile.pdfkmp.PdfLog
 import com.conamobile.pdfkmp.geometry.ContentScale
-import com.conamobile.pdfkmp.image.MAX_DECODE_PIXELS
-import com.conamobile.pdfkmp.image.exceedsDecodeBudget
+import com.conamobile.pdfkmp.image.PdfImagePolicy
+import com.conamobile.pdfkmp.image.decodeSampleFactorFor
 import com.conamobile.pdfkmp.style.LineStyle
 import com.conamobile.pdfkmp.style.PdfColor
 import com.conamobile.pdfkmp.style.PdfPaint
@@ -381,17 +381,7 @@ internal class JvmPdfCanvas(
         altText: String?,
     ) {
         if (bytes.isEmpty() || width <= 0f || height <= 0f) return
-        // The common header check only parses PNG/JPEG; the ImageIO probe
-        // covers every other format ImageIO would otherwise fully decode
-        // (GIF/BMP/TIFF dimension bombs included).
-        if (exceedsDecodeBudget(bytes) || imageIoExceedsDecodeBudget(bytes)) {
-            PdfLog.warn(
-                "drawImage skipped: declared dimensions exceed the $MAX_DECODE_PIXELS-pixel " +
-                    "decode budget (JVM backend)",
-            )
-            return
-        }
-        val decoded = runCatching { ImageIO.read(ByteArrayInputStream(bytes)) }.getOrNull()
+        val decoded = decodeWithinBudget(bytes)
         if (decoded == null) {
             PdfLog.warn("drawImage skipped: ${bytes.size}-byte payload is not a decodable image (JVM backend)")
             return
@@ -529,30 +519,49 @@ internal class JvmPdfCanvas(
 private data class DstRect(val x: Float, val y: Float, val width: Float, val height: Float)
 
 /**
- * Pre-decode dimension check for every format ImageIO can read. The header
- * is sized through the format's `ImageReader` without touching pixel data,
- * so a hostile file claiming enormous dimensions is rejected before
- * `ImageIO.read` can allocate them. Unreadable input returns `false` — the
- * subsequent full decode is the one that reports it as undecodable.
+ * Decodes [bytes] with the source sub-sampled far enough to stay inside
+ * [PdfImagePolicy.maxDecodePixels].
+ *
+ * The header is sized through the format's `ImageReader` before any pixel
+ * data is touched, so a hostile file claiming enormous dimensions is reduced
+ * *before* `ImageIO` can allocate for it — `setSourceSubsampling` makes the
+ * reader skip rows and columns at decode time, exactly like Android's
+ * `inSampleSize`. A legitimately huge image therefore still renders, just
+ * sampled; refusing it here while Android sampled it would make one document
+ * produce two different sets of pages.
+ *
+ * Sizing the header also replaces the old probe-then-read pair, so an ordinary
+ * image is parsed once instead of three times — and this runs once per drawn
+ * slice, which for a tall sliced image is once per page.
+ *
+ * Returns `null` when ImageIO cannot read the payload at all.
  */
-private fun imageIoExceedsDecodeBudget(bytes: ByteArray): Boolean {
+private fun decodeWithinBudget(bytes: ByteArray): BufferedImage? {
     return try {
-        val input = ImageIO.createImageInputStream(ByteArrayInputStream(bytes)) ?: return false
+        val input = ImageIO.createImageInputStream(ByteArrayInputStream(bytes)) ?: return null
         input.use { stream ->
             val readers = ImageIO.getImageReaders(stream)
-            if (!readers.hasNext()) return false
+            if (!readers.hasNext()) return null
             val reader = readers.next()
             try {
                 reader.setInput(stream)
-                val w = reader.getWidth(0)
-                val h = reader.getHeight(0)
-                w > 0 && h > 0 && w.toLong() * h.toLong() > MAX_DECODE_PIXELS
+                val srcW = reader.getWidth(0)
+                val srcH = reader.getHeight(0)
+                val sample = decodeSampleFactorFor(srcW, srcH)
+                if (sample <= 1) return reader.read(0)
+                PdfLog.warn(
+                    "drawImage: ${srcW}x$srcH source sampled down by $sample to fit the " +
+                        "${PdfImagePolicy.maxDecodePixels}-pixel decode budget (JVM backend)",
+                )
+                reader.read(0, reader.defaultReadParam.apply { setSourceSubsampling(sample, sample, 0, 0) })
             } finally {
                 reader.dispose()
             }
         }
     } catch (e: Exception) {
-        false
+        // A truncated or malformed payload surfaces here as an IIOException;
+        // the caller reports it as undecodable, matching the old behaviour.
+        null
     }
 }
 

@@ -368,6 +368,10 @@ page { markdown("# Title\n**bold** and [a link](https://example.com)\n- item", t
 12. **Encryption: full on JVM, partial on iOS (no "allow modification" flag), no-op on Android.** Attachments, PDF/A, and `PdfSigner` are JVM-only. PDF/A is best-effort, not full veraPDF conformance.
 13. **Dashed / dotted borders require sharp corners** — a non-zero `cornerRadius` falls back to a solid outline.
 14. **Mixed-style RTL in `richText` keeps source span order**, not visual reorder — author a whole RTL paragraph as one `text(...)` when segment order matters.
+15. **`link(url)` embeds only `http`, `https`, `mailto`, `tel`.** Any other scheme — and relative paths, bare `www.example.com`, `//host`, control-character URLs — is skipped: the content draws unlinked and `PdfLog` warns. Gate on `PdfUrls.isSafeExternalUrl(url)` and fall back to plain `text(...)` so the label doesn't look clickable when it isn't. `linkToAnchor` is unaffected. Widen for trusted targets with `PdfUrls.allowedSchemes = PdfUrls.DEFAULT_ALLOWED_SCHEMES + "myapp"`.
+16. **`save(location, filename)` needs a safe leaf name.** Separators, `..`, control chars, `: * ? " < > |`, Windows device stems (`CON`, `COM1`, …), trailing space/dot → `IllegalArgumentException`. A sub-path filename, or no filename on a non-`Custom` location, also throws. Always pass an explicit `"name.pdf"`.
+17. **`pdf { }` must contain at least one `page { }`** — an empty document throws. Guard loops that build pages from a possibly-empty list.
+18. **Oversized images are sampled down, not dropped.** `PdfImagePolicy.maxDecodePixels` (default 50 MP) bounds the decode from the declared header; Android/iOS/JVM sub-sample, the Wasm writer skips (no decoder). Raise it for legitimately huge scans: `PdfImagePolicy.maxDecodePixels = 200_000_000L`.
 
 ## Common color helpers
 

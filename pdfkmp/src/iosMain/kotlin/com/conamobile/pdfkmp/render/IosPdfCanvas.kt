@@ -2,8 +2,9 @@ package com.conamobile.pdfkmp.render
 
 import com.conamobile.pdfkmp.PdfLog
 import com.conamobile.pdfkmp.geometry.ContentScale
-import com.conamobile.pdfkmp.image.MAX_DECODE_PIXELS
-import com.conamobile.pdfkmp.image.exceedsDecodeBudget
+import com.conamobile.pdfkmp.image.PdfImagePolicy
+import com.conamobile.pdfkmp.image.maxDecodeEdgeFor
+import com.conamobile.pdfkmp.image.readImageInfo
 import com.conamobile.pdfkmp.style.LineStyle
 import com.conamobile.pdfkmp.style.PdfColor
 import com.conamobile.pdfkmp.style.PdfPaint
@@ -13,9 +14,19 @@ import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.CValue
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.useContents
 import platform.CoreFoundation.CFRelease
+import platform.CoreFoundation.CFRetain
+import platform.Foundation.CFBridgingRelease
+import platform.Foundation.CFBridgingRetain
+import platform.Foundation.NSMutableDictionary
+import platform.Foundation.NSNumber
+import platform.Foundation.setValue
+import platform.ImageIO.CGImageSourceCreateThumbnailAtIndex
+import platform.ImageIO.kCGImageSourceCreateThumbnailFromImageAlways
+import platform.ImageIO.kCGImageSourceThumbnailMaxPixelSize
 import platform.CoreGraphics.CGContextBeginTransparencyLayer
 import platform.CoreGraphics.CGContextEndTransparencyLayer
 import platform.CoreGraphics.CGContextRotateCTM
@@ -586,18 +597,12 @@ internal class IosPdfCanvas(
         altText: String?,
     ) {
         if (bytes.isEmpty() || width <= 0f || height <= 0f) return
-        // Same pre-decode budget the Android/JVM backends enforce: the
-        // downscale below happens only after CGContextDrawImage forces the
-        // full-size pixel allocation, so a dimension-bomb header must be
-        // rejected before decodeCGImage — jetsam kills at far lower peaks
-        // than a desktop OS would tolerate.
-        if (exceedsDecodeBudget(bytes)) {
-            PdfLog.warn(
-                "drawImage skipped: declared dimensions exceed the $MAX_DECODE_PIXELS-pixel " +
-                    "decode budget (iOS backend)",
-            )
-            return
-        }
+        // Same decode budget the Android/JVM backends apply, and the same
+        // resolution: sample the image down rather than drop it, so one
+        // document renders identically everywhere. [downscaleIfLarger] below
+        // can't help — it runs *after* the full-size pixel allocation, and
+        // jetsam kills at far lower peaks than a desktop OS tolerates — so the
+        // bound has to reach the decoder itself.
         val decoded = decodeCGImage(bytes)
         if (decoded == null) {
             PdfLog.warn("drawImage skipped: ${bytes.size}-byte payload is not a decodable image (iOS backend)")
@@ -692,6 +697,27 @@ internal class IosPdfCanvas(
      */
     private fun decodeCGImage(bytes: ByteArray): platform.CoreGraphics.CGImageRef? {
         if (bytes.isEmpty()) return null
+        // A header we can size ourselves and that busts the budget decodes
+        // through the thumbnail API instead, which applies the bound *inside*
+        // the decoder — no full-size buffer is ever allocated. Formats
+        // readImageInfo can't parse (HEIF, …) fall through to the plain decode,
+        // the same last-line-of-defense stance the other backends take when the
+        // platform can't size a header either.
+        val info = readImageInfo(bytes)
+        val maxEdge = info?.let {
+            if (it.widthPx.toLong() * it.heightPx.toLong() > PdfImagePolicy.maxDecodePixels) {
+                maxDecodeEdgeFor(it.widthPx, it.heightPx)
+            } else {
+                null
+            }
+        }
+        if (maxEdge != null && info != null) {
+            PdfLog.warn(
+                "drawImage: ${info.widthPx}x${info.heightPx} source decoded at a " +
+                    "$maxEdge-pixel bound to fit the ${PdfImagePolicy.maxDecodePixels}-pixel " +
+                    "decode budget (iOS backend)",
+            )
+        }
         return bytes.usePinned { pinned ->
             val provider = platform.CoreGraphics.CGDataProviderCreateWithData(
                 info = null,
@@ -703,13 +729,48 @@ internal class IosPdfCanvas(
                 val source = platform.ImageIO.CGImageSourceCreateWithDataProvider(provider, null)
                     ?: return@usePinned null
                 try {
-                    CGImageSourceCreateImageAtIndex(source, 0u, null)
+                    if (maxEdge == null) {
+                        CGImageSourceCreateImageAtIndex(source, 0u, null)
+                    } else {
+                        createThumbnail(source, maxEdge)
+                    }
                 } finally {
                     CFRelease(source)
                 }
             } finally {
                 platform.CoreGraphics.CGDataProviderRelease(provider)
             }
+        }
+    }
+
+    /**
+     * Decodes [source] with its longest edge capped at [maxPixelSize] via
+     * `CGImageSourceCreateThumbnailAtIndex`.
+     *
+     * The options dictionary is built as an `NSDictionary` and bridged, rather
+     * than assembled with `CFDictionaryCreateMutable`: the CF callback structs
+     * that call needs are awkward to reach through Kotlin/Native's interop,
+     * while `CFBridgingRetain` gives the same `CFDictionaryRef` in two lines.
+     * The `…FromImageAlways` key is required — without it ImageIO returns an
+     * embedded EXIF thumbnail when one exists (a ~160 px preview), or nothing
+     * at all when one doesn't.
+     */
+    private fun createThumbnail(
+        source: platform.ImageIO.CGImageSourceRef,
+        maxPixelSize: Int,
+    ): platform.CoreGraphics.CGImageRef? {
+        val keyMaxSize = CFBridgingRelease(CFRetain(kCGImageSourceThumbnailMaxPixelSize)) as? String
+        val keyAlways = CFBridgingRelease(CFRetain(kCGImageSourceCreateThumbnailFromImageAlways)) as? String
+        if (keyMaxSize == null || keyAlways == null) return null
+        val options = NSMutableDictionary().apply {
+            setValue(NSNumber(int = maxPixelSize), forKey = keyMaxSize)
+            setValue(NSNumber(bool = true), forKey = keyAlways)
+        }
+        val cfOptions = CFBridgingRetain(options)
+        try {
+            return CGImageSourceCreateThumbnailAtIndex(source, 0u, cfOptions?.reinterpret())
+        } finally {
+            cfOptions?.let { CFRelease(it) }
         }
     }
 

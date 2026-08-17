@@ -39,17 +39,27 @@ internal class JvmFontRegistry(private val document: PDDocument) {
     private val fonts = mutableMapOf<String, PDFont>()
 
     /**
-     * One shared fallback face per document. Loading Inter through
-     * [PDType0Font.load] embeds a separate font program each time, so a
-     * per-failure load would duplicate the subset in the output PDF for
-     * every unparseable custom font.
+     * The bundled fallback face, sharing [fonts] with the ordinary lookup path.
+     *
+     * Each [PDType0Font.load] embeds a separate font program, so the cache entry
+     * has to be the *same* one `cached()` would use — keying the fallback
+     * separately would embed a second Inter subset in any document that also
+     * uses Inter directly, which is most of them.
+     *
+     * Loaded eagerly rather than through [resolveWithFallback]: that method
+     * calls this one on failure, and routing the fallback through it would
+     * recurse forever the moment the bundled bytes themselves failed to parse.
      */
-    private val fallbackFont: PDFont by lazy {
-        try {
-            loadType0(BundledFonts.interRegular)
+    private fun fallbackFont(): PDFont {
+        val resolved = resolveFont(PdfFont.Default, FontWeight.Normal, FontStyle.Normal)
+        fonts[resolved.name]?.let { return it }
+        val font = try {
+            loadType0(resolved.bytes ?: BundledFonts.interRegular)
         } catch (e: Exception) {
             throw IllegalStateException("Bundled Inter font failed to load into PdfBox", e)
         }
+        fonts[resolved.name] = font
+        return font
     }
 
     /** Returns the [PDFont] for [style], embedding its bytes on first use. */
@@ -74,17 +84,27 @@ internal class JvmFontRegistry(private val document: PDDocument) {
 
     private fun resolveWithFallback(resolved: ResolvedFont): PDFont {
         // System fonts have no bytes on Desktop — fall back to bundled Inter.
-        val bytes = resolved.bytes ?: return fallbackFont
+        val bytes = resolved.bytes ?: return fallbackFont()
         return try {
             loadType0(bytes)
         } catch (e: Exception) {
             // Exception only: an Error (OOM, linkage) must propagate rather
-            // than be misreported as a font-parse failure.
+            // than be misreported as a font-parse failure. The cause is the
+            // only clue why a face was rejected — a truncated file, an
+            // unsupported CFF outline, and a wrong-format blob all arrive here
+            // and are indistinguishable without it.
             PdfLog.warn(
-                "Custom font '${resolved.name}' could not be parsed; falling back to the bundled Inter face (JVM backend)",
+                "Custom font '${resolved.name}' could not be parsed; falling back to the bundled " +
+                    "Inter face (JVM backend): ${e.describe()}",
             )
-            fallbackFont
+            fallbackFont()
         }
+    }
+
+    /** `ClassName: message`, since many font-parse exceptions carry no message. */
+    private fun Throwable.describe(): String {
+        val type = this::class.simpleName ?: "Exception"
+        return message?.let { "$type: $it" } ?: type
     }
 
     private fun loadType0(bytes: ByteArray): PDFont =

@@ -32,6 +32,34 @@ workflows where every original pixel must survive.
 image(bytes = imageBytes, width = 240.dp, height = 160.dp, allowDownScale = false)
 ```
 
+### Decode budget
+
+Independently of `allowDownScale`, every backend caps how many pixels a decode
+may allocate, based on the image's **declared header dimensions** — read before
+any pixel memory is touched. The default ceiling is 50 megapixels
+(`PdfImagePolicy.DEFAULT_MAX_DECODE_PIXELS`).
+
+An image over the ceiling is **sub-sampled down to fit**, not dropped —
+`inSampleSize` on Android, `ImageReadParam.setSourceSubsampling` on the JVM,
+`CGImageSourceCreateThumbnailAtIndex` on iOS — and the reduction is reported
+through `PdfLog`. This is what stops a *dimension bomb*: a few dozen bytes of
+PNG header can claim 50 000 × 50 000 px, and without a pre-decode bound the
+platform decoder obliges with a multi-gigabyte allocation and takes the process
+with it.
+
+Raise the ceiling once at startup when a document legitimately carries very
+large imagery — A0 at 300 DPI is ~139 MP, well over the untrusted default:
+
+```kotlin
+PdfImagePolicy.maxDecodePixels = 200_000_000L
+```
+
+!!! warning "Web (Wasm) refuses instead of sampling"
+    The pure-Kotlin writer embeds encoded streams verbatim and owns no decoder,
+    so it has nothing to sample with. An over-budget image is skipped there with
+    a `PdfLog` warning rather than handed on to the reader. Raising
+    `maxDecodePixels` lets it through on that target too.
+
 ### Accessibility alt text
 
 Pass `altText` to carry an accessibility description into backends that write

@@ -49,8 +49,15 @@ Cyrillic render in the browser), with Flate-compressed content streams. See
 | `PdfTools` (merge / split / watermark / overlay) | ❌ | ❌ | ✅ | ❌ |
 | Factur-X / ZUGFeRD attach (`attachFacturX`) | ❌ | ❌ | ✅ | ❌ |
 | RTL bidi + Arabic shaping (+ kashida justify) | ✅ native | ✅ native | ✅ own bidi + shaping pass | ⚠️ embedded-font glyphs only |
+| Over-budget image (`PdfImagePolicy.maxDecodePixels`) | ✅ sampled down | ✅ sampled down | ✅ sampled down | ⚠️ skipped — no decoder to sample with |
 
 ✅ supported · ⚠️ partial / best-effort · ❌ not supported on that platform.
+
+!!! note "Link URL schemes are filtered on every platform"
+    `link(url) { … }` embeds only `http`, `https`, `mailto`, and `tel`
+    annotations; other schemes draw the content unlinked. The rule is common
+    code, so it behaves identically on all four backends — see
+    [Links, bookmarks & TOC](navigation.md#which-urls-become-annotations).
 
 The `FacturXInvoice` builder is common code (it produces the `factur-x.xml`
 string everywhere); only the `PdfTools.attachFacturX` *attachment* step is

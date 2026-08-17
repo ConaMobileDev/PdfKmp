@@ -90,6 +90,7 @@ internal class AndroidFontRegistry(private val cacheDir: File) {
         // second writer corrupts glyphs under a live mapping. pid + instance
         // + per-file sequence make the path unique on all three axes.
         val tempFile = File(cacheDir, "pdfkmp-$processId-$instanceId-${tempFiles.size}-$safeName.ttf")
+        var failure: Exception? = null
         val typeface = try {
             tempFile.writeBytes(bytes)
             ParcelFileDescriptor.open(tempFile, ParcelFileDescriptor.MODE_READ_ONLY)
@@ -97,12 +98,20 @@ internal class AndroidFontRegistry(private val cacheDir: File) {
                     Typeface.Builder(pfd.fileDescriptor).build()
                 }
         } catch (e: Exception) {
+            // Two very different failures land here — a full cache partition
+            // (IOException from writeBytes) and a malformed font (Builder).
+            // Reporting them identically sends the reader hunting in the wrong
+            // place, so keep the cause.
+            failure = e
             null
         }
         if (typeface == null) {
             tempFile.delete()
+            val cause = failure?.let { ": ${it::class.simpleName}: ${it.message ?: "no message"}" }
+                ?: " (Typeface.Builder returned null)"
             PdfLog.warn(
-                "Custom font '${resolved.name}' could not be parsed; falling back to the default typeface (Android backend)",
+                "Custom font '${resolved.name}' could not be loaded; falling back to the default " +
+                    "typeface (Android backend)$cause",
             )
             return Typeface.DEFAULT
         }

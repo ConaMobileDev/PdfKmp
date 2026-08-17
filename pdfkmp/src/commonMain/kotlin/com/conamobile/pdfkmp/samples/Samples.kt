@@ -2137,12 +2137,20 @@ public object Samples {
             text("3 · Image decode budget") { fontSize = 16.sp; bold = true }
             text(
                 "The PNG below declares 50 000 × 50 000 px (2.5 gigapixels) in a " +
-                    "few dozen bytes. The pre-decode budget rejects it before any " +
-                    "pixel memory is allocated — the slot stays empty and a " +
-                    "warning is logged instead of the process dying:",
+                    "few dozen bytes. The budget is applied to the declared header " +
+                    "before any pixel memory is allocated: backends that own a " +
+                    "decoder sub-sample the image down to fit, and the pure-Kotlin " +
+                    "writer — which embeds streams verbatim and has no decoder — " +
+                    "refuses it outright rather than passing the bomb on to the " +
+                    "reader. Either way the process survives and a warning is logged. " +
+                    "Raise the ceiling with PdfImagePolicy.maxDecodePixels when a " +
+                    "document legitimately carries very large scans:",
             )
             image(dimensionBombPng(), width = 120.dp, height = 60.dp)
-            text("(the empty slot above is the guarded outcome)") { fontSize = 9.sp; color = PdfColor.Gray }
+            text(
+                "(this particular fixture also carries no real pixel data, so the " +
+                    "slot above stays empty on every backend)",
+            ) { fontSize = 9.sp; color = PdfColor.Gray }
         }
 
         page {
@@ -2151,19 +2159,22 @@ public object Samples {
 
             text("4 · Slice-safe tables") { fontSize = 16.sp; bold = true }
             text(
-                "This header cell spans two rows (rowSpan = 2). Repeating such a " +
-                    "header on continuation pages would overpaint the first body " +
-                    "row of every chunk, so it is drawn once and the table simply " +
-                    "continues on later pages:",
+                "This header cell spans three rows (rowSpan = 3). Two rules keep it " +
+                    "honest: repeating such a header on continuation pages would " +
+                    "overpaint the first body row of every chunk, so it is drawn " +
+                    "once; and the rows it covers are pinned into the same chunk as " +
+                    "the header, so its merged rectangle can never paint past the " +
+                    "bottom of the page it started on:",
             )
             table(columns = listOf(TableColumn.Weight(1f), TableColumn.Weight(2f))) {
                 header {
-                    cell("Group", rowSpan = 2)
+                    cell("Group", rowSpan = 3)
                     cell("Values")
                 }
-                // The first body row declares one cell — its first column is
-                // claimed by the header's merged cell above.
+                // These two body rows declare one cell each — their first column
+                // is claimed by the header's merged cell above.
                 row { cell("merged into the header's group cell") }
+                row { cell("also merged into it") }
                 repeat(60) { i ->
                     row {
                         cell("group ${i + 1}") { fontSize = 10.sp }

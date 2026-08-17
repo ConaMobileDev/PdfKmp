@@ -64,6 +64,12 @@ public data class MarkdownTheme(
  *   link annotations. A link that appears *within* running text is styled
  *   coloured + underlined via a rich-text span but has **no** clickable area,
  *   because the inline layout cannot carry a per-span link rectangle.
+ * - **Only allowlisted schemes are styled as links.** Targets a PDF annotation
+ *   cannot carry — `#anchor`, `./other.md`, a bare `www.` domain, anything
+ *   outside [com.conamobile.pdfkmp.PdfUrls.allowedSchemes] — render as plain
+ *   body text: no annotation, no link colour, no underline. The rule is the
+ *   same in both positions, so one target never looks clickable in a sentence
+ *   and plain on a line of its own.
  * - **Code has no guaranteed monospace font.** PdfKmp does not bundle a
  *   monospace face, so code is rendered in the base font at a slightly smaller
  *   size on the [MarkdownTheme.codeBackground]; alignment of code is therefore
@@ -86,6 +92,19 @@ public fun ContainerScope.markdown(markdown: String, theme: MarkdownTheme = Mark
  * Kept separate from the public surface so the parser (testable in isolation)
  * and the rendering (which needs the DSL receiver) stay decoupled.
  */
+/**
+ * Whether a markdown link target can become a real PDF annotation — and so
+ * whether it should be painted to look clickable.
+ *
+ * Both render paths consult this one predicate. They used to decide
+ * separately, and drifted: the standalone-link path honoured the scheme
+ * allowlist while the inline-span path styled every target blue and
+ * underlined, so the same `[docs](#anchor)` rendered as plain body text on a
+ * line of its own and as clickable-looking text inside a sentence.
+ */
+internal fun isClickableTarget(url: String?): Boolean =
+    url != null && PdfUrls.isSafeExternalUrl(url)
+
 internal class MarkdownRenderer(private val theme: MarkdownTheme) {
 
     private val base: TextStyle = theme.baseTextStyle
@@ -133,19 +152,23 @@ internal class MarkdownRenderer(private val theme: MarkdownTheme) {
         val onlyLink = spans.singleOrNull()?.takeIf { it.flags.link != null }
         if (onlyLink != null) {
             val url = onlyLink.flags.link!!
-            // link() drops the annotation for URLs outside the scheme
-            // allowlist (relative paths, "#anchor", bare "www." domains) —
-            // style those as plain text so the reader isn't promised a
-            // click that cannot happen.
-            val clickable = PdfUrls.isSafeExternalUrl(url)
-            link(url) {
-                text(onlyLink.text) {
-                    if (clickable) {
+            // Markdown is full of link targets no PDF annotation can carry —
+            // "#anchor", "./other.md", bare "www." domains. Calling link() with
+            // one would only make it drop the annotation and log a warning, so
+            // a whole document of internal cross-references floods the host's
+            // logger with notices about links it never expected to be clickable.
+            // Decide here instead, and style to match: no annotation, no link
+            // colour, no underline.
+            if (isClickableTarget(url)) {
+                link(url) {
+                    text(onlyLink.text) {
                         color = theme.linkColor
                         underline = true
+                        applyFlags(onlyLink.flags)
                     }
-                    applyFlags(onlyLink.flags)
                 }
+            } else {
+                text(onlyLink.text) { applyFlags(onlyLink.flags) }
             }
             return
         }
@@ -258,8 +281,12 @@ internal class MarkdownRenderer(private val theme: MarkdownTheme) {
         if (flags.code) {
             fontSize = Sp(fontSize.value * 0.9f)
         }
-        if (flags.link != null) {
-            // Inline links are styled but NOT clickable (documented on markdown()).
+        // Inline links are styled but NOT clickable (documented on markdown()).
+        // The styling still tracks the scheme allowlist: a target that could
+        // never become an annotation must not be painted to look like one, or
+        // the same "[docs](#anchor)" would render blue and underlined inside a
+        // sentence and as plain body text on a line of its own.
+        if (isClickableTarget(flags.link)) {
             color = theme.linkColor
             underline = true
         }

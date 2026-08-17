@@ -86,6 +86,17 @@ MarkdownTheme(
     single `[text](url)`. A link *within* running text is styled (coloured +
     underlined) but not clickable.
 
+!!! warning "Only allowlisted schemes are styled as links"
+    Targets a PDF annotation cannot carry — `#anchor`, `./other.md`, a bare
+    `www.` domain, anything outside
+    [`PdfUrls.allowedSchemes`](navigation.md#which-urls-become-annotations) —
+    render as plain body text: no annotation, no link colour, no underline.
+    The rule applies in both positions, so one target never looks clickable
+    inside a sentence and plain on a line of its own. Markdown written for the
+    web leans heavily on relative and anchor links, so expect them to come out
+    unstyled; rewrite them as absolute `https://` URLs if they should be
+    followable from the PDF.
+
 !!! warning "No monospace font"
     Code has **no guaranteed monospace font** (PdfKmp bundles none). It renders in
     the base font at a slightly smaller size on the theme's code background, so

@@ -1,5 +1,6 @@
 package com.conamobile.pdfkmp.markdown
 
+import com.conamobile.pdfkmp.PdfLog
 import com.conamobile.pdfkmp.pdf
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -17,6 +18,76 @@ import kotlin.test.assertTrue
  * `internal` declarations are visible to this module's own test source set.
  */
 class MarkdownTest {
+
+    // ---------------------------------------------------------------------
+    // Link scheme policy: styling must track what can actually be clicked.
+    // ---------------------------------------------------------------------
+
+    /**
+     * A markdown document is full of targets no PDF annotation can carry
+     * ("#anchor", "./other.md"). Calling the core `link()` for one only makes
+     * it drop the annotation and log — so a page of internal cross-references
+     * used to flood the host logger with notices about links nobody expected
+     * to be clickable.
+     */
+    @Test
+    fun unlinkableTargets_doNotWarnPerLink() {
+        val warnings = mutableListOf<String>()
+        PdfLog.logger = { warnings += it }
+        try {
+            assertPdf(
+                pdfBytes(
+                    """
+                    [contents](#contents)
+
+                    [next chapter](./chapter-2.md)
+
+                    [our site](www.example.com)
+                    """.trimIndent(),
+                ),
+            )
+            assertTrue(
+                warnings.none { "link(" in it },
+                "relative markdown targets must not each raise a link warning: $warnings",
+            )
+        } finally {
+            PdfLog.logger = null
+        }
+    }
+
+    /**
+     * The same target has to look the same whether it stands alone in a
+     * paragraph (the clickable fast path) or sits inside a sentence (the
+     * richText path). Before, a rejected URL rendered as plain text alone and
+     * as blue underlined "clickable" text mid-sentence.
+     */
+    /**
+     * Both render paths — the standalone-link fast path and the inline
+     * rich-text span path — must reach the same verdict for the same target,
+     * or one `[docs](#anchor)` renders as plain body text on its own line and
+     * as clickable-looking blue underlined text inside a sentence.
+     */
+    @Test
+    fun clickabilityVerdict_isSharedByBothRenderPaths() {
+        for (clickable in listOf("https://example.com", "http://example.com", "mailto:a@b.c", "tel:+1234")) {
+            assertTrue(isClickableTarget(clickable), "$clickable should be styled as a link")
+        }
+        for (rejected in listOf("#anchor", "./chapter-2.md", "www.example.com", "javascript:alert(1)", "", null)) {
+            assertFalse(isClickableTarget(rejected), "$rejected must not be styled as a link")
+        }
+    }
+
+    @Test
+    fun rejectedTarget_rendersThroughBothPaths() {
+        assertPdf(pdfBytes("[docs](#anchor)"))
+        assertPdf(pdfBytes("see [docs](#anchor) here"))
+    }
+
+    @Test
+    fun clickableTarget_stillRendersThroughBothPaths() {
+        assertPdf(pdfBytes("[docs](https://example.com)"))
+        assertPdf(pdfBytes("see [docs](https://example.com) here"))
+    }
 
     // ---------------------------------------------------------------------
     // End-to-end: the public DSL produces a real PDF.

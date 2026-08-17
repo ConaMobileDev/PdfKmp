@@ -30,6 +30,56 @@ Android via a post-processing incremental update applied in `finish()` (since
 `android.graphics.pdf.PdfDocument` exposes no annotation API). The post-processor
 is defensive: any parse surprise returns the original bytes unchanged.
 
+### Which URLs become annotations
+
+Only four schemes are embedded: **`http`, `https`, `mailto`, `tel`**. Anything
+else — `javascript:`, `file:`, `data:`, `content:`, `intent:`, a relative path,
+a bare `www.example.com`, a scheme-relative `//host`, or any URL containing a
+control character — is **skipped**. The wrapped content is still drawn, just
+without the annotation, and the skip is reported through `PdfLog`:
+
+```kotlin
+link(url = "javascript:alert(1)") {
+    text("clickable?")   // drawn, but no annotation is written
+}
+```
+
+A generated PDF outlives the app that wrote it and is opened by arbitrary
+readers, so an annotation carrying `javascript:` or `file:` is a
+code-execution / local-file channel in every reader that honours those schemes.
+That matters most when link targets come from untrusted input — a CMS field, a
+server response, user-authored markdown.
+
+Pre-flight a URL with the same rule the DSL applies:
+
+```kotlin
+if (PdfUrls.isSafeExternalUrl(candidate)) {
+    link(url = candidate) { text(label) { color = PdfColor.Blue; underline = true } }
+} else {
+    text(label)          // style it as plain text — no click is coming
+}
+```
+
+`pdfkmp-viewer` applies the same allowlist a second time, before a tapped link
+reaches the OS, so a document authored elsewhere cannot turn a tap into an
+OS-level deep link.
+
+For an internal-distribution document whose targets you control — a company
+deep link, say — widen the set once at startup:
+
+```kotlin
+PdfUrls.allowedSchemes = PdfUrls.DEFAULT_ALLOWED_SCHEMES + "myapp"
+```
+
+!!! warning "This is a process-wide switch"
+    It governs annotation writing *and* the viewer's tap handling, so adding
+    `javascript` or `file` re-opens the channels the default set exists to
+    close. Never derive it from document content.
+
+!!! note "Internal navigation is unaffected"
+    `linkToAnchor` targets an in-document anchor rather than an external URL and
+    never goes through the allowlist.
+
 ## Internal links, anchors & cross-references
 
 `anchor("id")` marks a jump target; `linkToAnchor(anchor = "id") { … }` makes
