@@ -138,6 +138,7 @@ internal object PathDataParser {
                     out += PathCommand.Close
                     currentX = startX; currentY = startY
                     lastWasCubic = false; lastWasQuad = false
+                    pendingCommand = null
                 }
                 'A' -> while (true) {
                     val rx = tokens.nextFloat()
@@ -171,7 +172,7 @@ internal object PathDataParser {
      *  command is `L` after `M` and the same letter after every other command. */
     private fun Char.implicitFollowup(): Char = when (this.uppercaseChar()) {
         'M' -> if (isLowerCase()) 'l' else 'L'
-        'Z' -> this // unused, but keep type happy
+        // Z clears pendingCommand in its handler, so it needs no arm here.
         else -> this
     }
 

@@ -175,4 +175,32 @@ class TextLayoutTest {
         )
         assertEquals(listOf("abcd"), result.lines.map { it.text })
     }
+
+    @Test
+    fun midWordBreaking_neverSplitsASurrogatePair() {
+        val metrics = FixedWidthFontMetrics(charWidth = 1f)
+        val style = TextStyle(fontSize = 1.sp)
+        val grinningFace = "😀"
+        val result = layoutText(
+            text = grinningFace + grinningFace + grinningFace,
+            style = style,
+            maxWidth = 3f,
+            metrics = metrics,
+        )
+        assertEquals(listOf(grinningFace, grinningFace, grinningFace), result.lines.map { it.text })
+    }
+
+    @Test
+    fun ellipsis_neverLeavesAnUnpairedSurrogateAtTheCut() {
+        val metrics = FixedWidthFontMetrics(charWidth = 1f)
+        val style = TextStyle(fontSize = 1.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        val grinningFace = "😀"
+        val result = layoutText(
+            text = "ab" + grinningFace + grinningFace + "c",
+            style = style,
+            maxWidth = 6f,
+            metrics = metrics,
+        )
+        assertEquals(listOf("ab$grinningFace…"), result.lines.map { it.text })
+    }
 }

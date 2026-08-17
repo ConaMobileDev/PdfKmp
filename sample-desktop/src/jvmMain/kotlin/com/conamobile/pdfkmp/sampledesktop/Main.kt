@@ -83,6 +83,11 @@ private fun samples(): List<DesktopSample> {
             password = ENCRYPTED_SAMPLE_USER_PASSWORD,
         ) { encryptedSampleDoc() },
         DesktopSample("Showcase", "showcase.pdf", "Every feature in a single document.") { Samples.showcase() },
+        DesktopSample(
+            "Robustness Showcase",
+            "robustness.pdf",
+            "Hostile input degrades gracefully: URL allowlist, emoji-safe wrapping, decode budget, slice-safe tables.",
+        ) { Samples.robustnessShowcase() },
         DesktopSample("With Image", "with-image.pdf", "Raster image, ContentScale Fit + Crop.") { Samples.withImage(image) },
         DesktopSample("Sliced Image", "sliced-image.pdf", "Tall image split across pages.") { Samples.slicedImage(image) },
         DesktopSample("Image Downscale", "image-downscale.pdf", "Down-sampling at 200 DPI.") { Samples.imageDownscale(image) },

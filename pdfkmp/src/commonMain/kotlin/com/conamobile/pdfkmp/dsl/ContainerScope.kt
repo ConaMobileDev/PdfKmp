@@ -1,5 +1,7 @@
 package com.conamobile.pdfkmp.dsl
 
+import com.conamobile.pdfkmp.PdfLog
+import com.conamobile.pdfkmp.PdfUrls
 import com.conamobile.pdfkmp.barcode.QrErrorCorrection
 import com.conamobile.pdfkmp.geometry.ContentScale
 import com.conamobile.pdfkmp.geometry.Padding
@@ -439,6 +441,13 @@ public abstract class ContainerScope internal constructor(
      * On Android, the underlying `PdfDocument` API does not support
      * annotations, so the rectangle is recorded but clicks fall through.
      * Visual styling on the inner content still conveys "this is a link".
+     *
+     * Only `http`, `https`, `mailto`, and `tel` URLs are embedded — see
+     * [com.conamobile.pdfkmp.PdfUrls]. Any other scheme skips the
+     * annotation (the wrapped content is still drawn) and reports
+     * through [com.conamobile.pdfkmp.PdfLog], so hostile URLs authored
+     * from untrusted input cannot smuggle `javascript:`/`file:` actions
+     * into a generated document.
      */
     public fun link(url: String, block: ColumnScope.() -> Unit) {
         val scope = ColumnScope(textStyle).apply(block)
@@ -447,7 +456,21 @@ public abstract class ContainerScope internal constructor(
         } else {
             ColumnNode(children = scope.children.toList())
         }
-        children += LinkNode(url = url, child = inner)
+        if (PdfUrls.isSafeExternalUrl(url)) {
+            children += LinkNode(url = url, child = inner)
+        } else {
+            // The rejected URL is untrusted by definition — strip control
+            // characters and cap the length so it cannot forge extra lines
+            // in whatever sink the host wired PdfLog into.
+            val displayUrl = url.take(200).map { c ->
+                if (c.code < 0x20 || c.code == 0x7F) '\uFFFD' else c
+            }.joinToString("")
+            PdfLog.warn(
+                "link(url = \"$displayUrl\") skipped the annotation: scheme is not in " +
+                    "the allowed set [http, https, mailto, tel]; the content is drawn unlinked",
+            )
+            children += inner
+        }
     }
 
     /**

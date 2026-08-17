@@ -52,8 +52,17 @@ internal expect object PdfStorage {
  *   semantics.
  * @param filename file name including the extension; required for every
  *   variant except [StorageLocation.Custom] when the path already includes
- *   the file name.
+ *   the file name. Must be a leaf name: path separators (`/`, `\`),
+ *   directory references (`.`/`..`), NUL bytes, Windows reserved device
+ *   names, and a trailing space or dot are rejected before any platform
+ *   code composes a path from it.
  * @return [SavedPdf] containing the absolute path and optional content URI.
+ * @throws IllegalArgumentException when [filename] is not a safe leaf name
+ *   (or is empty outside the full-file-path form of [StorageLocation.Custom]).
  */
-public fun PdfDocument.save(location: StorageLocation, filename: String = ""): SavedPdf =
-    PdfStorage.save(this, location, filename)
+public fun PdfDocument.save(location: StorageLocation, filename: String = ""): SavedPdf {
+    if (location !is StorageLocation.Custom || filename.isNotEmpty()) {
+        validateSaveFileName(filename)
+    }
+    return PdfStorage.save(this, location, filename)
+}

@@ -18,7 +18,10 @@ internal actual object PdfStorage {
 
     actual fun save(document: PdfDocument, location: StorageLocation, filename: String): SavedPdf {
         // Custom("dir/name.pdf") with an empty filename carries the name
-        // in the path; everything else uses the explicit filename.
+        // in the path; everything else uses the explicit filename. The
+        // final branch is defensive only: the common save() wrapper
+        // rejects an empty filename for non-Custom locations before this
+        // code runs, so callers must always pass a name explicitly.
         val resolvedName = when {
             filename.isNotEmpty() -> filename
             location is StorageLocation.Custom -> location.path.substringAfterLast('/')

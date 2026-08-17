@@ -40,6 +40,10 @@ class JvmBackendTest {
             "brochure" to Samples.brochure(),
             "showcase" to Samples.showcase(),
             "customDesigns" to Samples.customDesigns(pngFixture),
+            // Hardening sample: the dimension-bomb image inside it must be
+            // skipped by the decode budget, so the re-parsed PDF still
+            // rasterises cleanly.
+            "robustnessShowcase" to Samples.robustnessShowcase(),
         )
         for ((name, doc) in documents) {
             Loader.loadPDF(doc.toByteArray()).use { loaded ->

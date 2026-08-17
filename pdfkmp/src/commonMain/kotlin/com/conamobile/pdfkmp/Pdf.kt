@@ -112,7 +112,12 @@ public suspend fun pdfAsync(
     // platform driver and would silently fall back to Inter at draw time.
     val refreshedFonts = linkedSetOf<PdfFont.Custom>().apply {
         addAll(resolvedSpec.customFonts)
-        resolvedSpec.pages.forEach { page -> collectCustomFonts(page.content, this) }
+        resolvedSpec.pages.forEach { page ->
+            collectCustomFonts(page.content, this)
+            // Preflight resolves LazyNodes inside watermarks too, so the
+            // refresh must walk them just like DocumentScope.build() does.
+            page.watermark?.let { collectCustomFonts(it, this) }
+        }
     }
     val finalSpec = resolvedSpec.copy(customFonts = refreshedFonts.toList())
     val driver = factory.create(finalSpec.metadata, finalSpec.customFonts)

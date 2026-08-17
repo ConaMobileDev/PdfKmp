@@ -87,4 +87,25 @@ internal class AndroidPdfDriver(
         // for the API limitation that makes this necessary.
         return PdfPatcher.apply(rawBytes, metadata, navigation)
     }
+
+    override fun close() {
+        // The renderer calls this on its abort path, where finish() never
+        // ran — without it the registry's uniquely-named temp font files
+        // (and the native document) would leak until the OS trims cacheDir.
+        // Everything here is best-effort and idempotent, so a close() after
+        // a successful finish() is a no-op.
+        try {
+            currentPage?.let { document.finishPage(it) }
+        } catch (e: Exception) {
+            // The page may be in an unusable state mid-abort; releasing the
+            // document and the font files below is what actually matters.
+        }
+        currentPage = null
+        try {
+            document.close()
+        } catch (e: Exception) {
+            // Already closed by finish(), or never usable — nothing to free.
+        }
+        registry.cleanup()
+    }
 }

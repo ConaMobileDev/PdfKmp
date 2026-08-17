@@ -45,15 +45,20 @@ internal data class XmlElement(
  */
 internal object MiniXml {
 
+    private const val MAX_ELEMENT_DEPTH = 256
+
     fun parse(source: String): XmlElement {
         val cursor = Cursor(source)
         cursor.skipPrologueAndComments()
-        val root = parseElement(cursor)
+        val root = parseElement(cursor, depth = 0)
             ?: throw VectorParseException("Document has no root element")
         return root
     }
 
-    private fun parseElement(cursor: Cursor): XmlElement? {
+    private fun parseElement(cursor: Cursor, depth: Int): XmlElement? {
+        if (depth > MAX_ELEMENT_DEPTH) {
+            throw VectorParseException("Element nesting exceeds the $MAX_ELEMENT_DEPTH-level limit")
+        }
         cursor.skipWhitespace()
         if (!cursor.consume('<')) return null
         if (cursor.peek() == '/') {
@@ -73,7 +78,7 @@ internal object MiniXml {
                 }
                 '>' -> {
                     cursor.expect('>')
-                    val children = parseChildren(cursor)
+                    val children = parseChildren(cursor, depth)
                     cursor.expect('<')
                     cursor.expect('/')
                     val closing = cursor.readName()
@@ -96,7 +101,7 @@ internal object MiniXml {
         }
     }
 
-    private fun parseChildren(cursor: Cursor): List<XmlElement> {
+    private fun parseChildren(cursor: Cursor, depth: Int): List<XmlElement> {
         val children = mutableListOf<XmlElement>()
         while (true) {
             cursor.skipWhitespace()
@@ -106,7 +111,7 @@ internal object MiniXml {
             cursor.skipText()
             cursor.skipCommentsAndCdata()
             if (cursor.peek() == '<' && cursor.peekAt(1) == '/') return children
-            val child = parseElement(cursor) ?: return children
+            val child = parseElement(cursor, depth + 1) ?: return children
             children += child
         }
     }
@@ -217,6 +222,23 @@ internal object MiniXml {
             source.regionMatches(index, prefix, 0, prefix.length)
     }
 
+    private fun encodeCodePoint(codePoint: Int): String? = when (codePoint) {
+        // XML 1.0's Char production forbids NUL and the surrogate range;
+        // materializing them would hand downstream consumers a NUL-bearing
+        // or malformed (lone surrogate) UTF-16 string. Returning null lets
+        // decodeEntities fall back to the raw text, same as out-of-range refs.
+        0, in 0xD800..0xDFFF -> null
+        in 1..0xFFFF -> codePoint.toChar().toString()
+        in 0x10000..0x10FFFF -> {
+            val v = codePoint - 0x10000
+            charArrayOf(
+                (0xD800 + (v shr 10)).toChar(),
+                (0xDC00 + (v and 0x3FF)).toChar(),
+            ).concatToString()
+        }
+        else -> null
+    }
+
     private fun decodeEntities(raw: String): String {
         if (!raw.contains('&')) return raw
         val out = StringBuilder(raw.length)
@@ -241,7 +263,7 @@ internal object MiniXml {
                         } else {
                             entity.substring(1).toIntOrNull() ?: return raw
                         }
-                        codePoint.toChar().toString()
+                        encodeCodePoint(codePoint) ?: return raw
                     } else {
                         // Unknown entity — leave as-is.
                         "&$entity;"

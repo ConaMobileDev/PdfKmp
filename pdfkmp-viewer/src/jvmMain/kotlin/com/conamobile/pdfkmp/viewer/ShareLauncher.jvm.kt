@@ -16,10 +16,11 @@ import java.io.File
 @Composable
 public actual fun rememberPdfShareAction(): PdfShareAction = remember {
     PdfShareAction { bytes, fileName ->
-        // File(fileName).name strips any directory components so a caller-
-        // supplied name can't escape the temp dir; blank falls back like the
+        // The shared sanitizer strips directory components (both separator
+        // styles, unlike File(...).name on a Unix JVM) so a caller-supplied
+        // name can't escape the temp dir; blank falls back like the
         // Android/iOS launchers do.
-        val safeName = File(fileName).name.takeIf { it.isNotBlank() } ?: "document.pdf"
+        val safeName = sanitizePdfFileName(fileName)
         // Write + launch the external viewer off the Compose/AWT UI thread so
         // the I/O and process spawn don't stutter the UI.
         Thread {

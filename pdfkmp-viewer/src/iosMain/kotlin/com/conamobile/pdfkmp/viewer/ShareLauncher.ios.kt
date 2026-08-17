@@ -51,7 +51,7 @@ private class IosShareAction : PdfShareAction {
             return
         }
 
-        val safeName = fileName.takeIf { it.isNotBlank() } ?: "document.pdf"
+        val safeName = sanitizePdfFileName(fileName)
         val path = joinPath(NSTemporaryDirectory(), safeName)
         val url = NSURL.fileURLWithPath(path)
 

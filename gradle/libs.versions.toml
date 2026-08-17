@@ -4,22 +4,22 @@ android-compileSdk = "37"
 android-minSdk = "26"
 android-targetSdk = "37"
 
-kotlin = "2.3.21"
+kotlin = "2.4.10"
 agp = "9.2.1"
-mavenPublish = "0.36.0"
+mavenPublish = "0.37.0"
 
-compose-multiplatform = "1.11.0"
+compose-multiplatform = "1.11.1"
 compose-material3 = "1.9.0"
 
 composeActivity = "1.13.0"
 androidx-startup = "1.2.0"
-androidx-core = "1.18.0"
+androidx-core = "1.19.0"
 
 kotlinx-coroutines = "1.11.0"
-kotlinx-io = "0.9.0"
+kotlinx-io = "0.9.1"
 
-pdfbox = "3.0.7"
-bouncycastle = "1.78.1"
+pdfbox = "3.0.8"
+bouncycastle = "1.85"
 
 [libraries]
 androidx-activityCompose = { module = "androidx.activity:activity-compose", version.ref = "composeActivity" }
@@ -55,7 +55,7 @@ compose-components-resources = { module = "org.jetbrains.compose.components:comp
 
 [plugins]
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
-dokka = { id = "org.jetbrains.dokka", version = "2.0.0" }
+dokka = { id = "org.jetbrains.dokka", version = "2.2.0" }
 composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "compose-multiplatform" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 androidKmpLibrary = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }

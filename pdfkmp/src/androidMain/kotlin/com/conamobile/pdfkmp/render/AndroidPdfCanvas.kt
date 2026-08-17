@@ -1,5 +1,6 @@
 package com.conamobile.pdfkmp.render
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.DashPathEffect
@@ -11,6 +12,7 @@ import android.graphics.RadialGradient
 import android.graphics.Shader
 import com.conamobile.pdfkmp.PdfLog
 import com.conamobile.pdfkmp.geometry.ContentScale
+import com.conamobile.pdfkmp.image.MAX_DECODE_PIXELS
 import com.conamobile.pdfkmp.pdfwriter.PdfBookmark
 import com.conamobile.pdfkmp.pdfwriter.PdfDestination
 import com.conamobile.pdfkmp.pdfwriter.PdfLink
@@ -331,24 +333,28 @@ internal class AndroidPdfCanvas(
 }
 
 /**
- * Decodes [bytes] into a [android.graphics.Bitmap], optionally subsampling
- * the source so its pixel dimensions stay in line with the rendered size at
- * 200 DPI.
+ * Decodes [bytes] into a [Bitmap], optionally subsampling the source so its
+ * pixel dimensions stay in line with the rendered size at 200 DPI.
  *
  * The two-pass `inJustDecodeBounds` + `inSampleSize` flow lets the platform
  * decoder skip every other 2/4/8 row at decode time — so a 4000×3000
  * smartphone photo destined for a 2-inch thumbnail decodes straight into a
- * ~250×190 buffer instead of allocating ~48 MB up front.
+ * ~250×190 buffer instead of allocating ~48 MB up front. Because the sampled
+ * allocation is bounded no matter what the source header claims, only the
+ * full-size decode paths enforce [MAX_DECODE_PIXELS]; a dimension-bomb image
+ * on the sampled path simply decodes into a small buffer (or fails).
  */
 private fun decodeBitmap(
     bytes: ByteArray,
     dstWidthPoints: Float,
     dstHeightPoints: Float,
     allowDownScale: Boolean,
-): android.graphics.Bitmap? {
+): Bitmap? {
     if (bytes.isEmpty()) return null
     if (!allowDownScale || dstWidthPoints <= 0f || dstHeightPoints <= 0f) {
-        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        // The full source is decoded on this path, so the declared
+        // dimensions must fit the budget outright.
+        return decodeWithinBudget(bytes)
     }
     val target = targetPixelDimensions(dstWidthPoints, dstHeightPoints)
     val sizeOnly = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -362,9 +368,29 @@ private fun decodeBitmap(
     while (srcW / (sample * 2) >= target.first && srcH / (sample * 2) >= target.second) {
         sample *= 2
     }
+    // A huge target (or a hostile header) could still leave the sampled
+    // allocation above the budget — keep doubling until it fits.
+    while ((srcW / sample).toLong() * (srcH / sample).toLong() > MAX_DECODE_PIXELS) {
+        sample *= 2
+    }
     val opts = BitmapFactory.Options().apply { inSampleSize = sample }
     return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
-        ?: BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        ?: decodeWithinBudget(bytes)
+}
+
+private fun decodeWithinBudget(bytes: ByteArray): Bitmap? {
+    val sizeOnly = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, sizeOnly)
+    if (sizeOnly.outWidth > 0 && sizeOnly.outHeight > 0 &&
+        sizeOnly.outWidth.toLong() * sizeOnly.outHeight.toLong() > MAX_DECODE_PIXELS
+    ) {
+        PdfLog.warn(
+            "drawImage skipped: declared dimensions exceed the $MAX_DECODE_PIXELS-pixel " +
+                "decode budget (Android backend)",
+        )
+        return null
+    }
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
 }
 
 private val imagePaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)

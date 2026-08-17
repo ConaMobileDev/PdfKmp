@@ -518,6 +518,7 @@ private fun measureTable(
     val owner = Array(rowCount) { IntArray(columnCount) { -1 } }
     val placements = ArrayList<CellPlacement>()
     var nextOwnerId = 0
+    var headerSpansIntoBody = false
 
     for ((rowIndex, rowPair) in orderedRows.withIndex()) {
         val rowNode = rowPair.first
@@ -548,6 +549,7 @@ private fun measureTable(
             nextCellIndex++
             val colSpan = cellNode.colSpan.coerceAtLeast(1).coerceAtMost(columnCount - col)
             val rowSpan = cellNode.rowSpan.coerceAtLeast(1).coerceAtMost(rowCount - rowIndex)
+            if (rowPair.second && rowSpan > 1) headerSpansIntoBody = true
             val id = nextOwnerId++
             for (r in rowIndex until rowIndex + rowSpan) {
                 for (c in col until col + colSpan) {
@@ -634,6 +636,7 @@ private fun measureTable(
         size = Size(width = tableWidth, height = totalHeight),
         repeatHeader = node.repeatHeader,
         cellOwners = owner.map { it.toList() },
+        headerSpansIntoBody = headerSpansIntoBody,
     )
 }
 
@@ -907,7 +910,7 @@ private fun measureColumn(
                 val share = remainingHeight * (child.weight / totalWeight)
                 measure(
                     child.child,
-                    Constraints(maxWidth = constraints.maxWidth, maxHeight = share),
+                    Constraints(maxWidth = containerMaxWidth, maxHeight = share),
                     metrics,
                 ).withMinHeight(share)
             }
@@ -977,8 +980,13 @@ private fun measureRow(
     val horizontalInset = padding.left.value + padding.right.value
     val verticalInset = padding.top.value + padding.bottom.value
     val containerWidth = (constraints.maxWidth - horizontalInset).coerceAtLeast(0f)
+    val containerHeight = if (constraints.maxHeight == Float.POSITIVE_INFINITY) {
+        Float.POSITIVE_INFINITY
+    } else {
+        (constraints.maxHeight - verticalInset).coerceAtLeast(0f)
+    }
 
-    val childConstraints = Constraints(maxWidth = containerWidth, maxHeight = constraints.maxHeight)
+    val childConstraints = Constraints(maxWidth = containerWidth, maxHeight = containerHeight)
     val measuredFixed = node.children.map { child ->
         if (child is WeightNode) null else measure(child, childConstraints, metrics)
     }
@@ -996,7 +1004,7 @@ private fun measureRow(
                 val share = remainingWidth * (child.weight / totalWeight)
                 measure(
                     child.child,
-                    Constraints(maxWidth = share, maxHeight = constraints.maxHeight),
+                    Constraints(maxWidth = share, maxHeight = containerHeight),
                     metrics,
                 ).withMinWidth(share)
             }

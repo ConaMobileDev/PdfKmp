@@ -261,17 +261,20 @@ private fun breakLongWord(
     val chunks = mutableListOf<String>()
     var start = 0
     while (start < word.length) {
-        var end = start + 1
-        while (end < word.length &&
-            metrics.measure(word.substring(start, end + 1), style).width <= maxWidth
-        ) {
-            end++
+        var end = start + codePointLengthAt(word, start)
+        while (end < word.length) {
+            val next = end + codePointLengthAt(word, end)
+            if (metrics.measure(word.substring(start, next), style).width > maxWidth) break
+            end = next
         }
         chunks += word.substring(start, end)
         start = end
     }
     return chunks
 }
+
+private fun codePointLengthAt(text: String, index: Int): Int =
+    if (index < text.length && text[index].isHighSurrogate() && index + 1 < text.length && text[index + 1].isLowSurrogate()) 2 else 1
 
 /**
  * Trims the end of [line] and appends `…` so the result fits inside
@@ -293,10 +296,17 @@ private fun ellipsize(
         val candidate = kept.trimEnd() + ellipsis
         val width = metrics.measure(candidate, style).width
         if (width <= maxWidth) return line.copy(text = candidate, width = width)
-        kept = kept.dropLast(1)
+        kept = kept.dropLastCodePoint()
     }
     return line.copy(text = ellipsis, width = metrics.measure(ellipsis, style).width)
 }
+
+private fun String.dropLastCodePoint(): String =
+    if (length >= 2 && this[length - 1].isLowSurrogate() && this[length - 2].isHighSurrogate()) {
+        dropLast(2)
+    } else {
+        dropLast(1)
+    }
 
 /**
  * Spreads [paragraphWidth]'s leftover slack evenly between the words of

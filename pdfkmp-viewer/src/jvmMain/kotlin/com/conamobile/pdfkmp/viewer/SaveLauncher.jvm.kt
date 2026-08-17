@@ -23,7 +23,7 @@ public actual fun rememberPdfSaveAction(): PdfSaveAction = remember {
             val downloads = File(System.getProperty("user.home") ?: ".", "Downloads")
             val dialog = FileDialog(null as Frame?, "Save PDF", FileDialog.SAVE)
             // Suggest a bare name (no directory components); blank falls back.
-            dialog.file = File(fileName).name.takeIf { it.isNotBlank() } ?: "document.pdf"
+            dialog.file = sanitizePdfFileName(fileName)
             if (downloads.isDirectory) dialog.directory = downloads.absolutePath
             // Modal dialog must run on the EDT (it is — Compose onClick runs there).
             dialog.isVisible = true

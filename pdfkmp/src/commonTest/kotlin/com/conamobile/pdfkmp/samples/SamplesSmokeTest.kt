@@ -93,6 +93,10 @@ class SamplesSmokeTest {
         assertSamplePdf(Samples.formsAndAccessibility().toByteArray())
 
     @Test
+    fun robustnessShowcase_producesValidPdf() =
+        assertSamplePdf(Samples.robustnessShowcase().toByteArray())
+
+    @Test
     fun imageDownscale_producesValidPdf() {
         // Reuse the 1×1 PNG fixture — exercise both the default
         // (allowDownScale = true) and opt-out paths end-to-end.

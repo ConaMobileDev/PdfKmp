@@ -1,12 +1,17 @@
 package com.conamobile.pdfkmp.layout
 
 import com.conamobile.pdfkmp.geometry.Constraints
+import com.conamobile.pdfkmp.geometry.Padding
 import com.conamobile.pdfkmp.node.ColumnNode
+import com.conamobile.pdfkmp.node.ContainerDecoration
 import com.conamobile.pdfkmp.node.RowNode
 import com.conamobile.pdfkmp.node.SpacerNode
+import com.conamobile.pdfkmp.node.TextNode
 import com.conamobile.pdfkmp.node.WeightNode
+import com.conamobile.pdfkmp.style.TextStyle
 import com.conamobile.pdfkmp.test.FixedWidthFontMetrics
 import com.conamobile.pdfkmp.unit.dp
+import com.conamobile.pdfkmp.unit.sp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -189,5 +194,43 @@ class RowColumnLayoutTest {
         assertEquals(0f, measured.children[0].offsetY)
         assertEquals(10f, measured.children[1].offsetY)
         assertTrue(measured.size.width >= 60f)
+    }
+
+    @Test
+    fun row_verticalPadding_isSubtractedFromChildHeightConstraint() {
+        val node = RowNode(
+            children = listOf(
+                ColumnNode(
+                    children = listOf(
+                        WeightNode(weight = 1f, child = SpacerNode(width = 10.dp, height = 10.dp)),
+                    ),
+                ),
+            ),
+            decoration = ContainerDecoration(padding = Padding.symmetric(vertical = 25.dp)),
+        )
+        val measured = measure(node, Constraints(maxWidth = 200f, maxHeight = 300f), metrics)
+
+        assertEquals(
+            300f,
+            measured.size.height,
+            "row height ${measured.size.height} must not exceed the 300pt constraint — " +
+                "the weighted column child must be measured at the padding-adjusted height",
+        )
+    }
+
+    @Test
+    fun column_weightedTextChild_wrapsAtPaddingAdjustedWidth() {
+        val text = "a".repeat(35)
+        val node = ColumnNode(
+            children = listOf(
+                WeightNode(weight = 1f, child = TextNode(text = text, style = TextStyle(fontSize = 10.sp))),
+            ),
+            decoration = ContainerDecoration(padding = Padding.symmetric(horizontal = 50.dp)),
+        )
+        val measured = measure(node, Constraints(maxWidth = 400f, maxHeight = 1000f), metrics) as MeasuredColumn
+
+        val inner = measured.children.single().node as MeasuredText
+        assertEquals(2, inner.lines.size, "350pt of text must wrap at the 300pt padded slot, not the raw 400pt")
+        assertTrue(measured.size.width <= 400f, "column width ${measured.size.width} must not exceed the 400pt constraint")
     }
 }
