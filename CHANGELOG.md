@@ -6,7 +6,7 @@ versions follow [Semantic Versioning](https://semver.org). Pre-1.0
 minor versions may break public API; alpha / beta / rc tags signal
 an actively settling surface.
 
-## [Unreleased]
+## [1.3.1] — 2026-10-13
 
 ### Fixed
 

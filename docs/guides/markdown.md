@@ -7,8 +7,8 @@ CommonMark-lite subset through the PdfKmp DSL with a single extension on
 Install it alongside the core dependency:
 
 ```kotlin
-implementation("io.github.conamobiledev:pdfkmp:1.3.0")
-implementation("io.github.conamobiledev:pdfkmp-markdown:1.3.0")
+implementation("io.github.conamobiledev:pdfkmp:1.3.1")
+implementation("io.github.conamobiledev:pdfkmp-markdown:1.3.1")
 ```
 
 ## Usage
