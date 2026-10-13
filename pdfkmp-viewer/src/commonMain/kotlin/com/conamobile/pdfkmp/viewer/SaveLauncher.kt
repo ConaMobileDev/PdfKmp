@@ -14,16 +14,16 @@ import androidx.compose.runtime.Composable
  *   older devices, then surfaces a `Toast` confirmation. Visible in
  *   the system Files app under "Downloads" alongside any browser
  *   download.
- * - **iOS** — `<NSDocumentDirectory>/<fileName>` (the app's documents
- *   container, surfaced in the Files app under "On My iPhone /
- *   <AppName>"). iOS doesn't expose a true "Downloads" folder; this
- *   matches the behaviour of system apps that offer "Save".
+ * - **iOS** — the system "Save to Files" picker
+ *   (`UIDocumentPickerViewController` in export mode), where the user
+ *   picks the destination. iOS doesn't expose a true "Downloads"
+ *   folder; this matches the behaviour of system apps that offer "Save".
  *
  * @param bytes encoded PDF payload to persist.
  * @param fileName user-visible filename (must include the `.pdf`
- *   extension). The implementation overwrites any existing file with
- *   the same name in the destination — callers that need uniqueness
- *   should add a timestamp / counter before passing it in.
+ *   extension). On Android the implementation overwrites any
+ *   existing file with the same name in the destination — callers that
+ *   need uniqueness should add a timestamp / counter before passing it in.
  */
 public fun interface PdfSaveAction {
     public operator fun invoke(bytes: ByteArray, fileName: String)

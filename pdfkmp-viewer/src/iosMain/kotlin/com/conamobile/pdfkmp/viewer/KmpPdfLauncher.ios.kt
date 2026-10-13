@@ -6,10 +6,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.window.ComposeUIViewController
 import com.conamobile.pdfkmp.PdfDocument
 import kotlinx.cinterop.ExperimentalForeignApi
-import platform.UIKit.UIApplication
 import platform.UIKit.UIModalPresentationFullScreen
 import platform.UIKit.UIViewController
-import platform.UIKit.UIWindow
 
 /**
  * iOS implementation of the imperative launcher.
@@ -198,15 +196,4 @@ private fun KmpPdfViewerWithOptions(
         maxZoom = options.maxZoom,
         cacheStrategy = options.cacheStrategy,
     )
-}
-
-/** Walks from the key window's root through any presented view-controllers. */
-private fun topMostViewController(): UIViewController? {
-    val window = UIApplication.sharedApplication.keyWindow
-        ?: UIApplication.sharedApplication.windows.firstOrNull() as? UIWindow
-    var top = window?.rootViewController
-    while (top?.presentedViewController != null) {
-        top = top.presentedViewController
-    }
-    return top
 }

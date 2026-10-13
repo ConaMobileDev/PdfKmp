@@ -7,7 +7,9 @@ import androidx.compose.runtime.remember
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.useContents
 import kotlinx.cinterop.usePinned
+import platform.CoreGraphics.CGRectMake
 import platform.Foundation.NSData
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSURL
@@ -15,10 +17,9 @@ import platform.Foundation.create
 import platform.Foundation.writeToURL
 import platform.UIKit.UIActivityViewController
 import platform.UIKit.UIApplication
-import platform.UIKit.UIDevice
-import platform.UIKit.UIUserInterfaceIdiomPad
 import platform.UIKit.UIViewController
 import platform.UIKit.UIWindow
+import platform.UIKit.popoverPresentationController
 
 /**
  * Captures the key window's root view controller once and returns a
@@ -28,15 +29,11 @@ import platform.UIKit.UIWindow
  * regenerated document with the same name correctly replaces the
  * previous payload.
  *
- * **iPad caveat** — UIKit insists on a `popoverPresentationController`
- * with a non-nil `sourceView` / `sourceRect` whenever a share sheet is
- * presented on iPad, otherwise it raises `NSGenericException`. Neither
- * `UIPopoverPresentationController` nor the KVC accessors needed to
- * reach it from outside the typed binding are exposed in Kotlin/Native's
- * UIKit klib at the moment, so this default action skips the
- * presentation on iPad. Apps targeting iPad should disable the built-in
- * button via `showShareButton = false` and present the share sheet from
- * Swift / Objective-C where the popover anchor can be set directly.
+ * **iPad** — UIKit presents the share sheet as a popover there and
+ * raises `NSGenericException` when its `popoverPresentationController`
+ * has no anchor. The sheet is anchored to the centre of the presenting
+ * view with no arrow, since the action has no handle on whichever
+ * button triggered it.
  */
 @Composable
 public actual fun rememberPdfShareAction(): PdfShareAction =
@@ -45,12 +42,6 @@ public actual fun rememberPdfShareAction(): PdfShareAction =
 private class IosShareAction : PdfShareAction {
 
     override fun invoke(bytes: ByteArray, fileName: String) {
-        if (UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad) {
-            // Refuse to crash on iPad — see the class KDoc for the
-            // recommended workaround.
-            return
-        }
-
         val safeName = sanitizePdfFileName(fileName)
         val path = joinPath(NSTemporaryDirectory(), safeName)
         val url = NSURL.fileURLWithPath(path)
@@ -66,12 +57,21 @@ private class IosShareAction : PdfShareAction {
         )
 
         val presenter = topMostViewController() ?: return
+        // Non-null only where the sheet is shown as a popover (iPad).
+        activity.popoverPresentationController?.let { popover ->
+            val anchor = presenter.view
+            popover.sourceView = anchor
+            popover.sourceRect = anchor.bounds.useContents {
+                CGRectMake(origin.x + size.width / 2, origin.y + size.height / 2, 0.0, 0.0)
+            }
+            popover.permittedArrowDirections = 0u
+        }
         presenter.presentViewController(activity, animated = true, completion = null)
     }
 }
 
 /** Returns the deepest currently-presented view controller, or `null`. */
-private fun topMostViewController(): UIViewController? {
+internal fun topMostViewController(): UIViewController? {
     val window = UIApplication.sharedApplication.keyWindow
         ?: UIApplication.sharedApplication.windows.firstOrNull() as? UIWindow
     var top = window?.rootViewController

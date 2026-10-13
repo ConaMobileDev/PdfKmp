@@ -82,7 +82,7 @@ KmpPdfLauncher.open(uri = "content://com.example.docs/123", title = "Document", 
   chevrons cycle results, auto-scroll to the active hit.
 - **Share** — `Intent.ACTION_SEND` (Android, via `FileProvider`) /
   `UIActivityViewController` (iOS) / `java.awt.Desktop.open` (Desktop).
-- **Save** — `MediaStore.Downloads` (Android) / `NSDocumentDirectory` (iOS) / a
+- **Save** — `MediaStore.Downloads` (Android) / the **Save to Files** picker (iOS) / a
   native **Save As** dialog (Desktop, default `~/Downloads`).
 - **Print** — `showPrint` action: `PrintManager` (Android),
   `UIPrintInteractionController` (iOS), `PrinterJob` + PDFBox (Desktop).

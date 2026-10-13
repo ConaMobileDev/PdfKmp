@@ -9,27 +9,28 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
 import platform.Foundation.NSData
-import platform.Foundation.NSDocumentDirectory
-import platform.Foundation.NSFileManager
-import platform.Foundation.NSSearchPathForDirectoriesInDomains
+import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSURL
-import platform.Foundation.NSUserDomainMask
 import platform.Foundation.create
 import platform.Foundation.writeToURL
+import platform.UIKit.UIDocumentPickerViewController
 
 /**
- * Returns a stateless [PdfSaveAction] backed by the app's
- * `<NSDocumentDirectory>` — the closest iOS equivalent of an Android
- * Downloads folder. Files written here surface in the system Files app
- * under "On My iPhone / <AppName>" and remain available across app
- * launches.
+ * Returns a stateless [PdfSaveAction] that hands the PDF to the system
+ * "Save to Files" picker ([UIDocumentPickerViewController] in export
+ * mode), so the user chooses the destination — On My iPhone / iPad,
+ * iCloud Drive, or any installed file provider.
  *
- * Existing files with the same name are overwritten via
- * `NSData.writeToURL(atomically: true)` so the user sees a fresh copy
- * each time. Failures (disk full, sandboxed write denied) fall through
- * silently — the viewer's save action shouldn't be able to crash the
- * host app, and iOS doesn't have a Toast equivalent the library can
- * reach without UIKit ceremony.
+ * iOS has no shared Downloads folder, and a file written straight into
+ * the app's `<NSDocumentDirectory>` only shows up in the Files app when
+ * the host sets `UIFileSharingEnabled` and
+ * `LSSupportsOpeningDocumentsInPlace` in its Info.plist — without them
+ * the save is invisible. The picker needs no host configuration and
+ * doubles as the confirmation the user expects from tapping "Save".
+ *
+ * The bytes are staged in [NSTemporaryDirectory] and exported as a copy.
+ * Failures (disk full, no presenter) fall through silently — the
+ * viewer's save action shouldn't be able to crash the host app.
  */
 @Composable
 public actual fun rememberPdfSaveAction(): PdfSaveAction =
@@ -39,21 +40,16 @@ private class IosSaveAction : PdfSaveAction {
 
     override fun invoke(bytes: ByteArray, fileName: String) {
         val safeName = sanitizePdfFileName(fileName)
-        val baseDir = NSSearchPathForDirectoriesInDomains(
-            directory = NSDocumentDirectory,
-            domainMask = NSUserDomainMask,
-            expandTilde = true,
-        ).firstOrNull() as? String ?: return
-        val path = "${baseDir.trimEnd('/')}/$safeName"
-
-        // Overwrite any existing copy so re-saving the same document
-        // produces a clean file rather than failing or appending.
-        NSFileManager.defaultManager.removeItemAtPath(path, error = null)
+        val path = "${NSTemporaryDirectory().trimEnd('/')}/$safeName"
+        val url = NSURL.fileURLWithPath(path)
 
         val data: NSData = bytes.usePinned { pinned ->
             NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong())
         }
-        val url = NSURL.fileURLWithPath(path)
-        data.writeToURL(url, atomically = true)
+        if (!data.writeToURL(url, atomically = true)) return
+
+        val picker = UIDocumentPickerViewController(forExportingURLs = listOf(url), asCopy = true)
+        val presenter = topMostViewController() ?: return
+        presenter.presentViewController(picker, animated = true, completion = null)
     }
 }

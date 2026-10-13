@@ -295,7 +295,7 @@ PdfViewer(document = doc, showShareButton = false)
 
 ### Save to Downloads
 
-`rememberPdfSaveAction()` returns a public action that persists the PDF to a user-visible location: **Android** writes to `Downloads/` via `MediaStore.Downloads` (API 29+) or `Environment.DIRECTORY_DOWNLOADS` (legacy), with a "Saved to Downloads" toast. **iOS** writes to `<NSDocumentDirectory>/`, surfaced in the Files app under "On My iPhone / <AppName>".
+`rememberPdfSaveAction()` returns a public action that persists the PDF to a user-visible location: **Android** writes to `Downloads/` via `MediaStore.Downloads` (API 29+) or `Environment.DIRECTORY_DOWNLOADS` (legacy), with a "Saved to Downloads" toast. **iOS** presents the system **Save to Files** picker (`UIDocumentPickerViewController` in export mode), so the user picks the destination — no `Info.plist` keys required.
 
 ```kotlin
 val save = rememberPdfSaveAction()
@@ -489,7 +489,7 @@ The recording driver is a transparent decorator around the platform `PdfDriver` 
 - **Highlight annotations are overlay-only except for Desktop save.** They are painted on top of the rasterised page; share / print always export the untouched original. On **Desktop** the save / download action burns them into the PDF as real `Highlight` annotations (see [Exporting highlights into the PDF](#exporting-highlights-into-the-pdf-desktop)); on Android / iOS there is no writable PDF API so save also keeps exporting the original. Persist the `PdfViewerAnnotation` list via `onAnnotationsChanged` and restore through `initialAnnotations`.
 - **Password-protected PDFs open on Desktop and iOS only.** Pass `password`; Android's `PdfRenderer` has no password API, so encrypted documents are unreadable there (surfaced as `PdfViewerError.PasswordRequired`). The iOS unlock path (PDFKit) is pending macOS verification.
 - **No print preview integration**. Use `Intent.ACTION_VIEW` / `UIDocumentInteractionController` from your own UI if needed.
-- **iPad share** falls through silently when the host app hasn't set a popover anchor — see KDoc on `ShareLauncher.ios.kt`.
+- **iPad share** is presented as a popover anchored to the centre of the presenting view (no arrow) — the action has no handle on whichever button triggered it.
 - **Very large documents prefetch a tighter window.** The default `cacheStrategy = PdfPageCacheStrategy.Auto` is adaptive: documents up to ~200 pages keep a symmetric prefetch window (3 pages either side); past that the window tightens to a forward-biased `(before = 2, after = 4)` so the viewer never tries to warm a wide ring that the memory budget would only evict. Pass an explicit `PdfPageCacheStrategy.Window(...)` / `.All` to override. A hard per-platform byte budget (Android: 25 % of `maxMemory()`, iOS: 200 MB) always caps total cache size and evicts least-recently-used pages first, so a wide window can never crash the process.
 
 ## Versioning

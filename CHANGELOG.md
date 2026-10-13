@@ -6,6 +6,20 @@ versions follow [Semantic Versioning](https://semver.org). Pre-1.0
 minor versions may break public API; alpha / beta / rc tags signal
 an actively settling surface.
 
+## [Unreleased]
+
+### Fixed
+
+- **`pdfkmp-viewer`: share did nothing on iPad.** The iOS share action
+  returned early on iPad instead of presenting the sheet. It now anchors
+  `UIActivityViewController`'s popover to the presenting view.
+- **`pdfkmp-viewer`: save gave no feedback on iOS.** The save action wrote
+  silently into the app's `NSDocumentDirectory`, which the Files app only
+  shows when the host sets `UIFileSharingEnabled` and
+  `LSSupportsOpeningDocumentsInPlace`. It now presents the system
+  "Save to Files" picker (`UIDocumentPickerViewController`, export mode), so
+  the user chooses the destination and no Info.plist keys are needed.
+
 ## [1.3.0] — 2026-08-17
 
 ### Breaking
