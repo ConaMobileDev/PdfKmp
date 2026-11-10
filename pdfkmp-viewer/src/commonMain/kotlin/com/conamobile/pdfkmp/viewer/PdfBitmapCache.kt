@@ -107,9 +107,18 @@ internal class PdfBitmapCache(public val budgetBytes: Long) {
             var dropped = 0
             val toDrop = entries.size - keep
             while (iter.hasNext() && dropped < toDrop) {
-                val entry = iter.next()
+                // The value must be read BEFORE the removal. On Kotlin/Native
+                // a map entry is a live reference into the backing map
+                // (stdlib HashMap.EntryRef) whose `value` getter re-verifies
+                // the map's modification count, and `remove()` bumps exactly
+                // that count — reading after the removal throws
+                // ConcurrentModificationException and has crashed the whole
+                // process on iOS. On JVM the plain java.util entry keeps its
+                // value across the removal, which is why Android/Desktop
+                // never saw this.
+                val bytes = estimateBytes(iter.next().value)
                 iter.remove()
-                currentBytes -= estimateBytes(entry.value)
+                currentBytes -= bytes
                 dropped += 1
             }
         }
@@ -127,9 +136,12 @@ internal class PdfBitmapCache(public val budgetBytes: Long) {
         if (currentBytes <= budgetBytes) return
         val iter = entries.entries.iterator()
         while (currentBytes > budgetBytes && iter.hasNext()) {
-            val entry = iter.next()
+            // Same ordering constraint as in [trim]: on Kotlin/Native the
+            // entry must be read before it is removed, or the entry's own
+            // comodification check aborts the app (see the comment there).
+            val bytes = estimateBytes(iter.next().value)
             iter.remove()
-            currentBytes -= estimateBytes(entry.value)
+            currentBytes -= bytes
         }
     }
 }
